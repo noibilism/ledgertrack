@@ -2,64 +2,106 @@
   <img src="https://formance01.b-cdn.net/Github-Attachements/banners/ledger-readme-banner.webp" alt="ledger" width="100%" />
 </p>
 
-#  Formance Ledger
+# LedgerTrack (Forked from Formance Ledger)
 
-Formance Ledger is a programmable financial core ledger that provides a foundation for all kind of money-moving applications. It provides an atomic multi-postings transactions system, account-based modeling, and is programmable in [numscript](https://docs.formance.com/modules/numscript/introduction), a built-in DSL to model financial transactions.
+**LedgerTrack** is an enhanced, simplified fork of the Formance Ledger, optimized specifically for **building scalable wallet systems**. We've taken the robust core of Formance and added a high-level API layer that abstracts away the complexities of double-entry accounting, making it easy to manage user wallets, payment channels, and multi-ledger reconciliation.
 
-The ledger can be used either as a standalone micro-service or as part of the [Formance Platform](https://www.formance.com/). It will shine for financial applications requiring a centralized state-keeping of the assets they orchestrate, such as:
+## Why LedgerTrack?
 
-* Users balances holding apps, where the ownership of funds held in FBO accounts need to be fine-grained in a ledger
-* Digital assets platforms and exchanges, where funds in various denominations are represented
-* Payment systems, where funds are cycled through a series of steps from acquiring to payouts
-* Loan managment systems, where a sophisticated structure of amounts dues and to be disbursed are orchestrated
+Building a wallet system is hard. You need to handle:
+*   **Double-Entry Accounting:** Ensuring every debit has a credit.
+*   **Concurrency:** Handling high-volume transactions without race conditions.
+*   **Multi-Ledger Operations:** Tracking user balances separately from payment provider (channel) liquidity and revenue.
+*   **Liens & Holds:** Locking funds for pending transactions.
 
-Is uses PostgreSQL as its main transactional storage layer and comes with a built-in mechanism to ship ledger logs to replica data stores for OLAP optimized querying.
+LedgerTrack solves this by providing a **"Wallet Wrapper"** API on top of the programmable ledger core.
 
-## Localhost ⚡
+## Key Features
 
-To quickly get started using the Formance Ledger on your computer, you can use the local-optimized, all-in-one docker image:
+### 1. Wallets as First-Class Citizens
+Forget about manually constructing Numscript for every user interaction. We provide dedicated endpoints for:
+*   **Create Wallet**: Automatically sets up a deterministic wallet ID (e.g., `user123-USD`).
+*   **Credit/Debit**: Simple API to fund or charge wallets.
+*   **History & Statements**: Built-in endpoints to retrieve transaction history and monthly statements.
 
+### 2. Multi-Ledger Architecture
+We separate concerns to keep your accounting clean:
+*   **User Ledger (`ledgertrack`)**: Tracks individual user balances (`users:u1:wallets:USD:available`).
+*   **Channel Ledger (`channels-USD`)**: Tracks liquidity with external payment providers (e.g., Stripe, PayPal).
+*   **Revenue Ledger (`revenue-USD`)**: Automatically captures fees and revenue.
+
+### 3. Smart Transaction Routing
+When you debit a user wallet, LedgerTrack can automatically:
+1.  **Debit the User**: Reduce user's available balance.
+2.  **Debit the Channel**: Update the liquidity tracking for the payment provider used.
+3.  **Book Revenue**: Calculate and book the difference as revenue.
+All linked via metadata for full traceability.
+
+### 4. Liens & Holds
+Built-in support for:
+*   **Creating Liens**: Lock funds (move from `available` to `lien` sub-account).
+*   **Releasing Liens**: Either finalize the payment (Pay) or return funds to the user (Cancel).
+
+### 5. Deployment Ready
+*   **Automated Deployment Script**: A `deploy.sh` script to get you up and running on Ubuntu in minutes.
+*   **Postman Collection**: A complete collection to test all new endpoints.
+
+## Quick Start
+
+### Local Development
+
+1.  **Start the Server**:
+    ```bash
+    # Create a .env file (or use the provided deploy script to generate one)
+    export POSTGRES_URI="postgresql://ledger:ledger@localhost:5432/ledger?sslmode=disable"
+    go run main.go serve
+    ```
+
+2.  **Use the API**:
+    *   **Create a Wallet**:
+        ```bash
+        curl -X POST http://localhost:3068/v2/ledgertrack/wallets \
+          -d '{"userID": "u1", "currency": "USD"}'
+        ```
+    *   **Credit Funds**:
+        ```bash
+        curl -X POST http://localhost:3068/v2/ledgertrack/wallets/u1-USD/credit \
+          -d '{"amount": 1000, "reference": "ref-001"}'
+        ```
+
+### Deployment
+
+We provide a helper script for Ubuntu servers:
+
+```bash
+sudo ./deploy.sh
 ```
-docker compose -f examples/standalone/docker-compose.yml up
-```
+This will:
+*   Install dependencies (Go, Postgres client, etc.).
+*   Configure your database connection.
+*   Set up a Systemd service.
+*   Pre-create your payment channels.
 
-Which will start:
-* A Postgres DB
-* 1 Gateway Server process (Caddy based reverse proxy)
-* 1 Ledger server process
-* 1 Ledger worker process
-* The Console UI
+## API Documentation
 
-With the system is up and running, you can now start using the ledger:
+The core Formance API documentation applies, but we have added the following specific V2 endpoints:
 
-```shell
-# Create a ledger
-http POST :8080/api/ledger/v2/quickstart
-# Create a first transaction
-http POST :8080/api/ledger/v2/quickstart/transactions postings:='[{"amount":100,"asset":"USD/2","destination":"users:1234","source":"world"}]'
-```
+### Wallets
+*   `POST /v2/ledgertrack/wallets`: Create a new wallet.
+*   `POST /v2/ledgertrack/wallets/{walletID}/credit`: Add funds.
+*   `POST /v2/ledgertrack/wallets/{walletID}/debit`: Remove funds (supports `channelID` for multi-ledger routing).
+*   `POST /v2/ledgertrack/wallets/{walletID}/lien`: Lock funds.
+*   `POST /v2/ledgertrack/wallets/{walletID}/lien/release`: Release locked funds (Pay or Cancel).
+*   `GET /v2/ledgertrack/wallets/{walletID}/history`: Get transaction history.
+*   `GET /v2/ledgertrack/wallets/{walletID}/statement`: Get statement.
 
-And get a visual feedback on the Ledger Console UI started on [http://localhost:3000/formance/localhost?region=localhost](http://localhost:3000/formance/localhost?region=localhost):
+### Channels
+*   `POST /v2/ledgertrack/channels`: Register a new payment channel.
+*   `POST /v2/ledgertrack/channels/{channelID}/credit`: Add liquidity to a channel.
+*   `GET /v2/ledgertrack/channels/{channelID}`: Get channel balance/info.
 
-![console](https://formance01.b-cdn.net/Github-Attachements/console-screenshot.png)
+## Original Formance Ledger
+This project is a fork of [Formance Ledger](https://github.com/formancehq/ledger). We acknowledge and thank the Formance team for building the incredible core engine that makes this possible.
 
-## Production 🛡️
-
-Production usage of the Formance Ledger is (only) supported through the official k8s [operator](https://github.com/formancehq/operator) deployment mode. Follow the [installation instructions](https://docs.formance.com/build/deployment/operator/installation) to learn more.
-
-## Artifacts 📦
-
-Standalone binary builds can be downloaded from the [releases page](https://github.com/formancehq/ledger/releases).
-Container images can be found on the [ghcr registry](https://github.com/formancehq/ledger/pkgs/container/ledger).
-
-## Docs 📚
-
-You can find the exhaustive Formance Platform documentation at [docs.formance.com](https://docs.formance.com).
-
-## Community 💬
-
-If you need help, want to show us what you built or just hang out and chat about ledgers you are more than welcome in our [GitHub Discussions](https://github.com/orgs/formancehq/discussions) - looking forward to see you there!
-
-## Contributing 🛠️
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md)
+---
+**License**: Apache 2.0 (Inherited from Formance Ledger)
