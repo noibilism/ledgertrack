@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+    "math"
 
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/bun/bunpaginate"
@@ -29,19 +31,19 @@ type CreateWalletRequest struct {
 }
 
 type WalletTransactionRequest struct {
-	Amount        int64             `json:"amount"`
+	Amount        json.Number       `json:"amount"`
 	Reference     string            `json:"reference"`
 	Metadata      map[string]string `json:"metadata"`
 	ChannelID     string            `json:"channelID"`
-	ChannelAmount int64             `json:"channelAmount"`
+	ChannelAmount json.Number       `json:"channelAmount"`
 }
 
 type ReleaseLienRequest struct {
-	Amount        int64  `json:"amount"`
-	Reference     string `json:"reference"`
-	Mode          string `json:"mode"` // "release_only" or "release_and_debit"
-	ChannelID     string `json:"channelID"`
-	ChannelAmount int64  `json:"channelAmount"`
+	Amount        json.Number `json:"amount"`
+	Reference     string      `json:"reference"`
+	Mode          string      `json:"mode"` // "release_only" or "release_and_debit"
+	ChannelID     string      `json:"channelID"`
+	ChannelAmount json.Number `json:"channelAmount"`
 }
 
 // CurrencyRegistry - hardcoded for now as per PRD "Currency Registry" requirement
@@ -110,6 +112,35 @@ func createWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
+func parseAmount(amount json.Number, currency string) (int64, error) {
+	if amount == "" {
+		return 0, nil
+	}
+
+	reg, ok := currencyRegistry[currency]
+	if !ok {
+		// Default to precision 2 if not found, or error? 
+		// For safety, assume 2 or error. Let's assume 2 as per init() default.
+		reg = struct {
+			Precision int
+			Enabled   bool
+		}{Precision: 2, Enabled: true}
+	}
+
+	s := amount.String()
+	if strings.Contains(s, ".") {
+		f, err := amount.Float64()
+		if err != nil {
+			return 0, err
+		}
+		// Convert to atomic units
+		mult := math.Pow(10, float64(reg.Precision))
+		return int64(math.Round(f * mult)), nil
+	}
+
+	return amount.Int64()
+}
+
 func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
@@ -130,7 +161,13 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
-		if req.Amount <= 0 {
+		amount, err := parseAmount(req.Amount, currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid amount: %v", err))
+			return
+		}
+
+		if amount <= 0 {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount must be positive"))
 			return
 		}
@@ -151,7 +188,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			source = @%s allowing unbounded overdraft
 			destination = @%s
 		)
-	`, currency, req.Amount, accountSystem, accountUser)
+	`, currency, amount, accountSystem, accountUser)
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -207,7 +244,13 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
-		if req.Amount <= 0 {
+		amount, err := parseAmount(req.Amount, currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid amount: %v", err))
+			return
+		}
+
+		if amount <= 0 {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount must be positive"))
 			return
 		}
@@ -217,12 +260,18 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		}
 
 		// Validation for Multi-Ledger Logic
+		channelAmount, err := parseAmount(req.ChannelAmount, currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid channelAmount: %v", err))
+			return
+		}
+
 		if req.ChannelID != "" {
-			if req.ChannelAmount <= 0 {
+			if channelAmount <= 0 {
 				api.BadRequest(w, common.ErrValidation, fmt.Errorf("channelAmount must be positive"))
 				return
 			}
-			if req.ChannelAmount > req.Amount {
+			if channelAmount > amount {
 				api.BadRequest(w, common.ErrValidation, fmt.Errorf("channel amount cannot exceed wallet debit amount"))
 				return
 			}
@@ -240,7 +289,7 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			source = @%s
 			destination = @%s
 		)
-	`, currency, req.Amount, accountUser, accountSystem)
+	`, currency, amount, accountUser, accountSystem)
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -305,7 +354,7 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 					source = @%s allowing unbounded overdraft
 					destination = @world
 				)
-			`, currency, req.ChannelAmount, channelAccount)
+			`, currency, channelAmount, channelAccount)
 
 			cParams := ledger.Parameters[ledger.CreateTransaction]{
 				Input: ledger.CreateTransaction{
@@ -345,7 +394,7 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 
 			// Process Revenue Credit
-			revenue := req.Amount - req.ChannelAmount
+			revenue := amount - channelAmount
 			if revenue > 0 {
 				revenueLedgerName := fmt.Sprintf("revenue-%s", currency)
 				rl, err := sys.GetLedgerController(r.Context(), revenueLedgerName)
@@ -428,7 +477,13 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
-		if req.Amount <= 0 {
+		amount, err := parseAmount(req.Amount, currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid amount: %v", err))
+			return
+		}
+
+		if amount <= 0 {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount must be positive"))
 			return
 		}
@@ -449,7 +504,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			source = @%s
 			destination = @%s
 		)
-	`, currency, req.Amount, accountAvailable, accountLien)
+	`, currency, amount, accountAvailable, accountLien)
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -499,22 +554,34 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
+		amount, err := parseAmount(req.Amount, currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid amount: %v", err))
+			return
+		}
+
 		if req.Reference == "" {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("reference is required"))
 			return
 		}
-		if req.Amount <= 0 {
+		if amount <= 0 {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount is required for release"))
 			return
 		}
 
 		// Validation for Multi-Ledger Logic
+		channelAmount, err := parseAmount(req.ChannelAmount, currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid channelAmount: %v", err))
+			return
+		}
+
 		if req.ChannelID != "" {
-			if req.ChannelAmount <= 0 {
+			if channelAmount <= 0 {
 				api.BadRequest(w, common.ErrValidation, fmt.Errorf("channelAmount must be positive"))
 				return
 			}
-			if req.ChannelAmount > req.Amount {
+			if channelAmount > amount {
 				api.BadRequest(w, common.ErrValidation, fmt.Errorf("channel amount cannot exceed wallet debit amount"))
 				return
 			}
@@ -531,7 +598,7 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 					source = @%s
 					destination = @world
 				)
-			`, currency, req.Amount, accountLien)
+			`, currency, amount, accountLien)
 		} else {
 			// Release/Cancel: Lien -> Available
 			accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
@@ -540,7 +607,7 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 					source = @%s
 					destination = @%s
 				)
-			`, currency, req.Amount, accountLien, accountAvailable)
+			`, currency, amount, accountLien, accountAvailable)
 		}
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
@@ -601,7 +668,7 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 					source = @%s allowing unbounded overdraft
 					destination = @world
 				)
-			`, currency, req.ChannelAmount, channelAccount)
+			`, currency, channelAmount, channelAccount)
 
 			cParams := ledger.Parameters[ledger.CreateTransaction]{
 				Input: ledger.CreateTransaction{
@@ -633,7 +700,7 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 
 			// Revenue Logic
-			revenue := req.Amount - req.ChannelAmount
+			revenue := amount - channelAmount
 			if revenue > 0 {
 				revenueLedgerName := fmt.Sprintf("revenue-%s", currency)
 				rl, err := sys.GetLedgerController(r.Context(), revenueLedgerName)

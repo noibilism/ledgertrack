@@ -130,6 +130,7 @@ func NewRouter(
 
 				router.Route("/wallets", func(router chi.Router) {
 					router.Post("/", createWallet(systemController))
+					router.Get("/balances", getWalletBalances(systemController))
 					router.Route("/{walletID}", func(router chi.Router) {
 						router.Post("/credit", creditWallet(systemController))
 						router.Post("/debit", debitWallet(systemController))
