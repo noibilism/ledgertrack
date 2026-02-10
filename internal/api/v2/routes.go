@@ -127,6 +127,27 @@ func NewRouter(
 				router.Get("/aggregate/balances", readBalancesAggregated)
 
 				router.Get("/volumes", readVolumes(routerOptions.paginationConfig))
+
+				router.Route("/wallets", func(router chi.Router) {
+					router.Post("/", createWallet(systemController))
+					router.Route("/{walletID}", func(router chi.Router) {
+						router.Post("/credit", creditWallet(systemController))
+						router.Post("/debit", debitWallet(systemController))
+						router.Post("/lien", lienWallet(systemController))
+						router.Post("/lien/release", releaseLien(systemController))
+						router.Get("/statement", getWalletStatement(systemController))
+						router.Get("/history", getWalletHistory(systemController))
+					})
+				})
+
+				router.Route("/channels", func(router chi.Router) {
+					router.Post("/", createChannel(systemController))
+					router.Route("/{channelID}", func(router chi.Router) {
+						router.Post("/credit", creditChannel(systemController))
+						router.Get("/", readChannel(systemController))
+						router.Get("/history", getChannelHistory(systemController, routerOptions.paginationConfig))
+					})
+				})
 			})
 		})
 	})

@@ -1,0 +1,25 @@
+name: ledger-ui
+services:
+  gateway:
+    image: ghcr.io/formancehq/gateway:v2.0.31
+    ports:
+      - "8083:8080"
+    volumes:
+      - "/tmp/Caddyfile.ui:/etc/caddy/Caddyfile"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  console:
+    image: ghcr.io/formancehq/console-v3:v1.17.0
+    ports:
+      - "3005:3000"
+    environment:
+      - PORT=3000
+      - MICRO_STACK=1
+      - API_URL=http://localhost:8083/api
+      - COOKIE_SECRET=secret
+      - COOKIE_DOMAIN=localhost
+    depends_on:
+      - gateway
+    extra_hosts:
+      - "localhost:host-gateway"

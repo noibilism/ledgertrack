@@ -11,3 +11,5 @@ dumps
 .envrc.*
 Pulumi.*.yaml
 coverage.txt
+ledger
+.trae/

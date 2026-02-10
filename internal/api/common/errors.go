@@ -62,6 +62,16 @@ func HandleCommonWriteErrors(w http.ResponseWriter, r *http.Request, err error) 
 		api.BadRequest(w, ErrSchemaNotSpecified, err)
 	case errors.Is(err, ledgercontroller.ErrSchemaNotFound{}):
 		api.NotFound(w, err)
+	case errors.Is(err, &ledgercontroller.ErrInsufficientFunds{}):
+		api.BadRequest(w, ErrInsufficientFund, err)
+	case errors.Is(err, ledgercontroller.ErrTransactionReferenceConflict{}):
+		api.WriteErrorResponse(w, http.StatusConflict, ErrConflict, err)
+	case errors.Is(err, ledgercontroller.ErrCompilationFailed{}):
+		api.BadRequest(w, ErrCompilationFailed, err)
+	case errors.Is(err, &ledgercontroller.ErrMetadataOverride{}):
+		api.BadRequest(w, ErrMetadataOverride, err)
+	case errors.Is(err, postgres.ErrSerialization):
+		api.WriteErrorResponse(w, http.StatusServiceUnavailable, ErrConflict, err)
 	default:
 		HandleCommonErrors(w, r, err)
 	}
@@ -82,5 +92,5 @@ func InternalServerError(w http.ResponseWriter, r *http.Request, err error) {
 	otlp.RecordError(r.Context(), err)
 	logging.FromContext(r.Context()).Error(err)
 	//nolint:staticcheck
-	api.WriteErrorResponse(w, http.StatusInternalServerError, api.ErrorInternal, errors.New("Internal error. Consult logs/traces to have more details."))
+	api.WriteErrorResponse(w, http.StatusInternalServerError, api.ErrorInternal, err)
 }

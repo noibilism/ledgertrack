@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="SwaggerUI"
+    />
+    <title>Ledger API Documentation</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
+  </head>
+  <body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js" crossorigin></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+  <script>
+    window.onload = () => {
+      // Fetch the local openapi spec
+      fetch('../../openapi/v2.yaml')
+        .then(response => response.text())
+        .then(text => {
+            // Parse YAML
+            const spec = jsyaml.load(text);
+            
+            // Patch the server URL to point to the local ledger instead of the gateway
+            // The default in v2.yaml is http://localhost:8080/
+            // We want http://localhost:3068/
+            if (spec.servers && spec.servers.length > 0) {
+                spec.servers[0].url = "http://localhost:3068/";
+                spec.servers[0].description = "Local Ledger Service";
+            } else {
+                spec.servers = [{url: "http://localhost:3068/", description: "Local Ledger Service"}];
+            }
+
+            // Initialize Swagger UI with the patched spec
+            window.ui = SwaggerUIBundle({
+                spec: spec,
+                dom_id: '#swagger-ui',
+                presets: [
+                SwaggerUIBundle.presets.apis,
+                SwaggerUIStandalonePreset
+                ],
+                layout: "StandaloneLayout",
+            });
+        })
+        .catch(err => {
+            console.error("Failed to load OpenAPI spec", err);
+            document.getElementById('swagger-ui').innerHTML = `<div style="padding: 20px; color: red;">Failed to load OpenAPI spec: ${err.message}. Make sure you are serving this file via a web server (e.g. npx http-server) and not directly from the filesystem.</div>`;
+        });
+    };
+  </script>
+  </body>
+</html>

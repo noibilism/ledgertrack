@@ -1,0 +1,827 @@
+{
+	"info": {
+		"_postman_id": "00000000-0000-0000-0000-000000000000",
+		"name": "Ledger V2 - Wallets & Channels",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Ledger",
+			"item": [
+				{
+					"name": "Create Ledger",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Wallets",
+			"item": [
+				{
+					"name": "Create Wallet",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"userID\": \"user1\",\n    \"currency\": \"USD\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"userID\": \"user1\",\n    \"currency\": \"USD\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/wallets",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"wallets"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"currency\": \"USD\",\n        \"userID\": \"user1\",\n        \"walletID\": \"user1-USD\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Credit Wallet",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 10000,\n    \"reference\": \"ref-credit-001\",\n    \"metadata\": {\n        \"type\": \"topup\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/credit",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets",
+								"user1-USD",
+								"credit"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 10000,\n    \"reference\": \"ref-credit-001\",\n    \"metadata\": {\n        \"type\": \"topup\"\n    }\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/credit",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"wallets",
+										"user1-USD",
+										"credit"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"transaction\": {\n            \"postings\": [\n                {\n                    \"source\": \"system:control:USD\",\n                    \"destination\": \"users:user1:wallets:USD:available\",\n                    \"amount\": 10000,\n                    \"asset\": \"USD/2\"\n                }\n            ],\n            \"metadata\": {\n                \"type\": \"topup\"\n            },\n            \"timestamp\": \"2024-01-01T12:00:00Z\",\n            \"reference\": \"ref-credit-001\",\n            \"id\": 100\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Debit Wallet (Simple)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 500,\n    \"reference\": \"ref-debit-001\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/debit",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets",
+								"user1-USD",
+								"debit"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 500,\n    \"reference\": \"ref-debit-001\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/debit",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"wallets",
+										"user1-USD",
+										"debit"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"transaction\": {\n            \"postings\": [\n                {\n                    \"source\": \"users:user1:wallets:USD:available\",\n                    \"destination\": \"system:control:USD\",\n                    \"amount\": 500,\n                    \"asset\": \"USD/2\"\n                }\n            ],\n            \"metadata\": {},\n            \"timestamp\": \"2024-01-01T12:05:00Z\",\n            \"reference\": \"ref-debit-001\",\n            \"id\": 101\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Debit Wallet (Multi-Ledger)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 1000,\n    \"reference\": \"ref-debit-ml-001\",\n    \"channelID\": \"{{channelID}}\",\n    \"channelAmount\": 950\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/debit",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets",
+								"user1-USD",
+								"debit"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 1000,\n    \"reference\": \"ref-debit-ml-001\",\n    \"channelID\": \"1234-5678\",\n    \"channelAmount\": 950\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/debit",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"wallets",
+										"user1-USD",
+										"debit"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"data\": {\n            \"txid\": 102,\n            \"timestamp\": \"2024-01-01T12:10:00Z\",\n            \"postings\": [\n                {\n                    \"source\": \"users:user1:wallets:USD:available\",\n                    \"destination\": \"system:control:USD\",\n                    \"amount\": 1000,\n                    \"asset\": \"USD/2\"\n                }\n            ],\n            \"metadata\": {\n                \"channel_ledger\": \"channels-USD\",\n                \"channel_tx_id\": \"50\",\n                \"revenue_ledger\": \"revenue-USD\",\n                \"revenue_tx_id\": \"25\"\n            }\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Create Lien",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 200,\n    \"reference\": \"ref-lien-001\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/lien",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets",
+								"user1-USD",
+								"lien"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 200,\n    \"reference\": \"ref-lien-001\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/lien",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"wallets",
+										"user1-USD",
+										"lien"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"transaction\": {\n            \"postings\": [\n                {\n                    \"source\": \"users:user1:wallets:USD:available\",\n                    \"destination\": \"users:user1:wallets:USD:lien\",\n                    \"amount\": 200,\n                    \"asset\": \"USD/2\"\n                }\n            ],\n            \"metadata\": {},\n            \"timestamp\": \"2024-01-01T12:15:00Z\",\n            \"reference\": \"ref-lien-001\",\n            \"id\": 103\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Release Lien (Cancel)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 200,\n    \"reference\": \"ref-release-001\",\n    \"mode\": \"release_only\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/lien/release",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets",
+								"user1-USD",
+								"lien",
+								"release"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 200,\n    \"reference\": \"ref-release-001\",\n    \"mode\": \"release_only\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/lien/release",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"wallets",
+										"user1-USD",
+										"lien",
+										"release"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"transaction\": {\n            \"postings\": [\n                {\n                    \"source\": \"users:user1:wallets:USD:lien\",\n                    \"destination\": \"users:user1:wallets:USD:available\",\n                    \"amount\": 200,\n                    \"asset\": \"USD/2\"\n                }\n            ],\n            \"metadata\": {},\n            \"timestamp\": \"2024-01-01T12:20:00Z\",\n            \"reference\": \"ref-release-001\",\n            \"id\": 104\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Release Lien (Pay / Multi-Ledger)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 200,\n    \"reference\": \"ref-pay-001\",\n    \"mode\": \"PAY\",\n    \"channelID\": \"{{channelID}}\",\n    \"channelAmount\": 190\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/lien/release",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets",
+								"user1-USD",
+								"lien",
+								"release"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 200,\n    \"reference\": \"ref-pay-001\",\n    \"mode\": \"PAY\",\n    \"channelID\": \"1234-5678\",\n    \"channelAmount\": 190\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/lien/release",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"wallets",
+										"user1-USD",
+										"lien",
+										"release"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"data\": {\n            \"txid\": 105,\n            \"timestamp\": \"2024-01-01T12:25:00Z\",\n            \"postings\": [\n                {\n                    \"source\": \"users:user1:wallets:USD:lien\",\n                    \"destination\": \"world\",\n                    \"amount\": 200,\n                    \"asset\": \"USD/2\"\n                }\n            ],\n            \"metadata\": {\n                \"channel_ledger\": \"channels-USD\",\n                \"channel_tx_id\": \"51\",\n                \"revenue_ledger\": \"revenue-USD\",\n                \"revenue_tx_id\": \"26\"\n            }\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Wallet History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/history",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets",
+								"user1-USD",
+								"history"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Wallet Statement",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/wallets/user1-USD/statement",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"wallets",
+								"user1-USD",
+								"statement"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Channels",
+			"item": [
+				{
+					"name": "Create Channel",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"channelID\", jsonData.data.channel_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currency\": \"USD\",\n    \"metadata\": {\n        \"name\": \"Provider A\",\n        \"description\": \"Main payment provider\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/channels",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"channels"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"currency\": \"USD\",\n    \"metadata\": {\n        \"name\": \"Provider A\",\n        \"description\": \"Main payment provider\"\n    }\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/channels",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"channels"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"data\": {\n            \"channel_id\": \"94c813b2-d1cf-4a71-aa4d-1618e3c9525c\",\n            \"currency\": \"USD\",\n            \"ledger\": \"channels-USD\"\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Credit Channel",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"amount\": 100000,\n    \"currency\": \"USD\",\n    \"reference\": \"fund-channel-001\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/channels/{{channelID}}/credit",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"channels",
+								"{{channelID}}",
+								"credit"
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"amount\": 100000,\n    \"currency\": \"USD\",\n    \"reference\": \"fund-channel-001\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/channels/{{channelID}}/credit",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"channels",
+										"{{channelID}}",
+										"credit"
+									]
+								}
+							},
+							"status": "Created",
+							"code": 201,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"data\": {\n            \"transaction\": {\n                \"postings\": [\n                    {\n                        \"source\": \"world\",\n                        \"destination\": \"channel:94c813b2-d1cf-4a71-aa4d-1618e3c9525c\",\n                        \"amount\": 100000,\n                        \"asset\": \"USD/2\"\n                    }\n                ],\n                \"metadata\": {},\n                \"timestamp\": \"2024-01-01T10:00:00Z\",\n                \"reference\": \"fund-channel-001\",\n                \"id\": 20\n            }\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Channel Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/channels/{{channelID}}?currency=USD",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"channels",
+								"{{channelID}}"
+							],
+							"query": [
+								{
+									"key": "currency",
+									"value": "USD"
+								}
+							]
+						}
+					},
+					"response": [
+						{
+							"name": "Success",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/channels/{{channelID}}?currency=USD",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"channels",
+										"{{channelID}}"
+									],
+									"query": [
+										{
+											"key": "currency",
+											"value": "USD"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"body": "{\n    \"data\": {\n        \"address\": \"channel:94c813b2-d1cf-4a71-aa4d-1618e3c9525c\",\n        \"metadata\": {\n            \"name\": \"Provider A\",\n            \"description\": \"Main payment provider\"\n        },\n        \"volumes\": {\n            \"USD/2\": {\n                \"input\": 100000,\n                \"output\": 5000,\n                \"balance\": 95000\n            }\n        }\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Channel History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/channels/{{channelID}}/history?currency=USD",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"channels",
+								"{{channelID}}",
+								"history"
+							],
+							"query": [
+								{
+									"key": "currency",
+									"value": "USD"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3068",
+			"type": "string"
+		}
+	]
+}

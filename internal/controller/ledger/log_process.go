@@ -154,15 +154,15 @@ func (lp *logProcessor[INPUT, OUTPUT]) forgeLog(
 		log, output, err := lp.runTx(ctx, store, parameters, fn)
 		if err != nil {
 			switch {
-			case errors.Is(err, postgres.ErrDeadlockDetected):
+			case errors.Is(err, postgres.ErrDeadlockDetected) || errors.Is(err, postgres.ErrSerialization):
 				trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("deadlock", true))
-				logging.FromContext(ctx).Info("deadlock detected, retrying...")
+				logging.FromContext(ctx).Info("deadlock or serialization error detected, retrying...")
 				lp.deadLockCounter.Add(ctx, 1, metric.WithAttributes(
 					attribute.String("operation", lp.operation),
 				))
 				continue
 			// A log with the IK could have been inserted in the meantime, read again the database to retrieve it
-			case errors.Is(err, ledgerstore.ErrIdempotencyKeyConflict{}):
+			case errors.Is(err, ledgerstore.ErrIdempotencyKeyConflict{}) || errors.Is(err, ledgerstore.ErrTransactionReferenceConflict{}):
 				log, output, err := lp.fetchLogWithIK(ctx, store, parameters)
 				if err != nil {
 					return nil, nil, false, err
