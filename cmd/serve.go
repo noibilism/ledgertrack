@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/pprof"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -206,6 +209,22 @@ func NewServeCommand() *cobra.Command {
 	return cmd
 }
 
+type responseRecorder struct {
+	http.ResponseWriter
+	StatusCode int
+	Body       bytes.Buffer
+}
+
+func (r *responseRecorder) WriteHeader(status int) {
+	r.StatusCode = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *responseRecorder) Write(b []byte) (int, error) {
+	r.Body.Write(b)
+	return r.ResponseWriter.Write(b)
+}
+
 func assembleFinalRouter(
 	exportPProf bool,
 	meterProvider *metric.MeterProvider,
@@ -215,6 +234,51 @@ func assembleFinalRouter(
 	handler http.Handler,
 ) *chi.Mux {
 	wrappedRouter := chi.NewRouter()
+
+	// Request/Response Logger Middleware
+	wrappedRouter.Use(func(handler http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Request Logging
+			var reqBody []byte
+			if r.Body != nil {
+				reqBody, _ = io.ReadAll(r.Body)
+				r.Body = io.NopCloser(bytes.NewBuffer(reqBody))
+			}
+
+			// Open file for appending
+			f, err := os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err == nil {
+				fmt.Fprintf(f, "\n=== Request [%s] ===\n", time.Now().Format(time.RFC3339))
+				fmt.Fprintf(f, "%s %s\n", r.Method, r.URL.String())
+				// fmt.Fprintf(f, "Headers: %v\n", r.Header) // Headers can be noisy
+				if len(reqBody) > 0 {
+					fmt.Fprintf(f, "Body: %s\n", string(reqBody))
+				}
+				f.Close()
+			}
+
+			// Response Recording
+			rec := &responseRecorder{
+				ResponseWriter: w,
+				StatusCode:     http.StatusOK,
+			}
+
+			handler.ServeHTTP(rec, r)
+
+			// Response Logging
+			f, err = os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err == nil {
+				fmt.Fprintf(f, "\n=== Response [%s] ===\n", time.Now().Format(time.RFC3339))
+				fmt.Fprintf(f, "Status: %d\n", rec.StatusCode)
+				if rec.Body.Len() > 0 {
+					fmt.Fprintf(f, "Body: %s\n", rec.Body.String())
+				}
+				fmt.Fprintf(f, "=====================\n")
+				f.Close()
+			}
+		})
+	})
+
 	wrappedRouter.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

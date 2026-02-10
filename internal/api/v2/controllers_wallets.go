@@ -175,6 +175,11 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 
 		_, tx, _, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "DEBUG ERROR: %v\n", err)
+			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
+				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
+				return
+			}
 			common.HandleCommonWriteErrors(w, r, err)
 			return
 		}
@@ -264,6 +269,11 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 
 		_, tx, _, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "DEBUG ERROR: %v\n", err)
+			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
+				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
+				return
+			}
 			common.HandleCommonWriteErrors(w, r, err)
 			return
 		}
@@ -456,6 +466,12 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 
 		_, tx, _, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "conflict") || 
+			   strings.Contains(strings.ToLower(err.Error()), "duplicate") || 
+			   strings.Contains(strings.ToLower(err.Error()), "already exists") {
+				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
+				return
+			}
 			common.HandleCommonWriteErrors(w, r, err)
 			return
 		}
@@ -555,6 +571,10 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 
 		_, tx, _, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
+				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
+				return
+			}
 			common.HandleCommonWriteErrors(w, r, err)
 			return
 		}
@@ -686,11 +706,14 @@ func getWalletHistory(sys systemcontroller.Controller) http.HandlerFunc {
 		// Define accounts associated with the wallet
 		accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
 		accountLien := fmt.Sprintf("users:%s:wallets:%s:lien", userID, currency)
-		accounts := []interface{}{accountAvailable, accountLien}
+		
 
 		// Build Query
-		// Start with filtering by accounts
-		var qb query.Builder = query.Match("account", accounts)
+		// Filter by accounts: account = available OR account = lien
+		var qb query.Builder = query.Or(
+			query.Match("account", accountAvailable),
+			query.Match("account", accountLien),
+		)
 
 		// Add optional filters
 		if reference := r.URL.Query().Get("reference"); reference != "" {
@@ -747,9 +770,11 @@ func getWalletStatement(sys systemcontroller.Controller) http.HandlerFunc {
 
 		accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
 		accountLien := fmt.Sprintf("users:%s:wallets:%s:lien", userID, currency)
-		accounts := []interface{}{accountAvailable, accountLien}
-
-		var qb query.Builder = query.Match("account", accounts)
+		
+		var qb query.Builder = query.Or(
+			query.Match("account", accountAvailable),
+			query.Match("account", accountLien),
+		)
 
 		if reference := r.URL.Query().Get("reference"); reference != "" {
 			qb = query.And(qb, query.Match("reference", reference))

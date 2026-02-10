@@ -13,3 +13,4 @@ Pulumi.*.yaml
 coverage.txt
 ledger
 .trae/
+requests.log

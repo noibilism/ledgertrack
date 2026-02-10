@@ -162,7 +162,10 @@ func (lp *logProcessor[INPUT, OUTPUT]) forgeLog(
 				))
 				continue
 			// A log with the IK could have been inserted in the meantime, read again the database to retrieve it
-			case errors.Is(err, ledgerstore.ErrIdempotencyKeyConflict{}) || errors.Is(err, ledgerstore.ErrTransactionReferenceConflict{}):
+			case errors.Is(err, ledgerstore.ErrIdempotencyKeyConflict{}):
+				if parameters.IdempotencyKey == "" {
+					return nil, nil, false, err
+				}
 				log, output, err := lp.fetchLogWithIK(ctx, store, parameters)
 				if err != nil {
 					return nil, nil, false, err
@@ -172,6 +175,8 @@ func (lp *logProcessor[INPUT, OUTPUT]) forgeLog(
 				}
 
 				return log, output, true, nil
+			case errors.Is(err, ledgerstore.ErrTransactionReferenceConflict{}):
+				return nil, nil, false, err
 			default:
 				return nil, nil, false, fmt.Errorf("unexpected error while forging log: %w", err)
 			}
