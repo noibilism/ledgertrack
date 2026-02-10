@@ -52,7 +52,17 @@ prompt "Database Name" "ledger" DB_NAME
 prompt "Database User" "ledger" DB_USER
 prompt_secret "Database Password" "ledger" DB_PASSWORD
 
-POSTGRES_URI="postgresql://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME?sslmode=disable"
+# URL Encode the password to handle special characters
+if command -v python3 &>/dev/null; then
+    DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
+elif command -v jq &>/dev/null; then
+    DB_PASSWORD_ENCODED=$(jq -nr --arg v "$DB_PASSWORD" '$v|@uri')
+else
+    echo "Warning: Python3 or jq not found. Password encoding might fail for special characters."
+    DB_PASSWORD_ENCODED=$DB_PASSWORD
+fi
+
+POSTGRES_URI="postgresql://$DB_USER:$DB_PASSWORD_ENCODED@$DB_HOST:$DB_PORT/$DB_NAME?sslmode=disable"
 
 # 3. Supported Currencies
 echo "--> Currency Configuration"
