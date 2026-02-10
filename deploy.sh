@@ -11,10 +11,22 @@ prompt() {
     local var_name=$3
     read -p "$prompt_text [$default_value]: " input
     if [ -z "$input" ]; then
-        eval $var_name="$default_value"
-    else
-        eval $var_name="$input"
+        input="$default_value"
     fi
+    printf -v "$var_name" '%s' "$input"
+}
+
+# Function to prompt for secret input
+prompt_secret() {
+    local prompt_text=$1
+    local default_value=$2
+    local var_name=$3
+    read -s -p "$prompt_text [$default_value]: " input
+    echo "" # New line since -s doesn't print one
+    if [ -z "$input" ]; then
+        input="$default_value"
+    fi
+    printf -v "$var_name" '%s' "$input"
 }
 
 echo "============================================"
@@ -38,7 +50,7 @@ prompt "Database Host" "localhost" DB_HOST
 prompt "Database Port" "5432" DB_PORT
 prompt "Database Name" "ledger" DB_NAME
 prompt "Database User" "ledger" DB_USER
-prompt "Database Password" "ledger" DB_PASSWORD
+prompt_secret "Database Password" "ledger" DB_PASSWORD
 
 POSTGRES_URI="postgresql://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME?sslmode=disable"
 
