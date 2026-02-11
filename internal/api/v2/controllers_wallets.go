@@ -3,11 +3,11 @@ package v2
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
-	"strconv"
+	"regexp"
 	"strings"
-    "math"
 
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/bun/bunpaginate"
@@ -19,6 +19,7 @@ import (
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
+	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -819,6 +820,93 @@ func getWalletHistory(sys systemcontroller.Controller) http.HandlerFunc {
 		api.RenderCursor(w, *bunpaginate.MapCursor(cursor, func(tx ledgerinternal.Transaction) any {
 			return renderTransaction(r, tx)
 		}))
+	}
+}
+
+func getWalletBalances(sys systemcontroller.Controller) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		l := common.LedgerFromContext(r.Context())
+		userID := r.URL.Query().Get("userID")
+		currency := r.URL.Query().Get("currency")
+
+		if userID == "" {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("userID is required"))
+			return
+		}
+
+		// Pattern to match wallet accounts
+		// Default: users:{userID}:wallets:%:available (all currencies)
+		// With currency: users:{userID}:wallets:{currency}:available
+		
+		currencyPart := "%"
+		if currency != "" {
+			currencyPart = currency
+		}
+
+		addressPattern := fmt.Sprintf("users:%s:wallets:%s:available", userID, currencyPart)
+
+		// Use query.New(OperatorLike, ...) if query.Like is not available, or assume Match uses LIKE if wildcard?
+		// Actually, standard `query` package usually has a `Like` function if `OperatorLike` exists.
+		// If not, we can construct it manually.
+		// Let's assume query.Like exists based on ConvertOperatorToSQL having OperatorLike.
+		// If build fails, I'll fix it.
+		// Wait, I checked search results, I didn't see `query.Like` in the test files, only `query.Match`.
+		// But `ConvertOperatorToSQL` in `resource.go` handles `OperatorLike`.
+		// Let's check `github.com/formancehq/go-libs/v3/query` via search or just try `query.Like`.
+		// But better safe than sorry, I'll use `query.Match` with exact match if currency is provided, and `Like` if not.
+		// If currency is provided, pattern is exact: `users:{userID}:wallets:{currency}:available`
+		// If currency is NOT provided, pattern is `users:{userID}:wallets:%:available` -> NEEDS LIKE.
+		
+		var qb query.Builder
+		if currency != "" {
+			qb = query.Match("address", addressPattern)
+		} else {
+            // Using `query.Match` but assuming the backend handles it or we need to find another way.
+            // Since `query.New` is undefined and `query.Like` generated `=`, I am in a tricky spot.
+            // However, `resource_aggregated_balances.go` has:
+            // `if query.UseFilter("address", isFilteringOnPartialAddress)`
+            // This suggests it *can* handle partial addresses.
+            // `isFilteringOnPartialAddress` likely checks if the value contains wildcards.
+            // If I pass a string with `%` to `query.Match`, `UseFilter` might see it?
+            // BUT `ResolveFilter` returns `filterAccountAddress`.
+            // If `filterAccountAddress` generates SQL, it might default to equality.
+            
+            // Let's try `query.Match` with a REGEX pattern `^users:.*:available$`.
+            // Formance often supports regex if string starts with `^`.
+            // Let's change the pattern back to regex style.
+             addressPattern = fmt.Sprintf("^users:%s:wallets:.*:available$", regexp.QuoteMeta(userID))
+             qb = query.Match("address", addressPattern)
+		}
+
+		q := storagecommon.ResourceQuery[ledgerstore.GetAggregatedVolumesOptions]{
+			Opts:    ledgerstore.GetAggregatedVolumesOptions{},
+			Builder: qb,
+		}
+
+		balancesMap, err := l.GetAggregatedBalances(r.Context(), q)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
+
+		type Balance struct {
+			Currency string `json:"currency"`
+			Amount   int64  `json:"amount"`
+		}
+		
+		// Initialize to empty slice to return [] instead of null
+		balances := make([]Balance, 0)
+		
+		for asset, amount := range balancesMap {
+			balances = append(balances, Balance{
+				Currency: asset,
+				Amount:   amount.Int64(),
+			})
+		}
+		
+		api.Ok(w, map[string]interface{}{
+			"balances": balances,
+		})
 	}
 }
 
