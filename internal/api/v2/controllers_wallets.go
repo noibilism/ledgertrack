@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/formancehq/go-libs/v3/api"
@@ -222,7 +222,35 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
-		api.Created(w, tx)
+		// Calculate balances
+		var balanceBefore, balanceAfter int64
+		assetName := fmt.Sprintf("%s/2", currency)
+		
+		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
+		
+		if vol, ok := preCommitVolumes[accountUser]; ok {
+			if v, ok := vol[assetName]; ok {
+				bal := new(big.Int).Sub(v.Input, v.Output)
+				balanceBefore = bal.Int64()
+			}
+		}
+		if vol, ok := tx.Transaction.PostCommitVolumes[accountUser]; ok {
+			if v, ok := vol[assetName]; ok {
+				bal := new(big.Int).Sub(v.Input, v.Output)
+				balanceAfter = bal.Int64()
+			}
+		}
+
+		fmt.Printf("DEBUG: creditWallet success, txid=%d, bal_before=%d, bal_after=%d\n", tx.Transaction.ID, balanceBefore, balanceAfter)
+
+		api.Created(w, map[string]interface{}{
+			"txid":           tx.Transaction.ID,
+			"timestamp":      tx.Transaction.Timestamp,
+			"postings":       tx.Transaction.Postings,
+			"metadata":       tx.Transaction.Metadata,
+			"balance_before": balanceBefore,
+			"balance_after":  balanceAfter,
+		})
 	}
 }
 
@@ -319,7 +347,10 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 
 		_, tx, _, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "DEBUG ERROR: %v\n", err)
+			if strings.Contains(strings.ToLower(err.Error()), "insufficient fund") {
+				api.WriteErrorResponse(w, http.StatusPaymentRequired, common.ErrInsufficientFund, err)
+				return
+			}
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
 				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
 				return
@@ -328,22 +359,32 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
-		// 2. Channel & Revenue Logic
+		// Calculate balances
+		var balanceBefore, balanceAfter int64
+		assetName := fmt.Sprintf("%s/2", currency)
+		
+		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
+		
+		if vol, ok := preCommitVolumes[accountUser]; ok {
+			if v, ok := vol[assetName]; ok {
+				bal := new(big.Int).Sub(v.Input, v.Output)
+				balanceBefore = bal.Int64()
+			}
+		}
+		if vol, ok := tx.Transaction.PostCommitVolumes[accountUser]; ok {
+			if v, ok := vol[assetName]; ok {
+				bal := new(big.Int).Sub(v.Input, v.Output)
+				balanceAfter = bal.Int64()
+			}
+		}
+
+		// 2. Handle Multi-Ledger (Channel & Revenue) if applicable
 		var warningMsg string
 		if req.ChannelID != "" {
 			// Process Channel Debit
 			channelLedgerName := fmt.Sprintf("channels-%s", currency)
 			cl, err := sys.GetLedgerController(r.Context(), channelLedgerName)
 			if err != nil {
-				// Failed to get channel ledger. Log error but don't fail main tx (already committed).
-				// In strict ACID, this is bad. Here we return error but partial success.
-				// Since we can't revert the wallet tx easily without more logic, we proceed.
-				// Ideally we should return 500 or 207 Multi-Status.
-				// For now, fail request (client should retry/investigate).
-				// But wait, wallet tx IS committed.
-				// Let's assume best effort and try to return success with error in metadata?
-				// Or just return 500.
-				// Prompt said: "System Error (Partial Failure) -> Response 500".
 				common.HandleCommonWriteErrors(w, r, err)
 				return
 			}
@@ -433,27 +474,26 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
-		// Update Metadata in Response (we can't easily update the Tx object itself without saving metadata back to ledger)
-		// But the user wants the RESPONSE to contain this metadata.
-		// So we construct the response manually.
-
-		response := map[string]interface{}{
-			"data": map[string]interface{}{
-				"txid":      tx.Transaction.ID,
-				"timestamp": tx.Transaction.Timestamp,
-				"postings":  tx.Transaction.Postings,
-				"metadata":  respMetadata,
-			},
-		}
-
+		// Update Metadata in Response
 		// Merge original metadata
 		for k, v := range tx.Transaction.Metadata {
 			respMetadata[k] = v
 		}
 
+		response := map[string]interface{}{
+			"txid":           tx.Transaction.ID,
+			"timestamp":      tx.Transaction.Timestamp,
+			"postings":       tx.Transaction.Postings,
+			"metadata":       respMetadata,
+			"balance_before": balanceBefore,
+			"balance_after":  balanceAfter,
+		}
+
 		if warningMsg != "" {
 			response["warning"] = warningMsg
 		}
+
+		fmt.Printf("DEBUG: debitWallet success, txid=%d, bal_before=%d, bal_after=%d\n", tx.Transaction.ID, balanceBefore, balanceAfter)
 
 		api.Created(w, response)
 	}
@@ -532,7 +572,35 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
-		api.Created(w, tx)
+		// Calculate balances
+		var balanceBefore, balanceAfter int64
+		assetName := fmt.Sprintf("%s/2", currency)
+		
+		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
+		
+		if vol, ok := preCommitVolumes[accountAvailable]; ok {
+			if v, ok := vol[assetName]; ok {
+				bal := new(big.Int).Sub(v.Input, v.Output)
+				balanceBefore = bal.Int64()
+			}
+		}
+		if vol, ok := tx.Transaction.PostCommitVolumes[accountAvailable]; ok {
+			if v, ok := vol[assetName]; ok {
+				bal := new(big.Int).Sub(v.Input, v.Output)
+				balanceAfter = bal.Int64()
+			}
+		}
+
+		fmt.Printf("DEBUG: lienWallet success, txid=%d, bal_before=%d, bal_after=%d\n", tx.Transaction.ID, balanceBefore, balanceAfter)
+
+		api.Created(w, map[string]interface{}{
+			"txid":           tx.Transaction.ID,
+			"timestamp":      tx.Transaction.Timestamp,
+			"postings":       tx.Transaction.Postings,
+			"metadata":       tx.Transaction.Metadata,
+			"balance_before": balanceBefore,
+			"balance_after":  balanceAfter,
+		})
 	}
 }
 
@@ -647,6 +715,33 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
+		// Calculate balances
+		var balanceBefore, balanceAfter int64
+		assetName := fmt.Sprintf("%s/2", currency)
+		
+		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
+		
+		// For release, the relevant account depends on Mode.
+		// If PAY, we might care about Lien balance?
+		// If RELEASE, we care about Available (which got credited) or Lien (which got debited)?
+		// User likely wants "Available Balance" of the wallet.
+		// So we always track 'accountAvailable'.
+		
+		accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
+		
+		if vol, ok := preCommitVolumes[accountAvailable]; ok {
+			if v, ok := vol[assetName]; ok {
+				bal := new(big.Int).Sub(v.Input, v.Output)
+				balanceBefore = bal.Int64()
+			}
+		}
+		if vol, ok := tx.Transaction.PostCommitVolumes[accountAvailable]; ok {
+			if v, ok := vol[assetName]; ok {
+				bal := new(big.Int).Sub(v.Input, v.Output)
+				balanceAfter = bal.Int64()
+			}
+		}
+
 		// Channel & Revenue Logic (Only on PAY mode?)
 		// Prompt says "debit the channels ledger for every release".
 		// I'll assume primarily for PAY. If CANCEL, we probably shouldn't charge channel?
@@ -739,12 +834,12 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 		}
 
 		response := map[string]interface{}{
-			"data": map[string]interface{}{
-				"txid":      tx.Transaction.ID,
-				"timestamp": tx.Transaction.Timestamp,
-				"postings":  tx.Transaction.Postings,
-				"metadata":  respMetadata,
-			},
+			"txid":           tx.Transaction.ID,
+			"timestamp":      tx.Transaction.Timestamp,
+			"postings":       tx.Transaction.Postings,
+			"metadata":       respMetadata,
+			"balance_before": balanceBefore,
+			"balance_after":  balanceAfter,
 		}
 		for k, v := range tx.Transaction.Metadata {
 			respMetadata[k] = v
@@ -753,6 +848,8 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 		if warningMsg != "" {
 			response["warning"] = warningMsg
 		}
+
+		fmt.Printf("DEBUG: releaseLien success, txid=%d, bal_before=%d, bal_after=%d\n", tx.Transaction.ID, balanceBefore, balanceAfter)
 
 		api.Created(w, response)
 	}
@@ -805,6 +902,9 @@ func getWalletHistory(sys systemcontroller.Controller) http.HandlerFunc {
 			} else {
 				q.Builder = query.And(q.Builder, qb)
 			}
+			
+			// Ensure volumes are expanded
+			q.Expand = []string{"volumes"}
 		})
 		if err != nil {
 			api.BadRequest(w, common.ErrValidation, err)
@@ -835,73 +935,65 @@ func getWalletBalances(sys systemcontroller.Controller) http.HandlerFunc {
 		}
 
 		// Pattern to match wallet accounts
-		// Default: users:{userID}:wallets:%:available (all currencies)
+		// Default: metadata[user_id]=userID AND metadata[type]=wallet (all currencies)
 		// With currency: users:{userID}:wallets:{currency}:available
 		
-		currencyPart := "%"
-		if currency != "" {
-			currencyPart = currency
-		}
-
-		addressPattern := fmt.Sprintf("users:%s:wallets:%s:available", userID, currencyPart)
-
-		// Use query.New(OperatorLike, ...) if query.Like is not available, or assume Match uses LIKE if wildcard?
-		// Actually, standard `query` package usually has a `Like` function if `OperatorLike` exists.
-		// If not, we can construct it manually.
-		// Let's assume query.Like exists based on ConvertOperatorToSQL having OperatorLike.
-		// If build fails, I'll fix it.
-		// Wait, I checked search results, I didn't see `query.Like` in the test files, only `query.Match`.
-		// But `ConvertOperatorToSQL` in `resource.go` handles `OperatorLike`.
-		// Let's check `github.com/formancehq/go-libs/v3/query` via search or just try `query.Like`.
-		// But better safe than sorry, I'll use `query.Match` with exact match if currency is provided, and `Like` if not.
-		// If currency is provided, pattern is exact: `users:{userID}:wallets:{currency}:available`
-		// If currency is NOT provided, pattern is `users:{userID}:wallets:%:available` -> NEEDS LIKE.
+		// Collect addresses of interest
+		interestedAccounts := []string{}
 		
-		var qb query.Builder
 		if currency != "" {
-			qb = query.Match("address", addressPattern)
+			interestedAccounts = append(interestedAccounts, fmt.Sprintf("users:%s:wallets:%s:available", userID, currency))
 		} else {
-            // Using `query.Match` but assuming the backend handles it or we need to find another way.
-            // Since `query.New` is undefined and `query.Like` generated `=`, I am in a tricky spot.
-            // However, `resource_aggregated_balances.go` has:
-            // `if query.UseFilter("address", isFilteringOnPartialAddress)`
-            // This suggests it *can* handle partial addresses.
-            // `isFilteringOnPartialAddress` likely checks if the value contains wildcards.
-            // If I pass a string with `%` to `query.Match`, `UseFilter` might see it?
-            // BUT `ResolveFilter` returns `filterAccountAddress`.
-            // If `filterAccountAddress` generates SQL, it might default to equality.
-            
-            // Let's try `query.Match` with a REGEX pattern `^users:.*:available$`.
-            // Formance often supports regex if string starts with `^`.
-            // Let's change the pattern back to regex style.
-             addressPattern = fmt.Sprintf("^users:%s:wallets:.*:available$", regexp.QuoteMeta(userID))
-             qb = query.Match("address", addressPattern)
+			// Iterate over all supported currencies
+			for c := range currencyRegistry {
+				interestedAccounts = append(interestedAccounts, fmt.Sprintf("users:%s:wallets:%s:available", userID, c))
+			}
 		}
-
-		q := storagecommon.ResourceQuery[ledgerstore.GetAggregatedVolumesOptions]{
-			Opts:    ledgerstore.GetAggregatedVolumesOptions{},
-			Builder: qb,
-		}
-
-		balancesMap, err := l.GetAggregatedBalances(r.Context(), q)
-		if err != nil {
-			common.HandleCommonErrors(w, r, err)
-			return
-		}
-
+		
 		type Balance struct {
 			Currency string `json:"currency"`
 			Amount   int64  `json:"amount"`
 		}
 		
-		// Initialize to empty slice to return [] instead of null
 		balances := make([]Balance, 0)
-		
-		for asset, amount := range balancesMap {
-			balances = append(balances, Balance{
-				Currency: asset,
-				Amount:   amount.Int64(),
-			})
+
+		if len(interestedAccounts) > 0 {
+			var addressMatches []query.Builder
+			for _, acc := range interestedAccounts {
+				addressMatches = append(addressMatches, query.Match("address", acc))
+			}
+			
+			balancesQ := storagecommon.ResourceQuery[ledgerstore.GetAggregatedVolumesOptions]{
+				Opts:    ledgerstore.GetAggregatedVolumesOptions{},
+				Builder: query.Or(addressMatches...),
+			}
+			
+			balancesMap, err := l.GetAggregatedBalances(r.Context(), balancesQ)
+			if err != nil {
+				common.HandleCommonErrors(w, r, err)
+				return
+			}
+			
+			for asset, amount := range balancesMap {
+				// Strip precision suffix (e.g. USD/2 -> USD)
+				assetName, _, _ := strings.Cut(asset, "/")
+				
+				var found bool
+				for i := range balances {
+					if balances[i].Currency == assetName {
+						balances[i].Amount += amount.Int64()
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					balances = append(balances, Balance{
+						Currency: assetName,
+						Amount:   amount.Int64(),
+					})
+				}
+			}
 		}
 		
 		api.Ok(w, map[string]interface{}{
