@@ -241,8 +241,6 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
-		fmt.Printf("DEBUG: creditWallet success, txid=%d, bal_before=%d, bal_after=%d\n", tx.Transaction.ID, balanceBefore, balanceAfter)
-
 		api.Created(w, map[string]interface{}{
 			"txid":           tx.Transaction.ID,
 			"timestamp":      tx.Transaction.Timestamp,
@@ -493,8 +491,6 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			response["warning"] = warningMsg
 		}
 
-		fmt.Printf("DEBUG: debitWallet success, txid=%d, bal_before=%d, bal_after=%d\n", tx.Transaction.ID, balanceBefore, balanceAfter)
-
 		api.Created(w, response)
 	}
 }
@@ -590,8 +586,6 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 				balanceAfter = bal.Int64()
 			}
 		}
-
-		fmt.Printf("DEBUG: lienWallet success, txid=%d, bal_before=%d, bal_after=%d\n", tx.Transaction.ID, balanceBefore, balanceAfter)
 
 		api.Created(w, map[string]interface{}{
 			"txid":           tx.Transaction.ID,
@@ -848,8 +842,6 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 		if warningMsg != "" {
 			response["warning"] = warningMsg
 		}
-
-		fmt.Printf("DEBUG: releaseLien success, txid=%d, bal_before=%d, bal_after=%d\n", tx.Transaction.ID, balanceBefore, balanceAfter)
 
 		api.Created(w, response)
 	}
