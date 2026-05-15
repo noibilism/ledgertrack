@@ -1431,6 +1431,888 @@ paths:
       security:
         - Authorization:
             - ledger:read
+  /v2/{ledger}/wallets:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a new wallet
+      operationId: v2CreateWallet
+      x-speakeasy-name-override: CreateWallet
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledger001
+        - name: Idempotency-Key
+          in: header
+          description: Use an idempotency key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreateWalletRequest"
+      responses:
+        "201":
+          description: Wallet created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2WalletResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/currencies:
+    get:
+      tags:
+        - ledger.v2
+      summary: List configured currencies
+      description: Returns the database-backed wallet currency registry loaded from `_system.currencies`.
+      operationId: v2ListCurrencies
+      x-speakeasy-name-override: ListCurrencies
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledger001
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CurrenciesResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/clients/{clientID}/accounts:
+    get:
+      tags:
+        - ledger.v2
+      summary: List accounts held by a client
+      description: Returns the CBA accounts owned by a client. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListClientAccounts
+      x-speakeasy-name-override: ListClientAccounts
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: clientID
+          in: path
+          description: CBA client ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CBAAccountListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/clients/{clientID}/portfolio:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get client portfolio report
+      description: Returns the standard CBA portfolio view for a client. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetClientPortfolioReport
+      x-speakeasy-name-override: GetClientPortfolioReport
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: clientID
+          in: path
+          description: CBA client ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CBAClientPortfolioReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/accounts/{address}/statement:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get account statement report
+      description: Returns the standard CBA account statement report for a single account. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetAccountStatementReport
+      x-speakeasy-name-override: GetAccountStatementReport
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: address
+          in: path
+          description: CBA account ID.
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: startTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CBAAccountStatementReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/transactions/daily:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get daily transaction summary report
+      description: Returns the standard CBA daily transaction summary for all accounts in scope. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetDailyTransactionSummaryReport
+      x-speakeasy-name-override: GetDailyTransactionSummaryReport
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: date
+          in: query
+          required: true
+          description: Report date in `YYYY-MM-DD` format.
+          schema:
+            type: string
+            format: date
+        - name: client_id
+          in: query
+          required: false
+          description: Restrict the report to a client.
+          schema:
+            type: string
+            format: uuid
+        - name: account_id
+          in: query
+          required: false
+          description: Restrict the report to a single account.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CBADailyTransactionSummaryReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/interest-fees:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get interest and fee report
+      description: Returns the standard CBA interest and fee summary for accounts in scope. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetInterestFeeReport
+      x-speakeasy-name-override: GetInterestFeeReport
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: client_id
+          in: query
+          required: false
+          description: Restrict the report to a client.
+          schema:
+            type: string
+            format: uuid
+        - name: account_id
+          in: query
+          required: false
+          description: Restrict the report to a single account.
+          schema:
+            type: string
+            format: uuid
+        - name: startTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CBAInterestFeeReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/finance/trial-balance:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get trial balance report
+      description: Returns a finance trial balance snapshot across the LedgerTrack CBA ledgers for a single currency. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetFinanceTrialBalanceReport
+      x-speakeasy-name-override: GetFinanceTrialBalanceReport
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: currency
+          in: query
+          required: true
+          schema:
+            type: string
+            example: USD
+        - name: asOf
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: fee_income_account
+          in: query
+          required: false
+          schema:
+            type: string
+            example: revenue:fee_income
+        - name: interest_expense_account
+          in: query
+          required: false
+          schema:
+            type: string
+            example: revenue:interest_expense
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FinanceTrialBalanceReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/finance/balance-sheet:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get balance sheet report
+      description: Returns a simplified balance sheet snapshot across the LedgerTrack CBA ledgers for a single currency. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetFinanceBalanceSheetReport
+      x-speakeasy-name-override: GetFinanceBalanceSheetReport
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: currency
+          in: query
+          required: true
+          schema:
+            type: string
+            example: USD
+        - name: asOf
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: fee_income_account
+          in: query
+          required: false
+          schema:
+            type: string
+            example: revenue:fee_income
+        - name: interest_expense_account
+          in: query
+          required: false
+          schema:
+            type: string
+            example: revenue:interest_expense
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FinanceBalanceSheetReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/finance/pnl:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get profit and loss report
+      description: Returns a simplified profit and loss report for a single currency. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetFinanceProfitAndLossReport
+      x-speakeasy-name-override: GetFinanceProfitAndLossReport
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: currency
+          in: query
+          required: true
+          schema:
+            type: string
+            example: USD
+        - name: startTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: fee_income_account
+          in: query
+          required: false
+          schema:
+            type: string
+            example: revenue:fee_income
+        - name: interest_expense_account
+          in: query
+          required: false
+          schema:
+            type: string
+            example: revenue:interest_expense
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FinanceProfitAndLossReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/finance/cash-flow:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get cash flow report
+      description: Returns a simplified cash flow report for a single currency. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetFinanceCashFlowReport
+      x-speakeasy-name-override: GetFinanceCashFlowReport
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledgertrack
+        - name: currency
+          in: query
+          required: true
+          schema:
+            type: string
+            example: USD
+        - name: startTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: fee_income_account
+          in: query
+          required: false
+          schema:
+            type: string
+            example: revenue:fee_income
+        - name: interest_expense_account
+          in: query
+          required: false
+          schema:
+            type: string
+            example: revenue:interest_expense
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FinanceCashFlowReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/wallets/{walletID}/credit:
+    post:
+      tags:
+        - ledger.v2
+      summary: Credit a wallet
+      operationId: v2CreditWallet
+      x-speakeasy-name-override: CreditWallet
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledger001
+        - name: walletID
+          in: path
+          description: Wallet ID
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          description: Use an idempotency key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreditWalletRequest"
+      responses:
+        "201":
+          description: Wallet credited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CreateTransactionResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/wallets/{walletID}/debit:
+    post:
+      tags:
+        - ledger.v2
+      summary: Debit a wallet
+      operationId: v2DebitWallet
+      x-speakeasy-name-override: DebitWallet
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledger001
+        - name: walletID
+          in: path
+          description: Wallet ID
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          description: Use an idempotency key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2DebitWalletRequest"
+      responses:
+        "201":
+          description: Wallet debited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CreateTransactionResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/wallets/{walletID}/lien:
+    post:
+      tags:
+        - ledger.v2
+      summary: Lien a wallet
+      operationId: v2LienWallet
+      x-speakeasy-name-override: LienWallet
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledger001
+        - name: walletID
+          in: path
+          description: Wallet ID
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          description: Use an idempotency key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2LienWalletRequest"
+      responses:
+        "201":
+          description: Wallet liened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CreateTransactionResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/wallets/{walletID}/lien/release:
+    post:
+      tags:
+        - ledger.v2
+      summary: Release a lien
+      operationId: v2ReleaseLien
+      x-speakeasy-name-override: ReleaseLien
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledger001
+        - name: walletID
+          in: path
+          description: Wallet ID
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          description: Use an idempotency key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2ReleaseLienRequest"
+      responses:
+        "201":
+          description: Lien released
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2CreateTransactionResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/wallets/{walletID}/statement:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get wallet statement
+      operationId: v2GetWalletStatement
+      x-speakeasy-name-override: GetWalletStatement
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledger001
+        - name: walletID
+          in: path
+          description: Wallet ID
+          required: true
+          schema:
+            type: string
+        - name: startTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: reference
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          description: |
+            The maximum number of results to return per page.
+          example: 100
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 1000
+        - name: cursor
+          in: query
+          description: >
+            Parameter used in pagination requests.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TransactionsCursorResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/wallets/{walletID}/history:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get wallet history
+      operationId: v2GetWalletHistory
+      x-speakeasy-name-override: GetWalletHistory
+      parameters:
+        - name: ledger
+          in: path
+          description: Name of the ledger.
+          required: true
+          schema:
+            type: string
+            example: ledger001
+        - name: walletID
+          in: path
+          description: Wallet ID
+          required: true
+          schema:
+            type: string
+        - name: startTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: reference
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          description: |
+            The maximum number of results to return per page.
+          example: 100
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 1000
+        - name: cursor
+          in: query
+          description: >
+            Parameter used in pagination requests.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TransactionsCursorResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
   /v2/{ledger}/logs:
     get:
       tags:
@@ -1910,6 +2792,441 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/V2ErrorResponse"
+  /v2/{ledger}/channels/{channelID}/fees/config:
+    parameters:
+      - name: ledger
+        in: path
+        description: Name of the ledger.
+        required: true
+        schema:
+          type: string
+          example: ledger001
+      - name: channelID
+        in: path
+        description: Channel identifier.
+        required: true
+        schema:
+          type: string
+    get:
+      tags:
+        - ledger.v2
+      summary: Get channel fee configuration
+      operationId: v2GetChannelFeeConfig
+      x-speakeasy-name-override: GetChannelFeeConfig
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+                required:
+                  - data
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+    put:
+      tags:
+        - ledger.v2
+      summary: Upsert channel fee configuration
+      operationId: v2UpsertChannelFeeConfig
+      x-speakeasy-name-override: UpsertChannelFeeConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currency
+                - user_fee
+                - processing_fee
+              properties:
+                currency:
+                  type: string
+                enabled:
+                  type: boolean
+                actor:
+                  type: string
+                user_fee:
+                  type: object
+                  additionalProperties: true
+                processing_fee:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: true
+                required:
+                  - data
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/channels/{channelID}/fees/audits:
+    parameters:
+      - name: ledger
+        in: path
+        description: Name of the ledger.
+        required: true
+        schema:
+          type: string
+          example: ledger001
+      - name: channelID
+        in: path
+        description: Channel identifier.
+        required: true
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+    get:
+      tags:
+        - ledger.v2
+      summary: List channel fee configuration audit entries
+      operationId: v2ListChannelFeeConfigAudits
+      x-speakeasy-name-override: ListChannelFeeConfigAudits
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      audits:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+                    required:
+                      - audits
+                required:
+                  - data
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/channels/fees/configs:
+    parameters:
+      - name: ledger
+        in: path
+        description: Name of the ledger.
+        required: true
+        schema:
+          type: string
+          example: ledger001
+      - name: currency
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: enabled
+        in: query
+        required: false
+        schema:
+          type: boolean
+    get:
+      tags:
+        - ledger.v2
+      summary: List channel fee configurations
+      operationId: v2ListChannelFeeConfigs
+      x-speakeasy-name-override: ListChannelFeeConfigs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      configs:
+                        type: array
+                        items:
+                          type: object
+                          additionalProperties: true
+                    required:
+                      - configs
+                required:
+                  - data
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/channels/revenue:
+    parameters:
+      - name: ledger
+        in: path
+        description: Name of the ledger.
+        required: true
+        schema:
+          type: string
+          example: ledger001
+    post:
+      tags:
+        - ledger.v2
+      summary: Channel revenue summary report
+      operationId: v2GetChannelRevenueSummary
+      x-speakeasy-name-override: GetChannelRevenueSummary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currency
+              properties:
+                currency:
+                  type: string
+                channel_id:
+                  type: string
+                start_time:
+                  type: string
+                  format: date-time
+                end_time:
+                  type: string
+                  format: date-time
+                limit:
+                  type: integer
+                  format: int64
+                offset:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/channels/revenue/timeseries:
+    parameters:
+      - name: ledger
+        in: path
+        description: Name of the ledger.
+        required: true
+        schema:
+          type: string
+          example: ledger001
+    post:
+      tags:
+        - ledger.v2
+      summary: Channel revenue timeseries report
+      operationId: v2GetChannelRevenueTimeseries
+      x-speakeasy-name-override: GetChannelRevenueTimeseries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currency
+                - start_time
+                - end_time
+              properties:
+                currency:
+                  type: string
+                channel_id:
+                  type: string
+                interval:
+                  type: string
+                  enum: [day, week, month]
+                start_time:
+                  type: string
+                  format: date-time
+                end_time:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/channels/revenue/export:
+    parameters:
+      - name: ledger
+        in: path
+        description: Name of the ledger.
+        required: true
+        schema:
+          type: string
+          example: ledger001
+    post:
+      tags:
+        - ledger.v2
+      summary: Export channel revenue report
+      operationId: v2ExportChannelRevenueReport
+      x-speakeasy-name-override: ExportChannelRevenueReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currency
+              properties:
+                currency:
+                  type: string
+                format:
+                  type: string
+                  enum: [csv, pdf]
+                report:
+                  type: string
+                  enum: [summary, timeseries, records]
+                channel_id:
+                  type: string
+                start_time:
+                  type: string
+                  format: date-time
+                end_time:
+                  type: string
+                  format: date-time
+                interval:
+                  type: string
+                  enum: [day, week, month]
+                limit:
+                  type: integer
+                  format: int64
+                offset:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            text/csv:
+              schema:
+                type: string
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reports/channels/dashboard:
+    parameters:
+      - name: ledger
+        in: path
+        description: Name of the ledger.
+        required: true
+        schema:
+          type: string
+          example: ledger001
+    post:
+      tags:
+        - ledger.v2
+      summary: Channel revenue dashboard metrics
+      operationId: v2GetChannelRevenueDashboard
+      x-speakeasy-name-override: GetChannelRevenueDashboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currency
+              properties:
+                currency:
+                  type: string
+                top_n:
+                  type: integer
+                  format: int64
+                months:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
 components:
   securitySchemes:
     Authorization:
@@ -2290,6 +3607,760 @@ components:
       example:
         USD: 100
         EUR: 12
+    V2CurrenciesResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - currencies
+          properties:
+            currencies:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2Currency"
+    V2Currency:
+      type: object
+      required:
+        - code
+        - precision
+        - enabled
+      properties:
+        code:
+          type: string
+          example: USD
+        precision:
+          type: integer
+          example: 2
+        enabled:
+          type: boolean
+          example: true
+    V2CBAAddress:
+      type: object
+      properties:
+        line1:
+          type: string
+        line2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        country:
+          type: string
+        postal:
+          type: string
+    V2CBAClientContact:
+      type: object
+      properties:
+        email:
+          type: string
+        phone:
+          type: string
+        address:
+          $ref: "#/components/schemas/V2CBAAddress"
+    V2CBAIndividualData:
+      type: object
+      properties:
+        first_name:
+          type: string
+        middle_name:
+          type: string
+        last_name:
+          type: string
+        date_of_birth:
+          type: string
+        gender:
+          type: string
+        national_id_type:
+          type: string
+        national_id_number:
+          type: string
+        nationality:
+          type: string
+        occupation:
+          type: string
+        employer:
+          type: string
+    V2CBABeneficialOwner:
+      type: object
+      properties:
+        name:
+          type: string
+        ownership_pct:
+          type: string
+        national_id:
+          type: string
+    V2CBAAuthorizedSignatory:
+      type: object
+      properties:
+        client_id:
+          type: string
+        role:
+          type: string
+        signing_limit:
+          type: string
+    V2CBACorporateData:
+      type: object
+      properties:
+        legal_name:
+          type: string
+        trading_name:
+          type: string
+        registration_number:
+          type: string
+        tax_id:
+          type: string
+        incorporation_date:
+          type: string
+        incorporation_country:
+          type: string
+        industry:
+          type: string
+        beneficial_owners:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2CBABeneficialOwner"
+        authorized_signatories:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2CBAAuthorizedSignatory"
+    V2CBAClient:
+      type: object
+      required:
+        - id
+        - client_number
+        - type
+        - status
+        - kyc_level
+        - kyc_status
+        - contact
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_number:
+          type: string
+          example: CL-2026-000123
+        type:
+          type: string
+          example: individual
+        status:
+          type: string
+          example: active
+        kyc_level:
+          type: integer
+          example: 1
+        kyc_status:
+          type: string
+          example: verified
+        kyc_data:
+          type: object
+          additionalProperties: true
+        contact:
+          $ref: "#/components/schemas/V2CBAClientContact"
+        individual_data:
+          $ref: "#/components/schemas/V2CBAIndividualData"
+        corporate_data:
+          $ref: "#/components/schemas/V2CBACorporateData"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2CBAAccount:
+      type: object
+      required:
+        - id
+        - account_number
+        - client_id
+        - product_id
+        - currency
+        - status
+        - wallet_id
+        - freeze_debits
+        - opened_at
+        - interest_accrued
+      properties:
+        id:
+          type: string
+          format: uuid
+        account_number:
+          type: string
+          example: "0123456789"
+        client_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+          example: USD
+        status:
+          type: string
+          example: active
+        wallet_id:
+          type: string
+          example: client-CL-2026-000123-SAV-USD-001
+        freeze_debits:
+          type: boolean
+          example: false
+        opened_at:
+          type: string
+          format: date-time
+        activated_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+        last_activity_at:
+          type: string
+          format: date-time
+        interest_accrued:
+          type: string
+          example: "2.50"
+        metadata:
+          type: object
+          additionalProperties: true
+    V2CBAAccountListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - accounts
+          properties:
+            accounts:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2CBAAccount"
+    V2CBAClientPortfolioAccount:
+      allOf:
+        - $ref: "#/components/schemas/V2CBAAccount"
+        - type: object
+          required:
+            - available_balance
+          properties:
+            available_balance:
+              type: integer
+              format: int64
+              example: 10000
+    V2CBAClientPortfolioCurrencySummary:
+      type: object
+      required:
+        - currency
+        - account_count
+        - active_count
+        - dormant_count
+        - suspended_count
+        - pending_count
+        - closed_count
+        - total_available_balance
+        - total_interest_accrued
+      properties:
+        currency:
+          type: string
+          example: USD
+        account_count:
+          type: integer
+        active_count:
+          type: integer
+        dormant_count:
+          type: integer
+        suspended_count:
+          type: integer
+        pending_count:
+          type: integer
+        closed_count:
+          type: integer
+        total_available_balance:
+          type: integer
+          format: int64
+        total_interest_accrued:
+          type: string
+          example: "2.50"
+    V2CBAClientPortfolioReport:
+      type: object
+      required:
+        - client
+        - accounts
+        - total_accounts
+        - totals_by_currency
+      properties:
+        client:
+          $ref: "#/components/schemas/V2CBAClient"
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2CBAClientPortfolioAccount"
+        total_accounts:
+          type: integer
+        totals_by_currency:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2CBAClientPortfolioCurrencySummary"
+    V2CBAClientPortfolioReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2CBAClientPortfolioReport"
+    V2CBAStatementTransaction:
+      type: object
+      required:
+        - txid
+        - timestamp
+        - postings
+        - metadata
+        - balance_before
+        - balance_after
+      properties:
+        txid:
+          type: integer
+          format: int64
+        timestamp:
+          type: string
+          format: date-time
+        postings:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2Posting"
+        metadata:
+          $ref: "#/components/schemas/V2Metadata"
+        balance_before:
+          type: integer
+          format: int64
+        balance_after:
+          type: integer
+          format: int64
+    V2CBAAccountStatementReport:
+      type: object
+      required:
+        - account
+        - opening_balance
+        - closing_balance
+        - total_credits
+        - total_debits
+        - transaction_count
+        - transactions
+      properties:
+        account:
+          $ref: "#/components/schemas/V2CBAAccount"
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        opening_balance:
+          type: integer
+          format: int64
+        closing_balance:
+          type: integer
+          format: int64
+        total_credits:
+          type: integer
+          format: int64
+        total_debits:
+          type: integer
+          format: int64
+        transaction_count:
+          type: integer
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2CBAStatementTransaction"
+    V2CBAAccountStatementReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2CBAAccountStatementReport"
+    V2CBADailyTransactionAccountSummary:
+      type: object
+      required:
+        - account_id
+        - account_number
+        - currency
+        - transaction_count
+        - debit_count
+        - credit_count
+        - debit_amount
+        - credit_amount
+        - net_amount
+        - operation_counts
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        account_number:
+          type: string
+        currency:
+          type: string
+        transaction_count:
+          type: integer
+          format: int64
+        debit_count:
+          type: integer
+          format: int64
+        credit_count:
+          type: integer
+          format: int64
+        debit_amount:
+          type: integer
+          format: int64
+        credit_amount:
+          type: integer
+          format: int64
+        net_amount:
+          type: integer
+          format: int64
+        operation_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+    V2CBADailyTransactionSummaryReport:
+      type: object
+      required:
+        - report_date
+        - transaction_count
+        - debit_count
+        - credit_count
+        - debit_amount
+        - credit_amount
+        - net_amount
+        - operation_counts
+        - accounts
+      properties:
+        report_date:
+          type: string
+          format: date
+        transaction_count:
+          type: integer
+          format: int64
+        debit_count:
+          type: integer
+          format: int64
+        credit_count:
+          type: integer
+          format: int64
+        debit_amount:
+          type: integer
+          format: int64
+        credit_amount:
+          type: integer
+          format: int64
+        net_amount:
+          type: integer
+          format: int64
+        operation_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2CBADailyTransactionAccountSummary"
+    V2CBADailyTransactionSummaryReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2CBADailyTransactionSummaryReport"
+    V2CBAInterestFeeAccountSummary:
+      type: object
+      required:
+        - account_id
+        - account_number
+        - currency
+        - interest_accrued
+        - interest_posted_count
+        - interest_pending_count
+        - fee_total
+        - fee_posted_amount
+        - fee_pending_recovery_amount
+        - fee_posted_count
+        - fee_pending_recovery_count
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        account_number:
+          type: string
+        currency:
+          type: string
+        interest_accrued:
+          type: string
+          example: "2.50"
+        interest_posted_count:
+          type: integer
+          format: int64
+        interest_pending_count:
+          type: integer
+          format: int64
+        fee_total:
+          type: string
+          example: "10.00"
+        fee_posted_amount:
+          type: string
+          example: "7.50"
+        fee_pending_recovery_amount:
+          type: string
+          example: "2.50"
+        fee_posted_count:
+          type: integer
+          format: int64
+        fee_pending_recovery_count:
+          type: integer
+          format: int64
+    V2CBAInterestFeeTotals:
+      type: object
+      required:
+        - interest_accrued
+        - interest_posted_count
+        - interest_pending_count
+        - fee_total
+        - fee_posted_amount
+        - fee_pending_recovery_amount
+        - fee_posted_count
+        - fee_pending_recovery_count
+      properties:
+        interest_accrued:
+          type: string
+          example: "2.50"
+        interest_posted_count:
+          type: integer
+          format: int64
+        interest_pending_count:
+          type: integer
+          format: int64
+        fee_total:
+          type: string
+          example: "10.00"
+        fee_posted_amount:
+          type: string
+          example: "7.50"
+        fee_pending_recovery_amount:
+          type: string
+          example: "2.50"
+        fee_posted_count:
+          type: integer
+          format: int64
+        fee_pending_recovery_count:
+          type: integer
+          format: int64
+    V2CBAInterestFeeReport:
+      type: object
+      required:
+        - accounts
+        - totals
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2CBAInterestFeeAccountSummary"
+        totals:
+          $ref: "#/components/schemas/V2CBAInterestFeeTotals"
+    V2CBAInterestFeeReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2CBAInterestFeeReport"
+    V2FinanceTrialBalanceLine:
+      type: object
+      required:
+        - ledger
+        - account
+        - balance
+        - currency
+      properties:
+        ledger:
+          type: string
+        account:
+          type: string
+        balance:
+          type: integer
+          format: int64
+        currency:
+          type: string
+    V2FinanceTrialBalanceReport:
+      type: object
+      required:
+        - currency
+        - lines
+      properties:
+        currency:
+          type: string
+        as_of:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FinanceTrialBalanceLine"
+    V2FinanceTrialBalanceReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2FinanceTrialBalanceReport"
+    V2FinanceBalanceSheetLine:
+      type: object
+      required:
+        - name
+        - balance
+        - currency
+      properties:
+        name:
+          type: string
+        balance:
+          type: integer
+          format: int64
+        currency:
+          type: string
+    V2FinanceBalanceSheetReport:
+      type: object
+      required:
+        - currency
+        - assets
+        - liabilities
+        - net_position
+      properties:
+        currency:
+          type: string
+        as_of:
+          type: string
+          format: date-time
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FinanceBalanceSheetLine"
+        liabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FinanceBalanceSheetLine"
+        net_position:
+          type: integer
+          format: int64
+    V2FinanceBalanceSheetReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2FinanceBalanceSheetReport"
+    V2FinanceProfitAndLossLine:
+      type: object
+      required:
+        - name
+        - amount
+        - currency
+      properties:
+        name:
+          type: string
+        amount:
+          type: integer
+          format: int64
+        currency:
+          type: string
+    V2FinanceProfitAndLossReport:
+      type: object
+      required:
+        - currency
+        - income
+        - expenses
+        - net_profit
+      properties:
+        currency:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        income:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FinanceProfitAndLossLine"
+        expenses:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FinanceProfitAndLossLine"
+        net_profit:
+          type: integer
+          format: int64
+    V2FinanceProfitAndLossReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2FinanceProfitAndLossReport"
+    V2FinanceCashFlowLine:
+      type: object
+      required:
+        - name
+        - opening
+        - closing
+        - net_change
+        - currency
+      properties:
+        name:
+          type: string
+        opening:
+          type: integer
+          format: int64
+        closing:
+          type: integer
+          format: int64
+        net_change:
+          type: integer
+          format: int64
+        currency:
+          type: string
+    V2FinanceCashFlowReport:
+      type: object
+      required:
+        - currency
+        - lines
+      properties:
+        currency:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FinanceCashFlowLine"
+    V2FinanceCashFlowReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2FinanceCashFlowReport"
     V2Posting:
       type: object
       properties:

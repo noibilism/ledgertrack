@@ -11,6 +11,7 @@ import (
 	"github.com/formancehq/go-libs/v3/grpcserver"
 	"github.com/formancehq/go-libs/v3/serverport"
 
+	"github.com/formancehq/ledger/internal/cba/scheduler"
 	"github.com/formancehq/ledger/internal/replication"
 	innergrpc "github.com/formancehq/ledger/internal/replication/grpc"
 	"github.com/formancehq/ledger/internal/storage"
@@ -25,6 +26,7 @@ type ModuleConfig struct {
 	AsyncBlockRunnerConfig    storage.AsyncBlockRunnerConfig
 	ReplicationConfig         replication.WorkerModuleConfig
 	BucketCleanupRunnerConfig storage.BucketCleanupRunnerConfig
+	CBASchedulerConfig        scheduler.ModuleConfig
 }
 
 // NewFXModule constructs an fx.Option that installs the storage async block runner,
@@ -36,6 +38,7 @@ func NewFXModule(cfg ModuleConfig) fx.Option {
 		storage.NewAsyncBlockRunnerModule(cfg.AsyncBlockRunnerConfig),
 		replication.NewWorkerFXModule(cfg.ReplicationConfig),
 		storage.NewBucketCleanupRunnerModule(cfg.BucketCleanupRunnerConfig),
+		scheduler.NewFXModule(cfg.CBASchedulerConfig),
 	)
 }
 

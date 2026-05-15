@@ -42,6 +42,10 @@ func TestMain(m *testing.M) {
 
 func TestMigrations(t *testing.T) {
 
+	if _, err := os.Stat("/var/run/docker.sock"); err != nil {
+		t.Skip()
+	}
+
 	ctx := logging.TestingContext()
 	dockerPool := docker.NewPool(t, logging.Testing())
 

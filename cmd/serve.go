@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,8 +34,11 @@ import (
 	"github.com/formancehq/ledger/internal/api"
 	"github.com/formancehq/ledger/internal/api/common"
 	"github.com/formancehq/ledger/internal/bus"
+	"github.com/formancehq/ledger/internal/cba"
+	"github.com/formancehq/ledger/internal/channels"
 	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/currency"
 	"github.com/formancehq/ledger/internal/replication"
 	"github.com/formancehq/ledger/internal/replication/drivers"
 	"github.com/formancehq/ledger/internal/replication/drivers/alldrivers"
@@ -121,6 +125,9 @@ func NewServeCommand() *cobra.Command {
 					SchemaEnforcementMode: cfg.commonConfig.SchemaEnforcementMode,
 				}),
 				bus.NewFxModule(),
+				currency.NewFXModule(),
+				cba.NewFXModule(),
+				channels.NewFXModule(),
 				ballast.Module(cfg.BallastSizeInBytes),
 				api.Module(api.Config{
 					Version: Version,
@@ -235,49 +242,46 @@ func assembleFinalRouter(
 ) *chi.Mux {
 	wrappedRouter := chi.NewRouter()
 
-	// Request/Response Logger Middleware
-	wrappedRouter.Use(func(handler http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Request Logging
-			var reqBody []byte
-			if r.Body != nil {
-				reqBody, _ = io.ReadAll(r.Body)
-				r.Body = io.NopCloser(bytes.NewBuffer(reqBody))
-			}
-
-			// Open file for appending
-			f, err := os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err == nil {
-				fmt.Fprintf(f, "\n=== Request [%s] ===\n", time.Now().Format(time.RFC3339))
-				fmt.Fprintf(f, "%s %s\n", r.Method, r.URL.String())
-				// fmt.Fprintf(f, "Headers: %v\n", r.Header) // Headers can be noisy
-				if len(reqBody) > 0 {
-					fmt.Fprintf(f, "Body: %s\n", string(reqBody))
+	httpLogEnabled := exportPProf || strings.TrimSpace(os.Getenv("LEDGER_HTTP_LOG")) == "1" || strings.EqualFold(strings.TrimSpace(os.Getenv("LEDGER_HTTP_LOG")), "true")
+	if httpLogEnabled {
+		wrappedRouter.Use(func(handler http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var reqBody []byte
+				if r.Body != nil {
+					reqBody, _ = io.ReadAll(r.Body)
+					r.Body = io.NopCloser(bytes.NewBuffer(reqBody))
 				}
-				f.Close()
-			}
 
-			// Response Recording
-			rec := &responseRecorder{
-				ResponseWriter: w,
-				StatusCode:     http.StatusOK,
-			}
-
-			handler.ServeHTTP(rec, r)
-
-			// Response Logging
-			f, err = os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err == nil {
-				fmt.Fprintf(f, "\n=== Response [%s] ===\n", time.Now().Format(time.RFC3339))
-				fmt.Fprintf(f, "Status: %d\n", rec.StatusCode)
-				if rec.Body.Len() > 0 {
-					fmt.Fprintf(f, "Body: %s\n", rec.Body.String())
+				f, err := os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if err == nil {
+					fmt.Fprintf(f, "\n=== Request [%s] ===\n", time.Now().Format(time.RFC3339))
+					fmt.Fprintf(f, "%s %s\n", r.Method, r.URL.String())
+					if len(reqBody) > 0 {
+						fmt.Fprintf(f, "Body: %s\n", string(reqBody))
+					}
+					f.Close()
 				}
-				fmt.Fprintf(f, "=====================\n")
-				f.Close()
-			}
+
+				rec := &responseRecorder{
+					ResponseWriter: w,
+					StatusCode:     http.StatusOK,
+				}
+
+				handler.ServeHTTP(rec, r)
+
+				f, err = os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if err == nil {
+					fmt.Fprintf(f, "\n=== Response [%s] ===\n", time.Now().Format(time.RFC3339))
+					fmt.Fprintf(f, "Status: %d\n", rec.StatusCode)
+					if rec.Body.Len() > 0 {
+						fmt.Fprintf(f, "Body: %s\n", rec.Body.String())
+					}
+					fmt.Fprintf(f, "=====================\n")
+					f.Close()
+				}
+			})
 		})
-	})
+	}
 
 	wrappedRouter.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

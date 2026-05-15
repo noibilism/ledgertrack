@@ -12,6 +12,8 @@ import (
 
 	"github.com/formancehq/ledger/internal/api/bulking"
 	"github.com/formancehq/ledger/internal/api/common"
+	"github.com/formancehq/ledger/internal/cba/services"
+	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	"github.com/formancehq/ledger/internal/controller/system"
 )
 
@@ -34,6 +36,14 @@ func Module(cfg Config) fx.Option {
 			backend system.Controller,
 			authenticator auth.Authenticator,
 			tracerProvider trace.TracerProvider,
+			productService services.ProductService,
+			clientService services.ClientService,
+			kycService services.KYCService,
+			accountService services.AccountService,
+			reportingService services.ReportingService,
+			financeReportingService services.FinanceReportingService,
+			channelFeeConfigService channelservices.ChannelFeeConfigService,
+			channelRevenueReportingService channelservices.ChannelRevenueReportingService,
 		) chi.Router {
 			return NewRouter(
 				backend,
@@ -48,6 +58,14 @@ func Module(cfg Config) fx.Option {
 				)),
 				WithPaginationConfiguration(cfg.Pagination),
 				WithExporters(cfg.Exporters),
+				WithProductService(productService),
+				WithClientService(clientService),
+				WithKYCService(kycService),
+				WithAccountService(accountService),
+				WithReportingService(reportingService),
+				WithFinanceReportingService(financeReportingService),
+				WithChannelFeeConfigService(channelFeeConfigService),
+				WithChannelRevenueReportingService(channelRevenueReportingService),
 			)
 		}),
 		health.Module(),

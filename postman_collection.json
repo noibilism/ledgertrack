@@ -850,12 +850,629 @@
 					"response": []
 				}
 			]
+		},
+		{
+			"name": "Currencies",
+			"item": [
+				{
+					"name": "List Currencies",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/v2/ledgertrack/currencies",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"v2",
+								"ledgertrack",
+								"currencies"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "CBA",
+			"item": [
+				{
+					"name": "Products",
+					"item": [
+						{
+							"name": "Create Product",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"var jsonData = pm.response.json();",
+											"pm.environment.set(\"productID\", jsonData.data.id);"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"code\": \"SAV-USD-001\",\n    \"name\": \"Personal Savings USD\",\n    \"description\": \"Default savings product\",\n    \"category\": \"savings\",\n    \"currency\": \"USD\",\n    \"rules\": {\n        \"min_opening_balance\": \"0\",\n        \"min_balance\": \"0\",\n        \"allow_debits\": true,\n        \"allow_credits\": true,\n        \"requires_kyc_level\": 1,\n        \"eligible_client_types\": [\"individual\"]\n    }\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/products",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"products"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Activate Product",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/products/{{productID}}/activate",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"products",
+										"{{productID}}",
+										"activate"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "Clients",
+					"item": [
+						{
+							"name": "Create Client",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"var jsonData = pm.response.json();",
+											"pm.environment.set(\"clientID\", jsonData.data.id);"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"type\": \"individual\",\n    \"contact\": {\n        \"email\": \"client@example.com\",\n        \"phone\": \"+15550001111\",\n        \"address\": {\n            \"line1\": \"1 Main St\",\n            \"city\": \"Lagos\",\n            \"state\": \"LA\",\n            \"country\": \"NG\",\n            \"postal\": \"100001\"\n        }\n    },\n    \"individual_data\": {\n        \"first_name\": \"Ada\",\n        \"last_name\": \"Lovelace\",\n        \"national_id_type\": \"passport\",\n        \"national_id_number\": \"P1234567\",\n        \"nationality\": \"NG\"\n    }\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/clients",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"clients"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Submit KYC",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"var jsonData = pm.response.json();",
+											"pm.environment.set(\"kycID\", jsonData.data.id);"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"level\": 1,\n    \"documents\": [\n        {\n            \"type\": \"national_id\",\n            \"reference\": \"doc-123\",\n            \"provider\": \"s3\"\n        }\n    ],\n    \"payload\": {\n        \"national_id_number\": \"P1234567\"\n    }\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/clients/{{clientID}}/kyc",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"clients",
+										"{{clientID}}",
+										"kyc"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Verify KYC",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"verifier\": \"ops-user\",\n    \"expires_at\": \"2030-01-01T00:00:00Z\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/clients/{{clientID}}/kyc/{{kycID}}/verify",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"clients",
+										"{{clientID}}",
+										"kyc",
+										"{{kycID}}",
+										"verify"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Activate Client",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/clients/{{clientID}}/activate",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"clients",
+										"{{clientID}}",
+										"activate"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "List Client Accounts",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/clients/{{clientID}}/accounts",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"clients",
+										"{{clientID}}",
+										"accounts"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "Accounts",
+					"item": [
+						{
+							"name": "Open Account",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"var jsonData = pm.response.json();",
+											"pm.environment.set(\"accountID\", jsonData.data.id);"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"client_id\": \"{{clientID}}\",\n    \"product_id\": \"{{productID}}\",\n    \"opening_deposit\": 10000,\n    \"metadata\": {\n        \"source\": \"postman\"\n    }\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/accounts",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"accounts"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Activate Account",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/accounts/{{accountID}}/activate",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"accounts",
+										"{{accountID}}",
+										"activate"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Account Details",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/accounts/{{accountID}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"accounts",
+										"{{accountID}}"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Account Balance",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/accounts/{{accountID}}/balance",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"accounts",
+										"{{accountID}}",
+										"balance"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "Reports",
+					"item": [
+						{
+							"name": "Get Client Portfolio Report",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/clients/{{clientID}}/portfolio",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"clients",
+										"{{clientID}}",
+										"portfolio"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Account Statement Report",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/accounts/{{accountID}}/statement",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"accounts",
+										"{{accountID}}",
+										"statement"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Daily Transaction Summary Report",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/transactions/daily?date=2026-01-01&client_id={{clientID}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"transactions",
+										"daily"
+									],
+									"query": [
+										{
+											"key": "date",
+											"value": "2026-01-01"
+										},
+										{
+											"key": "client_id",
+											"value": "{{clientID}}"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Interest And Fee Report",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/interest-fees?client_id={{clientID}}&account_id={{accountID}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"interest-fees"
+									],
+									"query": [
+										{
+											"key": "client_id",
+											"value": "{{clientID}}"
+										},
+										{
+											"key": "account_id",
+											"value": "{{accountID}}"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Finance Trial Balance",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/finance/trial-balance?currency=USD",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"finance",
+										"trial-balance"
+									],
+									"query": [
+										{
+											"key": "currency",
+											"value": "USD"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Finance Balance Sheet",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/finance/balance-sheet?currency=USD",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"finance",
+										"balance-sheet"
+									],
+									"query": [
+										{
+											"key": "currency",
+											"value": "USD"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Finance P&L",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/finance/pnl?currency=USD&startTime=2026-01-01T00:00:00Z&endTime=2026-01-02T00:00:00Z",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"finance",
+										"pnl"
+									],
+									"query": [
+										{
+											"key": "currency",
+											"value": "USD"
+										},
+										{
+											"key": "startTime",
+											"value": "2026-01-01T00:00:00Z"
+										},
+										{
+											"key": "endTime",
+											"value": "2026-01-02T00:00:00Z"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get Finance Cash Flow",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/finance/cash-flow?currency=USD&startTime=2026-01-01T00:00:00Z&endTime=2026-01-02T00:00:00Z",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"finance",
+										"cash-flow"
+									],
+									"query": [
+										{
+											"key": "currency",
+											"value": "USD"
+										},
+										{
+											"key": "startTime",
+											"value": "2026-01-01T00:00:00Z"
+										},
+										{
+											"key": "endTime",
+											"value": "2026-01-02T00:00:00Z"
+										}
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				}
+			]
 		}
 	],
 	"variable": [
 		{
 			"key": "baseUrl",
 			"value": "http://localhost:3068",
+			"type": "string"
+		},
+		{
+			"key": "productID",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "clientID",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "kycID",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "accountID",
+			"value": "",
 			"type": "string"
 		}
 	]
