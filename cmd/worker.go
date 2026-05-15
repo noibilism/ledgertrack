@@ -15,6 +15,12 @@ import (
 	"github.com/formancehq/go-libs/v3/otlp/otlptraces"
 	"github.com/formancehq/go-libs/v3/service"
 
+	"github.com/formancehq/ledger/internal/bus"
+	"github.com/formancehq/ledger/internal/cba"
+	"github.com/formancehq/ledger/internal/cba/scheduler"
+	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
+	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/currency"
 	"github.com/formancehq/ledger/internal/replication"
 	"github.com/formancehq/ledger/internal/replication/drivers"
 	"github.com/formancehq/ledger/internal/replication/drivers/alldrivers"
@@ -34,6 +40,14 @@ const (
 	WorkerBucketCleanupRetentionPeriodFlag = "worker-bucket-cleanup-retention-period"
 	WorkerBucketCleanupScheduleFlag        = "worker-bucket-cleanup-schedule"
 
+	WorkerCBAInterestAccrualScheduleFlag = "worker-cba-interest-accrual-schedule"
+	WorkerCBAInterestPostingScheduleFlag = "worker-cba-interest-posting-schedule"
+	WorkerCBAMaintenanceFeeScheduleFlag  = "worker-cba-maintenance-fee-schedule"
+	WorkerCBADormancyScheduleFlag        = "worker-cba-dormancy-schedule"
+	WorkerCBALedgerNameFlag              = "worker-cba-ledger-name"
+	WorkerCBAFeeIncomeAccountFlag        = "worker-cba-fee-income-account"
+	WorkerCBAInterestExpenseAccountFlag  = "worker-cba-interest-expense-account"
+
 	WorkerGRPCAddressFlag = "worker-grpc-address"
 )
 
@@ -52,6 +66,14 @@ type WorkerConfiguration struct {
 
 	BucketCleanupRetentionPeriod time.Duration `mapstructure:"worker-bucket-cleanup-retention-period"`
 	BucketCleanupCRONSpec        cron.Schedule `mapstructure:"worker-bucket-cleanup-schedule"`
+
+	CBAInterestAccrualCRONSpec cron.Schedule `mapstructure:"worker-cba-interest-accrual-schedule"`
+	CBAInterestPostingCRONSpec cron.Schedule `mapstructure:"worker-cba-interest-posting-schedule"`
+	CBAMaintenanceFeeCRONSpec  cron.Schedule `mapstructure:"worker-cba-maintenance-fee-schedule"`
+	CBADormancyCRONSpec        cron.Schedule `mapstructure:"worker-cba-dormancy-schedule"`
+	CBALedgerName              string        `mapstructure:"worker-cba-ledger-name"`
+	CBAFeeIncomeAccount        string        `mapstructure:"worker-cba-fee-income-account"`
+	CBAInterestExpenseAccount  string        `mapstructure:"worker-cba-interest-expense-account"`
 }
 
 func (cfg WorkerConfiguration) Validate() error {
@@ -60,6 +82,27 @@ func (cfg WorkerConfiguration) Validate() error {
 	}
 	if cfg.BucketCleanupCRONSpec == nil {
 		return fmt.Errorf("bucket cleanup schedule must be set")
+	}
+	if cfg.CBAInterestAccrualCRONSpec == nil {
+		return fmt.Errorf("cba interest accrual schedule must be set")
+	}
+	if cfg.CBAInterestPostingCRONSpec == nil {
+		return fmt.Errorf("cba interest posting schedule must be set")
+	}
+	if cfg.CBAMaintenanceFeeCRONSpec == nil {
+		return fmt.Errorf("cba maintenance fee schedule must be set")
+	}
+	if cfg.CBADormancyCRONSpec == nil {
+		return fmt.Errorf("cba dormancy schedule must be set")
+	}
+	if cfg.CBALedgerName == "" {
+		return fmt.Errorf("cba ledger name must be set")
+	}
+	if cfg.CBAFeeIncomeAccount == "" {
+		return fmt.Errorf("cba fee income account must be set")
+	}
+	if cfg.CBAInterestExpenseAccount == "" {
+		return fmt.Errorf("cba interest expense account must be set")
 	}
 
 	return nil
@@ -82,6 +125,13 @@ func addWorkerFlags(cmd *cobra.Command) {
 	cmd.Flags().Uint64(WorkerPipelinesLogsPageSize, 100, "Pipelines logs page size")
 	cmd.Flags().Duration(WorkerBucketCleanupRetentionPeriodFlag, 30*24*time.Hour, "Retention period for deleted buckets before hard delete")
 	cmd.Flags().String(WorkerBucketCleanupScheduleFlag, "0 0 * * * *", "Schedule for bucket cleanup (cron format)")
+	cmd.Flags().String(WorkerCBAInterestAccrualScheduleFlag, "0 5 0 * * *", "Schedule for CBA interest accrual (cron format)")
+	cmd.Flags().String(WorkerCBAInterestPostingScheduleFlag, "0 10 0 * * *", "Schedule for CBA interest posting (cron format)")
+	cmd.Flags().String(WorkerCBAMaintenanceFeeScheduleFlag, "0 15 0 * * *", "Schedule for CBA maintenance fee processing (cron format)")
+	cmd.Flags().String(WorkerCBADormancyScheduleFlag, "0 20 0 * * *", "Schedule for CBA dormancy detection (cron format)")
+	cmd.Flags().String(WorkerCBALedgerNameFlag, "ledgertrack", "Ledger name used for CBA account wallet postings")
+	cmd.Flags().String(WorkerCBAFeeIncomeAccountFlag, "revenue:fee_income", "Revenue account used for CBA fee income postings")
+	cmd.Flags().String(WorkerCBAInterestExpenseAccountFlag, "revenue:interest_expense", "Revenue account used for CBA interest expense postings")
 }
 
 // NewWorkerCommand constructs the "worker" Cobra command which initializes and runs the worker service using loaded configuration and composed FX modules.
@@ -113,6 +163,22 @@ func NewWorkerCommand() *cobra.Command {
 				storage.NewFXModule(storage.ModuleConfig{}),
 				drivers.NewFXModule(),
 				fx.Invoke(alldrivers.Register),
+				systemcontroller.NewFXModule(systemcontroller.ModuleConfiguration{
+					NumscriptInterpreter:      cfg.NumscriptInterpreter,
+					NumscriptInterpreterFlags: cfg.NumscriptInterpreterFlags,
+					NSCacheConfiguration: ledgercontroller.CacheConfiguration{
+						MaxCount: 1024,
+					},
+					DatabaseRetryConfiguration: systemcontroller.DatabaseRetryConfiguration{
+						MaxRetry: 10,
+						Delay:    100 * time.Millisecond,
+					},
+					EnableFeatures:        cfg.ExperimentalFeaturesEnabled,
+					SchemaEnforcementMode: cfg.commonConfig.SchemaEnforcementMode,
+				}),
+				bus.NewFxModule(),
+				currency.NewFXModule(),
+				cba.NewFXModule(),
 				newWorkerModule(cfg.WorkerConfiguration),
 				worker.NewGRPCServerFXModule(worker.GRPCServerModuleConfig{
 					Address: cfg.Address,
@@ -152,6 +218,25 @@ func newWorkerModule(configuration WorkerConfiguration) fx.Option {
 		BucketCleanupRunnerConfig: storage.BucketCleanupRunnerConfig{
 			RetentionPeriod: configuration.BucketCleanupRetentionPeriod,
 			Schedule:        configuration.BucketCleanupCRONSpec,
+		},
+		CBASchedulerConfig: scheduler.ModuleConfig{
+			LedgerPostingConfig: scheduler.LedgerPostingConfig{
+				LedgerName:             configuration.CBALedgerName,
+				FeeIncomeAccount:       configuration.CBAFeeIncomeAccount,
+				InterestExpenseAccount: configuration.CBAInterestExpenseAccount,
+			},
+			InterestAccrualRunnerConfig: scheduler.InterestAccrualRunnerConfig{
+				Schedule: configuration.CBAInterestAccrualCRONSpec,
+			},
+			InterestPostingRunnerConfig: scheduler.InterestPostingRunnerConfig{
+				Schedule: configuration.CBAInterestPostingCRONSpec,
+			},
+			MaintenanceFeeRunnerConfig: scheduler.MaintenanceFeeRunnerConfig{
+				Schedule: configuration.CBAMaintenanceFeeCRONSpec,
+			},
+			DormancyRunnerConfig: scheduler.DormancyRunnerConfig{
+				Schedule: configuration.CBADormancyCRONSpec,
+			},
 		},
 	})
 }

@@ -294,6 +294,212 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add CBA domain tables",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.products (
+							id uuid primary key default gen_random_uuid(),
+							code varchar(64) not null unique,
+							name varchar(255) not null,
+							description text,
+							category varchar(128) not null,
+							currency varchar(16) not null,
+							status varchar(32) not null check (status in ('draft', 'active', 'retired')),
+							rules jsonb not null default '{}'::jsonb,
+							interest_config jsonb,
+							fee_schedule jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create index if not exists idx_products_category_currency_status on _system.products(category, currency, status);
+
+						create table if not exists _system.clients (
+							id uuid primary key default gen_random_uuid(),
+							client_number varchar(64) not null unique,
+							type varchar(32) not null check (type in ('individual', 'corporate')),
+							status varchar(32) not null check (status in ('pending', 'active', 'suspended', 'closed')),
+							kyc_level integer not null default 0,
+							kyc_status varchar(32) not null default 'pending' check (kyc_status in ('pending', 'verified', 'rejected', 'expired')),
+							kyc_data jsonb not null default '{}'::jsonb,
+							contact jsonb not null default '{}'::jsonb,
+							individual_data jsonb,
+							corporate_data jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create index if not exists idx_clients_type_status_kyc on _system.clients(type, status, kyc_level, kyc_status);
+
+						create table if not exists _system.accounts (
+							id uuid primary key default gen_random_uuid(),
+							account_number varchar(32) not null unique,
+							client_id uuid not null references _system.clients(id),
+							product_id uuid not null references _system.products(id),
+							currency varchar(16) not null,
+							status varchar(32) not null check (status in ('pending', 'active', 'dormant', 'suspended', 'closed')),
+							wallet_id varchar(255) not null unique,
+							freeze_debits boolean not null default false,
+							opened_at timestamp without time zone not null default (now() at time zone 'utc'),
+							activated_at timestamp without time zone,
+							closed_at timestamp without time zone,
+							last_activity_at timestamp without time zone,
+							interest_accrued numeric(20,8) not null default 0,
+							metadata jsonb not null default '{}'::jsonb
+						);
+						create index if not exists idx_accounts_client_status on _system.accounts(client_id, status);
+						create index if not exists idx_accounts_product_status on _system.accounts(product_id, status);
+						create index if not exists idx_accounts_last_activity on _system.accounts(last_activity_at);
+
+						create table if not exists _system.kyc_records (
+							id uuid primary key default gen_random_uuid(),
+							client_id uuid not null references _system.clients(id),
+							level integer not null,
+							status varchar(32) not null check (status in ('pending', 'verified', 'rejected', 'expired')),
+							submitted_at timestamp without time zone not null,
+							verified_at timestamp without time zone,
+							expires_at timestamp without time zone,
+							verifier varchar(255),
+							reason text,
+							documents jsonb not null default '[]'::jsonb,
+							payload jsonb not null default '{}'::jsonb
+						);
+						create index if not exists idx_kyc_records_client on _system.kyc_records(client_id);
+						create index if not exists idx_kyc_records_client_status_level on _system.kyc_records(client_id, status, level);
+
+						create table if not exists _system.interest_accruals (
+							id uuid primary key default gen_random_uuid(),
+							account_id uuid not null references _system.accounts(id),
+							accrual_date date not null,
+							balance_basis numeric(20,8) not null,
+							rate numeric(12,8) not null,
+							amount numeric(20,8) not null,
+							posted boolean not null default false,
+							posted_reference varchar(255),
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint interest_accruals_account_date_unique unique (account_id, accrual_date)
+						);
+						create index if not exists idx_interest_accruals_posted_date on _system.interest_accruals(posted, accrual_date);
+
+						create table if not exists _system.fee_postings (
+							id uuid primary key default gen_random_uuid(),
+							account_id uuid not null references _system.accounts(id),
+							event_type varchar(64) not null,
+							reference varchar(255) not null unique,
+							linked_reference varchar(255) not null,
+							amount numeric(20,8) not null,
+							currency varchar(16) not null,
+							status varchar(64) not null,
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create index if not exists idx_fee_postings_account on _system.fee_postings(account_id);
+						create index if not exists idx_fee_postings_linked_reference on _system.fee_postings(linked_reference);
+
+						create table if not exists _system.account_daily_usages (
+							id uuid primary key default gen_random_uuid(),
+							account_id uuid not null references _system.accounts(id),
+							usage_date date not null,
+							debit_amount numeric(20,8) not null default 0,
+							credit_amount numeric(20,8) not null default 0,
+							debit_count bigint not null default 0,
+							credit_count bigint not null default 0,
+							last_reference varchar(255),
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint account_daily_usages_account_date_unique unique (account_id, usage_date)
+						);
+						create index if not exists idx_account_daily_usages_usage_date on _system.account_daily_usages(usage_date);
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add currencies registry table",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.currencies (
+							code varchar(16) primary key,
+							precision integer not null,
+							enabled boolean not null default true,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+
+						insert into _system.currencies (code, precision, enabled)
+						values
+							('USD', 2, true),
+							('EUR', 2, true),
+							('BTC', 8, true),
+							('NGN', 2, true),
+							('GHS', 2, true),
+							('KES', 2, true),
+							('ZMW', 2, true)
+						on conflict (code) do update
+						set precision = excluded.precision,
+							enabled = excluded.enabled,
+							updated_at = (now() at time zone 'utc');
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add channel fee config and revenue tables",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.channel_fee_configs (
+							id uuid primary key default gen_random_uuid(),
+							channel_id varchar(255) not null unique,
+							currency varchar(16) not null,
+							enabled boolean not null default true,
+							user_fee jsonb not null default '{}'::jsonb,
+							processing_fee jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create index if not exists idx_channel_fee_configs_currency on _system.channel_fee_configs(currency);
+
+						create table if not exists _system.channel_fee_config_audits (
+							id uuid primary key default gen_random_uuid(),
+							channel_id varchar(255) not null,
+							actor varchar(255),
+							action varchar(32) not null,
+							before jsonb,
+							after jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create index if not exists idx_channel_fee_config_audits_channel on _system.channel_fee_config_audits(channel_id, created_at desc);
+
+						create table if not exists _system.channel_fee_records (
+							id uuid primary key default gen_random_uuid(),
+							channel_id varchar(255) not null,
+							currency varchar(16) not null,
+							wallet_id varchar(255),
+							reference varchar(255) not null,
+							ledger_tx_id bigint,
+							channel_tx_id bigint,
+							revenue_tx_id bigint,
+							occurred_at timestamp without time zone not null default (now() at time zone 'utc'),
+							total_amount bigint not null,
+							principal_amount bigint not null,
+							user_fee_amount bigint not null,
+							processing_fee_amount bigint not null,
+							net_revenue_amount bigint not null,
+							metadata jsonb not null default '{}'::jsonb
+						);
+						create index if not exists idx_channel_fee_records_channel_time on _system.channel_fee_records(channel_id, occurred_at desc);
+						create index if not exists idx_channel_fee_records_time on _system.channel_fee_records(occurred_at desc);
+						create index if not exists idx_channel_fee_records_reference on _system.channel_fee_records(reference);
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator

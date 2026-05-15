@@ -23,6 +23,8 @@ import (
 	"github.com/formancehq/ledger/internal/api/common"
 	v1 "github.com/formancehq/ledger/internal/api/v1"
 	v2 "github.com/formancehq/ledger/internal/api/v2"
+	"github.com/formancehq/ledger/internal/cba/services"
+	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	"github.com/formancehq/ledger/internal/controller/system"
 )
 
@@ -97,6 +99,14 @@ func NewRouter(
 		v2.WithDefaultBulkHandlerFactories(routerOptions.bulkMaxSize),
 		v2.WithPaginationConfig(routerOptions.paginationConfig),
 		v2.WithExporters(routerOptions.exporters),
+		v2.WithProductService(routerOptions.productService),
+		v2.WithClientService(routerOptions.clientService),
+		v2.WithKYCService(routerOptions.kycService),
+		v2.WithAccountService(routerOptions.accountService),
+		v2.WithReportingService(routerOptions.reportingService),
+		v2.WithFinanceReportingService(routerOptions.financeReportingService),
+		v2.WithChannelFeeConfigService(routerOptions.channelFeeConfigService),
+		v2.WithChannelRevenueReportingService(routerOptions.channelRevenueReportingService),
 	)
 	mux.Handle("/v2*", http.StripPrefix("/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chi.RouteContext(r.Context()).Reset()
@@ -114,12 +124,20 @@ func NewRouter(
 }
 
 type routerOptions struct {
-	tracer           trace.Tracer
-	meterProvider    metric.MeterProvider
-	bulkMaxSize      int
-	bulkerFactory    bulking.BulkerFactory
-	paginationConfig common.PaginationConfig
-	exporters        bool
+	tracer                  trace.Tracer
+	meterProvider           metric.MeterProvider
+	bulkMaxSize             int
+	bulkerFactory           bulking.BulkerFactory
+	paginationConfig        common.PaginationConfig
+	exporters               bool
+	productService          services.ProductService
+	clientService           services.ClientService
+	kycService              services.KYCService
+	accountService          services.AccountService
+	reportingService        services.ReportingService
+	financeReportingService services.FinanceReportingService
+	channelFeeConfigService channelservices.ChannelFeeConfigService
+	channelRevenueReportingService channelservices.ChannelRevenueReportingService
 }
 
 type RouterOption func(ro *routerOptions)
@@ -151,6 +169,54 @@ func WithPaginationConfiguration(paginationConfig common.PaginationConfig) Route
 func WithExporters(v bool) RouterOption {
 	return func(ro *routerOptions) {
 		ro.exporters = v
+	}
+}
+
+func WithProductService(productService services.ProductService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.productService = productService
+	}
+}
+
+func WithClientService(clientService services.ClientService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.clientService = clientService
+	}
+}
+
+func WithKYCService(kycService services.KYCService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.kycService = kycService
+	}
+}
+
+func WithAccountService(accountService services.AccountService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.accountService = accountService
+	}
+}
+
+func WithReportingService(reportingService services.ReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.reportingService = reportingService
+	}
+}
+
+func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithChannelFeeConfigService(channelFeeConfigService channelservices.ChannelFeeConfigService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.channelFeeConfigService = channelFeeConfigService
+	}
+}
+
+func WithChannelRevenueReportingService(channelRevenueReportingService channelservices.ChannelRevenueReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.channelRevenueReportingService = channelRevenueReportingService
 	}
 }
 

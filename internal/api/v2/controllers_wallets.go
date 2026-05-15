@@ -1,13 +1,16 @@
 package v2
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/bun/bunpaginate"
@@ -15,8 +18,11 @@ import (
 	"github.com/formancehq/go-libs/v3/query"
 	ledgerinternal "github.com/formancehq/ledger/internal"
 	"github.com/formancehq/ledger/internal/api/common"
+	channelmodels "github.com/formancehq/ledger/internal/channels/models"
+	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	"github.com/formancehq/ledger/internal/controller/ledger"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
@@ -47,38 +53,83 @@ type ReleaseLienRequest struct {
 	ChannelAmount json.Number `json:"channelAmount"`
 }
 
-// CurrencyRegistry - hardcoded for now as per PRD "Currency Registry" requirement
-var currencyRegistry = map[string]struct {
-	Precision int
-	Enabled   bool
-}{
-	"USD": {Precision: 2, Enabled: true},
-	"EUR": {Precision: 2, Enabled: true},
-	"BTC": {Precision: 8, Enabled: true},
-	"NGN": {Precision: 2, Enabled: true},
-	"GHS": {Precision: 2, Enabled: true},
-	"KES": {Precision: 2, Enabled: true},
-	"ZMW": {Precision: 2, Enabled: true},
+func postRevenueEntries(
+	ctx context.Context,
+	sys systemcontroller.Controller,
+	currency string,
+	baseReference string,
+	userFeeAmount int64,
+	processingFeeAmount int64,
+) (string, *int64, error) {
+	if userFeeAmount <= 0 && processingFeeAmount <= 0 {
+		return "", nil, nil
+	}
+
+	revenueLedgerName := fmt.Sprintf("revenue-%s", currency)
+	rl, err := sys.GetLedgerController(ctx, revenueLedgerName)
+	if err != nil {
+		return "", nil, err
+	}
+
+	entries := []struct {
+		suffix      string
+		destination string
+		amount      int64
+	}{
+		{
+			suffix:      "user-fee",
+			destination: "revenue:accumulated",
+			amount:      userFeeAmount,
+		},
+		{
+			suffix:      "processing-fee",
+			destination: "revenue:channel_processing_cost",
+			amount:      processingFeeAmount,
+		},
+	}
+
+	var revenueTxIDPtr *int64
+	for _, entry := range entries {
+		if entry.amount <= 0 {
+			continue
+		}
+
+		revenueScript := fmt.Sprintf(`
+			send [%s/2 %d] (
+				source = @world
+				destination = @%s
+			)
+		`, currency, entry.amount, entry.destination)
+
+		rParams := ledger.Parameters[ledger.CreateTransaction]{
+			Input: ledger.CreateTransaction{
+				RunScript: vm.RunScript{
+					Script: vm.Script{
+						Plain: revenueScript,
+					},
+					Reference: fmt.Sprintf("%s-%s", baseReference, entry.suffix),
+				},
+				Runtime: ledgerinternal.RuntimeMachine,
+			},
+		}
+		_, rTx, _, err := rl.CreateTransaction(ctx, rParams)
+		if err != nil {
+			return "", nil, err
+		}
+		if rTx.Transaction.ID != nil {
+			x := int64(*rTx.Transaction.ID)
+			revenueTxIDPtr = &x
+		}
+	}
+
+	return revenueLedgerName, revenueTxIDPtr, nil
 }
 
-func init() {
-	if env := os.Getenv("ALLOWED_CURRENCIES"); env != "" {
-		currencyRegistry = make(map[string]struct {
-			Precision int
-			Enabled   bool
+func listCurrencies() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		api.Ok(w, map[string]any{
+			"currencies": currencyregistry.List(),
 		})
-		parts := strings.Split(env, ",")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			// Default precision 2
-			currencyRegistry[strings.ToUpper(p)] = struct {
-				Precision int
-				Enabled   bool
-			}{Precision: 2, Enabled: true}
-		}
 	}
 }
 
@@ -96,7 +147,8 @@ func createWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		}
 
 		// Validate currency
-		reg, ok := currencyRegistry[req.Currency]
+		req.Currency = strings.ToUpper(req.Currency)
+		reg, ok := currencyregistry.Lookup(req.Currency)
 		if !ok || !reg.Enabled {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("currency %s not supported or disabled", req.Currency))
 			return
@@ -118,14 +170,9 @@ func parseAmount(amount json.Number, currency string) (int64, error) {
 		return 0, nil
 	}
 
-	reg, ok := currencyRegistry[currency]
+	reg, ok := currencyregistry.Lookup(currency)
 	if !ok {
-		// Default to precision 2 if not found, or error? 
-		// For safety, assume 2 or error. Let's assume 2 as per init() default.
-		reg = struct {
-			Precision int
-			Enabled   bool
-		}{Precision: 2, Enabled: true}
+		reg = currencyregistry.Definition{Precision: 2, Enabled: true}
 	}
 
 	s := amount.String()
@@ -225,9 +272,9 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		// Calculate balances
 		var balanceBefore, balanceAfter int64
 		assetName := fmt.Sprintf("%s/2", currency)
-		
+
 		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
-		
+
 		if vol, ok := preCommitVolumes[accountUser]; ok {
 			if v, ok := vol[assetName]; ok {
 				bal := new(big.Int).Sub(v.Input, v.Output)
@@ -252,7 +299,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
-func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
+func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
 		walletID := chi.URLParam(r, "walletID")
@@ -271,16 +318,6 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
-		amount, err := parseAmount(req.Amount, currency)
-		if err != nil {
-			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid amount: %v", err))
-			return
-		}
-
-		if amount <= 0 {
-			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount must be positive"))
-			return
-		}
 		if req.Reference == "" {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("reference is required"))
 			return
@@ -298,10 +335,49 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 				api.BadRequest(w, common.ErrValidation, fmt.Errorf("channelAmount must be positive"))
 				return
 			}
-			if channelAmount > amount {
-				api.BadRequest(w, common.ErrValidation, fmt.Errorf("channel amount cannot exceed wallet debit amount"))
-				return
+		}
+
+		amount, err := parseAmount(req.Amount, currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid amount: %v", err))
+			return
+		}
+
+		var computedFees *channelservices.ComputedChannelFees
+		if req.ChannelID != "" && channelFeeConfigService != nil {
+			if amount <= 0 {
+				computedFees, err = channelFeeConfigService.Compute(r.Context(), channelservices.ComputeChannelFeesRequest{
+					ChannelID:       req.ChannelID,
+					Currency:        currency,
+					PrincipalAmount: channelAmount,
+				})
+				if err != nil {
+					api.BadRequest(w, common.ErrValidation, err)
+					return
+				}
+				amount = computedFees.TotalAmount
+			} else {
+				computedFees, err = channelFeeConfigService.Compute(r.Context(), channelservices.ComputeChannelFeesRequest{
+					ChannelID:       req.ChannelID,
+					Currency:        currency,
+					PrincipalAmount: channelAmount,
+					TotalAmount:     &amount,
+				})
+				if err != nil {
+					api.BadRequest(w, common.ErrValidation, err)
+					return
+				}
 			}
+		}
+
+		if amount <= 0 {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount must be positive"))
+			return
+		}
+
+		if req.ChannelID != "" && channelAmount > amount {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("channel amount cannot exceed wallet debit amount"))
+			return
 		}
 
 		// 1. Debit Wallet
@@ -331,13 +407,18 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			},
 		}
 
-		if req.Metadata != nil {
-			params.Input.RunScript.Metadata = metadata.Metadata{}
-			for k, v := range req.Metadata {
-				params.Input.RunScript.Metadata[k] = v
+		params.Input.RunScript.Metadata = metadata.Metadata{}
+		for k, v := range req.Metadata {
+			params.Input.RunScript.Metadata[k] = v
+		}
+		if req.ChannelID != "" {
+			params.Input.RunScript.Metadata["channel_id"] = req.ChannelID
+			params.Input.RunScript.Metadata["channel_amount"] = fmt.Sprintf("%d", channelAmount)
+			if computedFees != nil {
+				params.Input.RunScript.Metadata["channel_user_fee_amount"] = fmt.Sprintf("%d", computedFees.UserFeeAmount)
+				params.Input.RunScript.Metadata["channel_processing_fee_amount"] = fmt.Sprintf("%d", computedFees.ProcessingFee)
+				params.Input.RunScript.Metadata["channel_net_revenue_amount"] = fmt.Sprintf("%d", computedFees.NetRevenueAmount)
 			}
-		} else {
-			params.Input.RunScript.Metadata = metadata.Metadata{}
 		}
 
 		// Store multi-ledger transaction links
@@ -360,9 +441,9 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		// Calculate balances
 		var balanceBefore, balanceAfter int64
 		assetName := fmt.Sprintf("%s/2", currency)
-		
+
 		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
-		
+
 		if vol, ok := preCommitVolumes[accountUser]; ok {
 			if v, ok := vol[assetName]; ok {
 				bal := new(big.Int).Sub(v.Input, v.Output)
@@ -433,42 +514,71 @@ func debitWallet(sys systemcontroller.Controller) http.HandlerFunc {
 				warningMsg = fmt.Sprintf("DEBUG: Account %s not found. Keys: %v", channelAccount, cTx.Transaction.PostCommitVolumes)
 			}
 
+			userFeeAmount := amount - channelAmount
+			processingFeeAmount := int64(0)
+			netRevenueAmount := userFeeAmount
+			if computedFees != nil {
+				userFeeAmount = computedFees.UserFeeAmount
+				processingFeeAmount = computedFees.ProcessingFee
+				netRevenueAmount = computedFees.NetRevenueAmount
+			}
+
+			respMetadata["channel_user_fee_amount"] = fmt.Sprintf("%d", userFeeAmount)
+			respMetadata["channel_processing_fee_amount"] = fmt.Sprintf("%d", processingFeeAmount)
+			respMetadata["channel_net_revenue_amount"] = fmt.Sprintf("%d", netRevenueAmount)
+
 			// Process Revenue Credit
-			revenue := amount - channelAmount
-			if revenue > 0 {
-				revenueLedgerName := fmt.Sprintf("revenue-%s", currency)
-				rl, err := sys.GetLedgerController(r.Context(), revenueLedgerName)
-				if err != nil {
-					common.HandleCommonWriteErrors(w, r, err)
-					return
-				}
-
-				// Credit Revenue: World -> Revenue Accumulated
-				revenueScript := fmt.Sprintf(`
-					send [%s/2 %d] (
-						source = @world
-						destination = @revenue:accumulated
-					)
-				`, currency, revenue)
-
-				rParams := ledger.Parameters[ledger.CreateTransaction]{
-					Input: ledger.CreateTransaction{
-						RunScript: vm.RunScript{
-							Script: vm.Script{
-								Plain: revenueScript,
-							},
-							Reference: req.Reference,
-						},
-						Runtime: ledgerinternal.RuntimeMachine,
-					},
-				}
-				_, rTx, _, err := rl.CreateTransaction(r.Context(), rParams)
+			if userFeeAmount > 0 || processingFeeAmount > 0 {
+				revenueLedgerName, revenueTxIDPtr, err := postRevenueEntries(
+					r.Context(),
+					sys,
+					currency,
+					req.Reference,
+					userFeeAmount,
+					processingFeeAmount,
+				)
 				if err != nil {
 					common.HandleCommonWriteErrors(w, r, err)
 					return
 				}
 				respMetadata["revenue_ledger"] = revenueLedgerName
-				respMetadata["revenue_tx_id"] = fmt.Sprintf("%d", rTx.Transaction.ID)
+				if revenueTxIDPtr != nil {
+					respMetadata["revenue_tx_id"] = fmt.Sprintf("%d", *revenueTxIDPtr)
+				}
+
+				if channelFeeConfigService != nil {
+					walletIDCopy := walletID
+					var ledgerTxIDPtr *int64
+					if tx.Transaction.ID != nil {
+						x := int64(*tx.Transaction.ID)
+						ledgerTxIDPtr = &x
+					}
+					var channelTxIDPtr *int64
+					if cTx.Transaction.ID != nil {
+						x := int64(*cTx.Transaction.ID)
+						channelTxIDPtr = &x
+					}
+					if err := channelFeeConfigService.Record(r.Context(), &channelmodels.ChannelFeeRecord{
+						ChannelID:           req.ChannelID,
+						Currency:            currency,
+						WalletID:            &walletIDCopy,
+						Reference:           req.Reference,
+						LedgerTxID:          ledgerTxIDPtr,
+						ChannelTxID:         channelTxIDPtr,
+						RevenueTxID:         revenueTxIDPtr,
+						OccurredAt:          time.Now().UTC(),
+						TotalAmount:         amount,
+						PrincipalAmount:     channelAmount,
+						UserFeeAmount:       userFeeAmount,
+						ProcessingFeeAmount: processingFeeAmount,
+						NetRevenueAmount:    netRevenueAmount,
+						Metadata: map[string]any{
+							"wallet_id": walletID,
+						},
+					}); err != nil {
+						warningMsg = fmt.Sprintf("fee record write failed: %s", err.Error())
+					}
+				}
 			}
 		}
 
@@ -558,9 +668,9 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 
 		_, tx, _, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "conflict") || 
-			   strings.Contains(strings.ToLower(err.Error()), "duplicate") || 
-			   strings.Contains(strings.ToLower(err.Error()), "already exists") {
+			if strings.Contains(strings.ToLower(err.Error()), "conflict") ||
+				strings.Contains(strings.ToLower(err.Error()), "duplicate") ||
+				strings.Contains(strings.ToLower(err.Error()), "already exists") {
 				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
 				return
 			}
@@ -571,9 +681,9 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		// Calculate balances
 		var balanceBefore, balanceAfter int64
 		assetName := fmt.Sprintf("%s/2", currency)
-		
+
 		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
-		
+
 		if vol, ok := preCommitVolumes[accountAvailable]; ok {
 			if v, ok := vol[assetName]; ok {
 				bal := new(big.Int).Sub(v.Input, v.Output)
@@ -598,7 +708,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
-func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
+func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
 		walletID := chi.URLParam(r, "walletID")
@@ -617,44 +727,90 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 			return
 		}
 
+		if req.Reference == "" {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("reference is required"))
+			return
+		}
+
 		amount, err := parseAmount(req.Amount, currency)
 		if err != nil {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid amount: %v", err))
 			return
 		}
 
-		if req.Reference == "" {
-			api.BadRequest(w, common.ErrValidation, fmt.Errorf("reference is required"))
-			return
-		}
-		if amount <= 0 {
-			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount is required for release"))
-			return
-		}
-
-		// Validation for Multi-Ledger Logic
 		channelAmount, err := parseAmount(req.ChannelAmount, currency)
 		if err != nil {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid channelAmount: %v", err))
 			return
 		}
 
+		mode := strings.ToUpper(strings.TrimSpace(req.Mode))
+		if mode == "" {
+			mode = "RELEASE_ONLY"
+		}
+		if mode != "PAY" && mode != "RELEASE_ONLY" {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid mode"))
+			return
+		}
+
+		var computedFees *channelservices.ComputedChannelFees
 		if req.ChannelID != "" {
 			if channelAmount <= 0 {
 				api.BadRequest(w, common.ErrValidation, fmt.Errorf("channelAmount must be positive"))
 				return
 			}
-			if channelAmount > amount {
+
+			if channelFeeConfigService != nil {
+				if amount <= 0 {
+					computedFees, err = channelFeeConfigService.Compute(r.Context(), channelservices.ComputeChannelFeesRequest{
+						ChannelID:       req.ChannelID,
+						Currency:        currency,
+						PrincipalAmount: channelAmount,
+					})
+				} else {
+					amountCopy := amount
+					computedFees, err = channelFeeConfigService.Compute(r.Context(), channelservices.ComputeChannelFeesRequest{
+						ChannelID:       req.ChannelID,
+						Currency:        currency,
+						PrincipalAmount: channelAmount,
+						TotalAmount:     &amountCopy,
+					})
+				}
+				if err != nil {
+					switch {
+					case strings.Contains(err.Error(), channelservices.ErrChannelFeesValidation.Error()):
+						api.BadRequest(w, common.ErrValidation, err)
+					case errors.Is(err, channelservices.ErrChannelFeesValidation):
+						api.BadRequest(w, common.ErrValidation, err)
+					case errors.Is(err, channelservices.ErrChannelFeesNotFound):
+						api.NotFound(w, err)
+					default:
+						common.InternalServerError(w, r, err)
+					}
+					return
+				}
+				amount = computedFees.TotalAmount
+			} else {
+				if amount <= 0 {
+					api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount is required for release"))
+					return
+				}
+			}
+
+			if amount < channelAmount {
 				api.BadRequest(w, common.ErrValidation, fmt.Errorf("channel amount cannot exceed wallet debit amount"))
 				return
 			}
+		} else if amount <= 0 {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount is required for release"))
+			return
 		}
 
 		// Lien Release Logic
 		accountLien := fmt.Sprintf("users:%s:wallets:%s:lien", userID, currency)
 
 		var script string
-		if req.Mode == "PAY" {
+		if mode == "PAY" {
 			// Pay: Lien -> World (Spend)
 			script = fmt.Sprintf(`
 				send [%s/2 %d] (
@@ -673,6 +829,25 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 			`, currency, amount, accountLien, accountAvailable)
 		}
 
+		runMetadata := metadata.Metadata{}
+		if req.ChannelID != "" && mode == "PAY" {
+			runMetadata["channel_id"] = req.ChannelID
+			runMetadata["channel_amount"] = fmt.Sprintf("%d", channelAmount)
+			if computedFees != nil {
+				runMetadata["channel_user_fee_amount"] = fmt.Sprintf("%d", computedFees.UserFeeAmount)
+				runMetadata["channel_processing_fee_amount"] = fmt.Sprintf("%d", computedFees.ProcessingFee)
+				runMetadata["channel_net_revenue_amount"] = fmt.Sprintf("%d", computedFees.NetRevenueAmount)
+			} else {
+				userFeeAmount := amount - channelAmount
+				if userFeeAmount < 0 {
+					userFeeAmount = 0
+				}
+				runMetadata["channel_user_fee_amount"] = fmt.Sprintf("%d", userFeeAmount)
+				runMetadata["channel_processing_fee_amount"] = "0"
+				runMetadata["channel_net_revenue_amount"] = fmt.Sprintf("%d", userFeeAmount)
+			}
+		}
+
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
 			Input: ledger.CreateTransaction{
@@ -680,18 +855,8 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 					Script: vm.Script{
 						Plain: script,
 					},
-					Reference: req.Reference, // Reusing reference might cause conflict if not handled?
-					// Actually ReleaseLien usually needs a NEW reference for the release tx.
-					// But we only have 'reference' in input.
-					// Let's assume input reference is the Lien Reference, but we need a new reference for this TX.
-					// Or maybe we use "release-" + reference?
-					// Prompt samples used "lien-ref".
-					// Ledger CreateTransaction checks unique reference.
-					// If we reuse "lien-ref", it will fail if it's the same ledger.
-					// Let's append suffix if needed, or assume the user provided a UNIQUE reference for the release action.
-					// The sample payload: "reference": "lien-ref".
-					// If the original lien creation used "lien-ref", this will fail.
-					// I'll assume "reference" here is the ID of the release transaction.
+					Reference: req.Reference,
+					Metadata:  runMetadata,
 				},
 				Runtime: ledgerinternal.RuntimeMachine,
 			},
@@ -712,17 +877,17 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 		// Calculate balances
 		var balanceBefore, balanceAfter int64
 		assetName := fmt.Sprintf("%s/2", currency)
-		
+
 		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
-		
+
 		// For release, the relevant account depends on Mode.
 		// If PAY, we might care about Lien balance?
 		// If RELEASE, we care about Available (which got credited) or Lien (which got debited)?
 		// User likely wants "Available Balance" of the wallet.
 		// So we always track 'accountAvailable'.
-		
+
 		accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
-		
+
 		if vol, ok := preCommitVolumes[accountAvailable]; ok {
 			if v, ok := vol[assetName]; ok {
 				bal := new(big.Int).Sub(v.Input, v.Output)
@@ -736,14 +901,8 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
-		// Channel & Revenue Logic (Only on PAY mode?)
-		// Prompt says "debit the channels ledger for every release".
-		// I'll assume primarily for PAY. If CANCEL, we probably shouldn't charge channel?
-		// But strict requirement "every release".
-		// I'll do it if ChannelID is present.
-
 		var warningMsg string
-		if req.ChannelID != "" {
+		if req.ChannelID != "" && mode == "PAY" {
 			channelLedgerName := fmt.Sprintf("channels-%s", currency)
 			cl, err := sys.GetLedgerController(r.Context(), channelLedgerName)
 			if err != nil {
@@ -751,7 +910,6 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 				return
 			}
 
-			// Debit Channel: Channel -> World
 			channelAccount := fmt.Sprintf("channel:%s", req.ChannelID)
 			channelScript := fmt.Sprintf(`
 				send [%s/2 %d] (
@@ -779,51 +937,74 @@ func releaseLien(sys systemcontroller.Controller) http.HandlerFunc {
 			respMetadata["channel_ledger"] = channelLedgerName
 			respMetadata["channel_tx_id"] = fmt.Sprintf("%d", cTx.Transaction.ID)
 
-			// Check Overdraft using PostCommitVolumes from the transaction result
-			if volumes, ok := cTx.Transaction.PostCommitVolumes[channelAccount]; ok {
-				asset := fmt.Sprintf("%s/2", currency)
-				if vol, ok := volumes[asset]; ok {
-					if vol.Balance().Sign() < 0 {
-						warningMsg = fmt.Sprintf("Channel balance is negative: %s %s", vol.Balance().String(), currency)
-					}
-				}
+			userFeeAmount := amount - channelAmount
+			processingFeeAmount := int64(0)
+			netRevenueAmount := userFeeAmount
+			if computedFees != nil {
+				userFeeAmount = computedFees.UserFeeAmount
+				processingFeeAmount = computedFees.ProcessingFee
+				netRevenueAmount = computedFees.NetRevenueAmount
+			} else if userFeeAmount < 0 {
+				userFeeAmount = 0
+				netRevenueAmount = 0
 			}
 
-			// Revenue Logic
-			revenue := amount - channelAmount
-			if revenue > 0 {
-				revenueLedgerName := fmt.Sprintf("revenue-%s", currency)
-				rl, err := sys.GetLedgerController(r.Context(), revenueLedgerName)
-				if err != nil {
-					common.HandleCommonWriteErrors(w, r, err)
-					return
-				}
+			respMetadata["channel_user_fee_amount"] = fmt.Sprintf("%d", userFeeAmount)
+			respMetadata["channel_processing_fee_amount"] = fmt.Sprintf("%d", processingFeeAmount)
+			respMetadata["channel_net_revenue_amount"] = fmt.Sprintf("%d", netRevenueAmount)
 
-				revenueScript := fmt.Sprintf(`
-					send [%s/2 %d] (
-						source = @world
-						destination = @revenue:accumulated
-					)
-				`, currency, revenue)
-
-				rParams := ledger.Parameters[ledger.CreateTransaction]{
-					Input: ledger.CreateTransaction{
-						RunScript: vm.RunScript{
-							Script: vm.Script{
-								Plain: revenueScript,
-							},
-							Reference: req.Reference,
-						},
-						Runtime: ledgerinternal.RuntimeMachine,
-					},
-				}
-				_, rTx, _, err := rl.CreateTransaction(r.Context(), rParams)
+			if userFeeAmount > 0 || processingFeeAmount > 0 {
+				revenueLedgerName, revenueTxIDPtr, err := postRevenueEntries(
+					r.Context(),
+					sys,
+					currency,
+					req.Reference,
+					userFeeAmount,
+					processingFeeAmount,
+				)
 				if err != nil {
 					common.HandleCommonWriteErrors(w, r, err)
 					return
 				}
 				respMetadata["revenue_ledger"] = revenueLedgerName
-				respMetadata["revenue_tx_id"] = fmt.Sprintf("%d", rTx.Transaction.ID)
+				if revenueTxIDPtr != nil {
+					respMetadata["revenue_tx_id"] = fmt.Sprintf("%d", *revenueTxIDPtr)
+				}
+
+				if channelFeeConfigService != nil {
+					walletIDCopy := walletID
+					var ledgerTxIDPtr *int64
+					if tx.Transaction.ID != nil {
+						x := int64(*tx.Transaction.ID)
+						ledgerTxIDPtr = &x
+					}
+					var channelTxIDPtr *int64
+					if cTx.Transaction.ID != nil {
+						x := int64(*cTx.Transaction.ID)
+						channelTxIDPtr = &x
+					}
+					if err := channelFeeConfigService.Record(r.Context(), &channelmodels.ChannelFeeRecord{
+						ChannelID:           req.ChannelID,
+						Currency:            currency,
+						WalletID:            &walletIDCopy,
+						Reference:           req.Reference,
+						LedgerTxID:          ledgerTxIDPtr,
+						ChannelTxID:         channelTxIDPtr,
+						RevenueTxID:         revenueTxIDPtr,
+						OccurredAt:          time.Now().UTC(),
+						TotalAmount:         amount,
+						PrincipalAmount:     channelAmount,
+						UserFeeAmount:       userFeeAmount,
+						ProcessingFeeAmount: processingFeeAmount,
+						NetRevenueAmount:    netRevenueAmount,
+						Metadata: map[string]any{
+							"wallet_id": walletID,
+							"mode":      mode,
+						},
+					}); err != nil {
+						warningMsg = fmt.Sprintf("fee record write failed: %s", err.Error())
+					}
+				}
 			}
 		}
 
@@ -863,7 +1044,6 @@ func getWalletHistory(sys systemcontroller.Controller) http.HandlerFunc {
 		// Define accounts associated with the wallet
 		accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
 		accountLien := fmt.Sprintf("users:%s:wallets:%s:lien", userID, currency)
-		
 
 		// Build Query
 		// Filter by accounts: account = available OR account = lien
@@ -894,7 +1074,7 @@ func getWalletHistory(sys systemcontroller.Controller) http.HandlerFunc {
 			} else {
 				q.Builder = query.And(q.Builder, qb)
 			}
-			
+
 			// Ensure volumes are expanded
 			q.Expand = []string{"volumes"}
 		})
@@ -929,24 +1109,24 @@ func getWalletBalances(sys systemcontroller.Controller) http.HandlerFunc {
 		// Pattern to match wallet accounts
 		// Default: metadata[user_id]=userID AND metadata[type]=wallet (all currencies)
 		// With currency: users:{userID}:wallets:{currency}:available
-		
+
 		// Collect addresses of interest
 		interestedAccounts := []string{}
-		
+
 		if currency != "" {
 			interestedAccounts = append(interestedAccounts, fmt.Sprintf("users:%s:wallets:%s:available", userID, currency))
 		} else {
 			// Iterate over all supported currencies
-			for c := range currencyRegistry {
+			for _, c := range currencyregistry.EnabledCodes() {
 				interestedAccounts = append(interestedAccounts, fmt.Sprintf("users:%s:wallets:%s:available", userID, c))
 			}
 		}
-		
+
 		type Balance struct {
 			Currency string `json:"currency"`
 			Amount   int64  `json:"amount"`
 		}
-		
+
 		balances := make([]Balance, 0)
 
 		if len(interestedAccounts) > 0 {
@@ -954,22 +1134,22 @@ func getWalletBalances(sys systemcontroller.Controller) http.HandlerFunc {
 			for _, acc := range interestedAccounts {
 				addressMatches = append(addressMatches, query.Match("address", acc))
 			}
-			
+
 			balancesQ := storagecommon.ResourceQuery[ledgerstore.GetAggregatedVolumesOptions]{
 				Opts:    ledgerstore.GetAggregatedVolumesOptions{},
 				Builder: query.Or(addressMatches...),
 			}
-			
+
 			balancesMap, err := l.GetAggregatedBalances(r.Context(), balancesQ)
 			if err != nil {
 				common.HandleCommonErrors(w, r, err)
 				return
 			}
-			
+
 			for asset, amount := range balancesMap {
 				// Strip precision suffix (e.g. USD/2 -> USD)
 				assetName, _, _ := strings.Cut(asset, "/")
-				
+
 				var found bool
 				for i := range balances {
 					if balances[i].Currency == assetName {
@@ -987,7 +1167,7 @@ func getWalletBalances(sys systemcontroller.Controller) http.HandlerFunc {
 				}
 			}
 		}
-		
+
 		api.Ok(w, map[string]interface{}{
 			"balances": balances,
 		})
@@ -1009,7 +1189,7 @@ func getWalletStatement(sys systemcontroller.Controller) http.HandlerFunc {
 
 		accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
 		accountLien := fmt.Sprintf("users:%s:wallets:%s:lien", userID, currency)
-		
+
 		var qb query.Builder = query.Or(
 			query.Match("account", accountAvailable),
 			query.Match("account", accountLien),

@@ -14,3 +14,5 @@ coverage.txt
 ledger
 .trae/
 requests.log
+__pycache__/
+*.pyc

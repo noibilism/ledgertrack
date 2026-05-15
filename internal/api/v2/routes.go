@@ -14,6 +14,8 @@ import (
 	"github.com/formancehq/ledger/internal/api/bulking"
 	"github.com/formancehq/ledger/internal/api/common"
 	v1 "github.com/formancehq/ledger/internal/api/v1"
+	"github.com/formancehq/ledger/internal/cba/services"
+	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 )
 
@@ -107,11 +109,37 @@ func NewRouter(
 				})
 
 				router.Route("/accounts", func(router chi.Router) {
-					router.Get("/", listAccounts(routerOptions.paginationConfig))
+					if routerOptions.accountService != nil {
+						router.Get("/", ledgerAwareAccountList(routerOptions))
+					} else {
+						router.Get("/", listAccounts(routerOptions.paginationConfig))
+					}
 					router.Head("/", countAccounts)
-					router.Get("/{address}", readAccount)
-					router.Post("/{address}/metadata", addAccountMetadata)
-					router.Delete("/{address}/metadata/{key}", deleteAccountMetadata)
+					if routerOptions.accountService != nil {
+						router.Post("/", ledgertrackOnly(openAccount(routerOptions.accountService)))
+					}
+					router.Route("/{address}", func(router chi.Router) {
+						if routerOptions.accountService != nil {
+							router.Get("/", ledgerAwareAccountRead(routerOptions.accountService))
+							router.Get("/balance", ledgertrackOnly(getAccountBalance(routerOptions.accountService)))
+							router.Get("/history", ledgertrackOnly(getAccountHistory(routerOptions.accountService)))
+							router.Get("/statement", ledgertrackOnly(getAccountStatement(routerOptions.accountService)))
+							router.Post("/credit", ledgertrackOnly(creditAccount(routerOptions.accountService)))
+							router.Post("/debit", ledgertrackOnly(debitAccount(routerOptions.accountService, systemController)))
+							router.Post("/lien", ledgertrackOnly(lienAccount(routerOptions.accountService)))
+							router.Post("/lien/release", ledgertrackOnly(releaseAccountLien(routerOptions.accountService, systemController)))
+							router.Post("/activate", ledgertrackOnly(activateAccount(routerOptions.accountService)))
+							router.Post("/suspend", ledgertrackOnly(suspendAccount(routerOptions.accountService)))
+							router.Post("/freeze", ledgertrackOnly(freezeAccount(routerOptions.accountService)))
+							router.Post("/dormant", ledgertrackOnly(dormantAccount(routerOptions.accountService)))
+							router.Post("/reactivate", ledgertrackOnly(reactivateAccount(routerOptions.accountService)))
+							router.Post("/close", ledgertrackOnly(closeAccount(routerOptions.accountService)))
+						} else {
+							router.Get("/", readAccount)
+						}
+						router.Post("/metadata", addAccountMetadata)
+						router.Delete("/metadata/{key}", deleteAccountMetadata)
+					})
 				})
 
 				router.Route("/transactions", func(router chi.Router) {
@@ -127,15 +155,16 @@ func NewRouter(
 				router.Get("/aggregate/balances", readBalancesAggregated)
 
 				router.Get("/volumes", readVolumes(routerOptions.paginationConfig))
+				router.Get("/currencies", listCurrencies())
 
 				router.Route("/wallets", func(router chi.Router) {
 					router.Post("/", createWallet(systemController))
 					router.Get("/balances", getWalletBalances(systemController))
 					router.Route("/{walletID}", func(router chi.Router) {
 						router.Post("/credit", creditWallet(systemController))
-						router.Post("/debit", debitWallet(systemController))
+						router.Post("/debit", debitWallet(systemController, routerOptions.channelFeeConfigService))
 						router.Post("/lien", lienWallet(systemController))
-						router.Post("/lien/release", releaseLien(systemController))
+						router.Post("/lien/release", releaseLien(systemController, routerOptions.channelFeeConfigService))
 						router.Get("/statement", getWalletStatement(systemController))
 						router.Get("/history", getWalletHistory(systemController))
 					})
@@ -147,8 +176,85 @@ func NewRouter(
 						router.Post("/credit", creditChannel(systemController))
 						router.Get("/", readChannel(systemController))
 						router.Get("/history", getChannelHistory(systemController, routerOptions.paginationConfig))
+						if routerOptions.channelFeeConfigService != nil {
+							router.Route("/fees", func(router chi.Router) {
+								router.Get("/config", getChannelFeeConfig(routerOptions.channelFeeConfigService))
+								router.Put("/config", upsertChannelFeeConfig(routerOptions.channelFeeConfigService))
+								router.Get("/audits", listChannelFeeConfigAudits(routerOptions.channelFeeConfigService))
+							})
+						}
 					})
+					if routerOptions.channelFeeConfigService != nil {
+						router.Get("/fees/configs", listChannelFeeConfigs(routerOptions.channelFeeConfigService))
+					}
 				})
+
+				if routerOptions.productService != nil {
+					router.Route("/products", func(router chi.Router) {
+						router.Post("/", createProduct(routerOptions.productService))
+						router.Get("/", listProducts(routerOptions.productService))
+						router.Route("/{productID}", func(router chi.Router) {
+							router.Get("/", readProduct(routerOptions.productService))
+							router.Patch("/", patchProduct(routerOptions.productService))
+							router.Post("/activate", activateProduct(routerOptions.productService))
+							router.Post("/retire", retireProduct(routerOptions.productService))
+						})
+					})
+				}
+
+				if routerOptions.clientService != nil && routerOptions.kycService != nil {
+					router.Route("/clients", func(router chi.Router) {
+						router.Post("/", createClient(routerOptions.clientService))
+						router.Get("/", listClients(routerOptions.clientService))
+						router.Route("/{clientID}", func(router chi.Router) {
+							router.Get("/", readClient(routerOptions.clientService))
+							if routerOptions.accountService != nil {
+								router.Get("/accounts", listClientAccounts(routerOptions.clientService, routerOptions.accountService))
+							}
+							router.Patch("/", patchClient(routerOptions.clientService))
+							router.Post("/activate", activateClient(routerOptions.clientService))
+							router.Post("/suspend", suspendClient(routerOptions.clientService))
+							router.Post("/reactivate", reactivateClient(routerOptions.clientService))
+							router.Post("/close", closeClient(routerOptions.clientService))
+							router.Route("/kyc", func(router chi.Router) {
+								router.Post("/", submitKYC(routerOptions.kycService))
+								router.Get("/", listClientKYC(routerOptions.kycService))
+								router.Route("/{kycID}", func(router chi.Router) {
+									router.Post("/verify", verifyKYC(routerOptions.kycService))
+									router.Post("/reject", rejectKYC(routerOptions.kycService))
+								})
+							})
+						})
+					})
+				}
+
+				if routerOptions.reportingService != nil || routerOptions.financeReportingService != nil || routerOptions.channelRevenueReportingService != nil {
+					router.Route("/reports", func(router chi.Router) {
+						if routerOptions.reportingService != nil {
+							router.Get("/clients/{clientID}/portfolio", ledgertrackOnly(getClientPortfolioReport(routerOptions.reportingService)))
+							router.Get("/accounts/{address}/statement", ledgertrackOnly(getAccountStatementReport(routerOptions.reportingService)))
+							router.Get("/transactions/daily", ledgertrackOnly(getDailyTransactionSummaryReport(routerOptions.reportingService)))
+							router.Get("/interest-fees", ledgertrackOnly(getInterestFeeReport(routerOptions.reportingService)))
+						}
+						if routerOptions.financeReportingService != nil {
+							router.Route("/finance", func(router chi.Router) {
+								router.Get("/trial-balance", ledgertrackOnly(getFinanceTrialBalanceReport(systemController, routerOptions.financeReportingService)))
+								router.Get("/balance-sheet", ledgertrackOnly(getFinanceBalanceSheetReport(systemController, routerOptions.financeReportingService)))
+								router.Get("/pnl", ledgertrackOnly(getFinanceProfitAndLossReport(systemController, routerOptions.financeReportingService)))
+								router.Get("/cash-flow", ledgertrackOnly(getFinanceCashFlowReport(systemController, routerOptions.financeReportingService)))
+							})
+						}
+						if routerOptions.channelRevenueReportingService != nil {
+							router.Route("/channels", func(router chi.Router) {
+								router.Post("/revenue", ledgertrackOnly(getChannelRevenueSummaryReport(routerOptions.channelRevenueReportingService)))
+								router.Post("/revenue/timeseries", ledgertrackOnly(getChannelRevenueTimeseriesReport(routerOptions.channelRevenueReportingService)))
+								router.Post("/revenue/export", ledgertrackOnly(exportChannelRevenueReport(routerOptions.channelRevenueReportingService)))
+								router.Post("/dashboard", ledgertrackOnly(getChannelRevenueDashboardMetrics(routerOptions.channelRevenueReportingService)))
+							})
+						}
+					})
+				}
+
 			})
 		})
 	})
@@ -157,11 +263,19 @@ func NewRouter(
 }
 
 type routerOptions struct {
-	tracer               trace.Tracer
-	bulkerFactory        bulking.BulkerFactory
-	bulkHandlerFactories map[string]bulking.HandlerFactory
-	paginationConfig     common.PaginationConfig
-	exporters            bool
+	tracer                         trace.Tracer
+	bulkerFactory                  bulking.BulkerFactory
+	bulkHandlerFactories           map[string]bulking.HandlerFactory
+	paginationConfig               common.PaginationConfig
+	exporters                      bool
+	productService                 services.ProductService
+	clientService                  services.ClientService
+	kycService                     services.KYCService
+	accountService                 services.AccountService
+	reportingService               services.ReportingService
+	financeReportingService        services.FinanceReportingService
+	channelFeeConfigService        channelservices.ChannelFeeConfigService
+	channelRevenueReportingService channelservices.ChannelRevenueReportingService
 }
 
 type RouterOption func(ro *routerOptions)
@@ -193,6 +307,54 @@ func WithPaginationConfig(paginationConfig common.PaginationConfig) RouterOption
 func WithExporters(v bool) RouterOption {
 	return func(ro *routerOptions) {
 		ro.exporters = v
+	}
+}
+
+func WithProductService(productService services.ProductService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.productService = productService
+	}
+}
+
+func WithClientService(clientService services.ClientService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.clientService = clientService
+	}
+}
+
+func WithKYCService(kycService services.KYCService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.kycService = kycService
+	}
+}
+
+func WithAccountService(accountService services.AccountService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.accountService = accountService
+	}
+}
+
+func WithReportingService(reportingService services.ReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.reportingService = reportingService
+	}
+}
+
+func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithChannelFeeConfigService(channelFeeConfigService channelservices.ChannelFeeConfigService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.channelFeeConfigService = channelFeeConfigService
+	}
+}
+
+func WithChannelRevenueReportingService(channelRevenueReportingService channelservices.ChannelRevenueReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.channelRevenueReportingService = channelRevenueReportingService
 	}
 }
 
