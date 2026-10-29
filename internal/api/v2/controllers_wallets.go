@@ -14,6 +14,7 @@ import (
 
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/bun/bunpaginate"
+	"github.com/formancehq/go-libs/v3/logging"
 	"github.com/formancehq/go-libs/v3/metadata"
 	"github.com/formancehq/go-libs/v3/query"
 	ledgerinternal "github.com/formancehq/ledger/internal"
@@ -522,12 +523,10 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 						warningMsg = fmt.Sprintf("Channel balance is negative: %s %s", vol.Balance().String(), currency)
 					}
 				} else {
-					// DEBUG
-					warningMsg = fmt.Sprintf("DEBUG: Asset %s not found. Keys: %v", asset, volumes)
+					logging.FromContext(r.Context()).Debugf("channel balance check: asset %s not found in post commit volumes of %s", asset, channelAccount)
 				}
 			} else {
-				// DEBUG
-				warningMsg = fmt.Sprintf("DEBUG: Account %s not found. Keys: %v", channelAccount, cTx.Transaction.PostCommitVolumes)
+				logging.FromContext(r.Context()).Debugf("channel balance check: account %s not found in post commit volumes", channelAccount)
 			}
 
 			userFeeAmount := amount - channelAmount
