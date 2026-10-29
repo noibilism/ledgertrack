@@ -201,6 +201,15 @@ func outcomeFor(t *Transfer) *Outcome {
 	case StateNeedsReview:
 		return &Outcome{Status: StatusNeedsReview, Transfer: t, Replayed: true}
 	default:
+		if t.LeaseOwner == nil {
+			// Nobody is driving it: it is waiting for recovery (or for the retry
+			// cooldown to elapse).
+			out := &Outcome{Status: StatusPending, Transfer: t, Replayed: true}
+			if t.LastError != "" {
+				out.Cause = errors.New(t.LastError)
+			}
+			return out
+		}
 		return &Outcome{Status: StatusInProgress, Transfer: t, Replayed: true}
 	}
 }

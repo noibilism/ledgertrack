@@ -26,6 +26,7 @@ type FakeLedgers struct {
 	nextID   map[string]uint64
 	applied  map[string]int // ledger|reference -> times actually committed
 	posts    int
+	log      []transfers.Movement
 
 	// BeforeCommit runs before a new transaction is committed. Returning an
 	// error simulates a failure where nothing was written.
@@ -81,6 +82,13 @@ func (f *FakeLedgers) Applied(ledger, reference string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.applied[ledger+"|"+reference]
+}
+
+// Movements returns every committed movement in commit order.
+func (f *FakeLedgers) Movements() []transfers.Movement {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]transfers.Movement(nil), f.log...)
 }
 
 // PostCalls returns the number of Post calls received.
@@ -171,6 +179,7 @@ func (f *FakeLedgers) Post(_ context.Context, m transfers.Movement) (*transfers.
 	}
 	f.byRef[m.Ledger][m.Reference] = tx
 	f.applied[m.Ledger+"|"+m.Reference]++
+	f.log = append(f.log, m)
 	after := f.AfterCommit
 	out := *tx
 	f.mu.Unlock()
