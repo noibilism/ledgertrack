@@ -258,7 +258,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, idempotencyHit, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "DEBUG ERROR: %v\n", err)
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
@@ -288,6 +288,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
+		setIdempotencyHit(w, idempotencyHit)
 		api.Created(w, map[string]interface{}{
 			"txid":           tx.Transaction.ID,
 			"timestamp":      tx.Transaction.Timestamp,
@@ -424,7 +425,7 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 		// Store multi-ledger transaction links
 		respMetadata := map[string]string{}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, idempotencyHit, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "insufficient fund") {
 				api.WriteErrorResponse(w, http.StatusPaymentRequired, common.ErrInsufficientFund, err)
@@ -601,6 +602,7 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 			response["warning"] = warningMsg
 		}
 
+		setIdempotencyHit(w, idempotencyHit)
 		api.Created(w, response)
 	}
 }
@@ -666,7 +668,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			},
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, idempotencyHit, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") ||
 				strings.Contains(strings.ToLower(err.Error()), "duplicate") ||
@@ -697,6 +699,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
+		setIdempotencyHit(w, idempotencyHit)
 		api.Created(w, map[string]interface{}{
 			"txid":           tx.Transaction.ID,
 			"timestamp":      tx.Transaction.Timestamp,
@@ -744,10 +747,7 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 			return
 		}
 
-		mode := strings.ToUpper(strings.TrimSpace(req.Mode))
-		if mode == "" {
-			mode = "RELEASE_ONLY"
-		}
+		mode := normalizeReleaseMode(req.Mode)
 		if mode != "PAY" && mode != "RELEASE_ONLY" {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid mode"))
 			return
@@ -864,7 +864,7 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 
 		respMetadata := map[string]string{}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, idempotencyHit, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
 				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
@@ -1024,6 +1024,7 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 			response["warning"] = warningMsg
 		}
 
+		setIdempotencyHit(w, idempotencyHit)
 		api.Created(w, response)
 	}
 }
@@ -1230,5 +1231,30 @@ func getWalletStatement(sys systemcontroller.Controller) http.HandlerFunc {
 		api.RenderCursor(w, *bunpaginate.MapCursor(cursor, func(tx ledgerinternal.Transaction) any {
 			return renderTransaction(r, tx)
 		}))
+	}
+}
+
+// normalizeReleaseMode maps the documented release modes onto the two internal ones.
+// "PAY" (alias "RELEASE_AND_DEBIT") moves the lien to the world account in a single atomic transaction;
+// "RELEASE_ONLY" (alias "CANCEL", also the default) returns it to the available balance.
+// Unknown values are returned upper-cased so the caller's validation rejects them.
+func normalizeReleaseMode(raw string) string {
+	switch m := strings.ToUpper(strings.TrimSpace(raw)); m {
+	case "":
+		return "RELEASE_ONLY"
+	case "RELEASE_AND_DEBIT":
+		return "PAY"
+	case "CANCEL":
+		return "RELEASE_ONLY"
+	default:
+		return m
+	}
+}
+
+// setIdempotencyHit tells the client that the response is a replay of an earlier identical request
+// (same Idempotency-Key), so nothing new was posted to the ledger.
+func setIdempotencyHit(w http.ResponseWriter, hit bool) {
+	if hit {
+		w.Header().Set("Idempotency-Hit", "true")
 	}
 }
