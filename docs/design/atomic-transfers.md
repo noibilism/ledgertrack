@@ -94,3 +94,29 @@ Recommendation: ship the durable transfer record now (additive, no data migratio
 - Between leg 1 and the last leg the books are inconsistent by design. The window is bounded by the grace period plus backoff and is visible in `_system.transfers`.
 - `failed_needs_review` rows require a person; nothing reverses automatically.
 - The fee record is deduplicated with an advisory lock plus existence check rather than a unique index, because existing data may already contain duplicate references.
+
+## Operating it
+
+Recovery runs in the worker (`worker`, or `serve --worker`). Flags map to env vars by upper-casing and replacing `-` with `_`.
+
+| Flag / env (`WORKER_CBA_TRANSFER_RECOVERY_...`) | Default | Meaning |
+|---|---|---|
+| `--worker-cba-transfer-recovery-schedule` | `0 * * * * *` | cron (with seconds) of a recovery tick |
+| `...-batch-size` | 100 | transfers claimed per pass; a tick keeps passing while batches are full |
+| `...-max-attempts` | 10 | drives (inline + recovery) before `failed_needs_review` |
+| `...-grace` | 2m | minimum idle time before recovery touches a transfer; doubles per attempt |
+| `...-max-backoff` | 30m | cap of that backoff |
+| `...-lease` | 2m | ownership time of a driver; must exceed the longest drive |
+
+`serve` reads the same values for its inline path, so set them once for both.
+
+Watch for the log line `ALERT transfer moved to failed_needs_review` and the counter `transfers.needs_review`. To list work needing a human:
+
+```sql
+select reference, wallet_id, kind, amount, user_tx_id, channel_tx_id, revenue_tx_id, last_error, updated_at
+from _system.transfers where state = 'failed_needs_review' order by updated_at;
+```
+
+Stuck-in-flight check: `select state, count(*), min(updated_at) from _system.transfers where state not in ('completed','failed','failed_needs_review') group by 1;`
+
+Behaviour changes versus the old handlers (all intended): a retry of a completed reference returns the stored 201 with `Idempotency-Hit: true` instead of 409; `metadata.channel_tx_id` carries the real transaction id (the old code printed a pointer address); a legacy request that stopped half way is healed by the client retrying it.

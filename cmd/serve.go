@@ -45,6 +45,7 @@ import (
 	"github.com/formancehq/ledger/internal/storage"
 	systemstore "github.com/formancehq/ledger/internal/storage/system"
 	"github.com/formancehq/ledger/internal/tracing"
+	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/formancehq/ledger/internal/worker"
 )
 
@@ -128,6 +129,7 @@ func NewServeCommand() *cobra.Command {
 				currency.NewFXModule(),
 				cba.NewFXModule(),
 				channels.NewFXModule(),
+				transfers.NewFXModule(transferConfig(cfg.WorkerConfiguration)),
 				ballast.Module(cfg.BallastSizeInBytes),
 				api.Module(api.Config{
 					Version: Version,

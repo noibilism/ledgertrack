@@ -282,7 +282,7 @@ func (s *Service) step(ctx context.Context, t *Transfer) error {
 	case StateCreated:
 		leg, err := s.exec.PostUser(ctx, t)
 		if err != nil {
-			return err
+			return userLegError(err)
 		}
 		id := leg.TxID
 		t.UserTxID = &id
@@ -294,7 +294,7 @@ func (s *Service) step(ctx context.Context, t *Transfer) error {
 		}
 		leg, err := s.exec.PostChannel(ctx, t)
 		if err != nil {
-			return err
+			return fmt.Errorf("channel ledger: %w", err)
 		}
 		id := leg.TxID
 		t.ChannelTxID = &id
@@ -308,7 +308,7 @@ func (s *Service) step(ctx context.Context, t *Transfer) error {
 		}
 		leg, err := s.exec.PostRevenue(ctx, t)
 		if err != nil {
-			return err
+			return fmt.Errorf("revenue ledger: %w", err)
 		}
 		t.RevenueTxID = leg.TxID
 		return s.advance(ctx, t, StateRevenuePosted)
@@ -320,6 +320,16 @@ func (s *Service) step(ctx context.Context, t *Transfer) error {
 	default:
 		return fmt.Errorf("transfer %s in unexpected state %q", t.ID, t.State)
 	}
+}
+
+// userLegError keeps a rejection verbatim: the HTTP layer maps first-leg
+// rejections by their message (402 insufficient funds, 409 conflict, ...).
+func userLegError(err error) error {
+	var rejected *RejectedError
+	if errors.As(err, &rejected) || errors.Is(err, ErrReferenceMismatch) {
+		return err
+	}
+	return fmt.Errorf("user ledger: %w", err)
 }
 
 func (s *Service) advance(ctx context.Context, t *Transfer, to State) error {

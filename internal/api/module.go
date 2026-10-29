@@ -15,6 +15,7 @@ import (
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	"github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/transfers"
 )
 
 type BulkConfig struct {
@@ -44,6 +45,7 @@ func Module(cfg Config) fx.Option {
 			financeReportingService services.FinanceReportingService,
 			channelFeeConfigService channelservices.ChannelFeeConfigService,
 			channelRevenueReportingService channelservices.ChannelRevenueReportingService,
+			transferService *transfers.Service,
 		) chi.Router {
 			return NewRouter(
 				backend,
@@ -66,6 +68,7 @@ func Module(cfg Config) fx.Option {
 				WithFinanceReportingService(financeReportingService),
 				WithChannelFeeConfigService(channelFeeConfigService),
 				WithChannelRevenueReportingService(channelRevenueReportingService),
+				WithTransferService(transferService),
 			)
 		}),
 		health.Module(),
