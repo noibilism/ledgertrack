@@ -85,6 +85,10 @@ func NewServeCommand() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 
+			if err := checkAuthGuard(cmd); err != nil {
+				return err
+			}
+
 			cfg, err := LoadConfig[ServeCommandConfig](cmd)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
