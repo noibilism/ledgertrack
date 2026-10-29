@@ -42,6 +42,8 @@ func Module(cfg Config) fx.Option {
 			accountService services.AccountService,
 			reportingService services.ReportingService,
 			financeReportingService services.FinanceReportingService,
+			glAccountService services.GLAccountService,
+			glReportingService services.GLReportingService,
 			channelFeeConfigService channelservices.ChannelFeeConfigService,
 			channelRevenueReportingService channelservices.ChannelRevenueReportingService,
 		) chi.Router {
@@ -64,6 +66,8 @@ func Module(cfg Config) fx.Option {
 				WithAccountService(accountService),
 				WithReportingService(reportingService),
 				WithFinanceReportingService(financeReportingService),
+				WithGLAccountService(glAccountService),
+				WithGLReportingService(glReportingService),
 				WithChannelFeeConfigService(channelFeeConfigService),
 				WithChannelRevenueReportingService(channelRevenueReportingService),
 			)

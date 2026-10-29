@@ -200,6 +200,7 @@ func TestGLCreateValidation(t *testing.T) {
 	}{
 		{"missing code", glInput("", "x", "asset", "NGN", "", "gl:x"), "code is required"},
 		{"bad code", glInput("a b", "x", "asset", "NGN", "", "gl:x"), "code is required"},
+		{"reserved code", glInput("Import", "x", "asset", "NGN", "", "gl:x"), `code "import" is reserved`},
 		{"missing name", glInput("3000", " ", "asset", "NGN", "", "gl:x"), "name is required"},
 		{"bad type", glInput("3000", "x", "revenue", "NGN", "", "gl:x"), "type must be one of"},
 		{"bad side", func() CreateGLAccountInput {

@@ -478,6 +478,9 @@ func normalizeGLInput(input CreateGLAccountInput) (*models.GLAccount, []string) 
 
 	if !glCodeFormat.MatchString(account.Code) {
 		problems = append(problems, "code is required and must match "+glCodeFormat.String())
+	} else if strings.EqualFold(account.Code, "import") {
+		// /gl/accounts/import is the bulk import route, an account with that code could never be fetched
+		problems = append(problems, `code "import" is reserved`)
 	}
 	if account.Name == "" || len(account.Name) > 255 {
 		problems = append(problems, "name is required and must be at most 255 characters")
