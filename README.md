@@ -365,6 +365,7 @@ The `test/e2e` suite uses the repository's Docker-based test harness for Postgre
 
 * **CBA domain specification**: [`CBA_PRD.md`](CBA_PRD.md)
 * **Wallet wrapper behavior**: [`WalletPRD.md`](WalletPRD.md)
+* **Legacy import tool**: [`docs/import/README.md`](docs/import/README.md)
 * **OpenAPI document**: [`openapi/v2.yaml`](openapi/v2.yaml)
 * **Postman collection**: [`postman_collection.json`](postman_collection.json)
 
