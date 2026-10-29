@@ -159,7 +159,7 @@ func (s *DefaultFinanceReportingService) TrialBalance(ctx context.Context, sys s
 		})
 	}
 
-	systemBalance, err := aggregatedBalance(ctx, sys, "ledgertrack", fmt.Sprintf("system:control:%s", currency), filter.AsOf, currency)
+	systemBalance, err := aggregatedBalance(ctx, sys, "ledgertrack", systemControlPattern(currency), filter.AsOf, currency)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func (s *DefaultFinanceReportingService) BalanceSheet(ctx context.Context, sys s
 	}
 	asOf := toStdTimePtr(filter.AsOf)
 
-	systemBalance, err := aggregatedBalance(ctx, sys, "ledgertrack", fmt.Sprintf("system:control:%s", currency), filter.AsOf, currency)
+	systemBalance, err := aggregatedBalance(ctx, sys, "ledgertrack", systemControlPattern(currency), filter.AsOf, currency)
 	if err != nil {
 		return nil, err
 	}
@@ -358,11 +358,11 @@ func (s *DefaultFinanceReportingService) CashFlow(ctx context.Context, sys syste
 		return nil, fmt.Errorf("%w: endTime must be after startTime", ErrFinanceReportingValidation)
 	}
 
-	openControl, err := aggregatedBalance(ctx, sys, "ledgertrack", fmt.Sprintf("system:control:%s", currency), filter.StartTime, currency)
+	openControl, err := aggregatedBalance(ctx, sys, "ledgertrack", systemControlPattern(currency), filter.StartTime, currency)
 	if err != nil {
 		return nil, err
 	}
-	closeControl, err := aggregatedBalance(ctx, sys, "ledgertrack", fmt.Sprintf("system:control:%s", currency), filter.EndTime, currency)
+	closeControl, err := aggregatedBalance(ctx, sys, "ledgertrack", systemControlPattern(currency), filter.EndTime, currency)
 	if err != nil {
 		return nil, err
 	}
@@ -452,6 +452,20 @@ func aggregatedBalance(ctx context.Context, sys systemcontroller.Controller, led
 		return amount.Int64(), nil
 	}
 	return 0, nil
+}
+
+// systemControlPattern returns the address filter that selects the unsharded
+// system control account AND every shard of it.
+//
+// Sharding (CBA_SYSTEM_CONTROL_SHARDS > 1) spreads postings across
+// system:control:{CCY}:{n}. A plain Match on "system:control:{CCY}" is not a
+// partial address, so the store turns it into an exact `address = ...`
+// comparison and misses every shard. A trailing empty segment makes the filter
+// partial with no length constraint (the same mechanism as the "channel:"
+// prefix used in these reports), so it matches system:control:{CCY} and
+// system:control:{CCY}:{n}. With no shards the result equals the exact match.
+func systemControlPattern(currency string) string {
+	return fmt.Sprintf("system:control:%s:", currency)
 }
 
 func toStdTimePtr(t *libtime.Time) *stdtime.Time {
