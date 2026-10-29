@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"net/http"
 	"os"
@@ -171,28 +170,11 @@ func createWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
+// parseAmount converts an API amount to minor units of the currency.
+// Integers are minor units, decimals are major units and must not carry more
+// fractional digits than the currency precision (see currencyregistry.ParseAmount).
 func parseAmount(amount json.Number, currency string) (int64, error) {
-	if amount == "" {
-		return 0, nil
-	}
-
-	reg, ok := currencyregistry.Lookup(currency)
-	if !ok {
-		reg = currencyregistry.Definition{Precision: 2, Enabled: true}
-	}
-
-	s := amount.String()
-	if strings.Contains(s, ".") {
-		f, err := amount.Float64()
-		if err != nil {
-			return 0, err
-		}
-		// Convert to atomic units
-		mult := math.Pow(10, float64(reg.Precision))
-		return int64(math.Round(f * mult)), nil
-	}
-
-	return amount.Int64()
+	return currencyregistry.ParseAmount(amount.String(), currency)
 }
 
 func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
