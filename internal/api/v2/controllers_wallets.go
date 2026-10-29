@@ -229,7 +229,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		// Debit: system/control/{currency}
 
 		accountUser := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
-		accountSystem := fmt.Sprintf("system:control:%s", currency)
+		accountSystem := systemControlAddress(walletID, currency)
 
 		script := fmt.Sprintf(`
 		send [%s/2 %d] (
@@ -385,7 +385,7 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 		// Credit: system/control/{currency}
 
 		accountUser := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
-		accountSystem := fmt.Sprintf("system:control:%s", currency)
+		accountSystem := systemControlAddress(walletID, currency)
 
 		script := fmt.Sprintf(`
 		send [%s/2 %d] (
