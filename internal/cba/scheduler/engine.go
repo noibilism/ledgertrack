@@ -55,7 +55,10 @@ func (e *ledgerPostingEngine) AvailableBalance(ctx context.Context, account mode
 		return 0, err
 	}
 
-	asset := fmt.Sprintf("%s/2", account.Currency)
+	asset, err := currencyregistry.AssetFor(account.Currency)
+	if err != nil {
+		return 0, err
+	}
 	if amount, ok := balancesMap[asset]; ok && amount != nil {
 		return amount.Int64(), nil
 	}
@@ -64,50 +67,66 @@ func (e *ledgerPostingEngine) AvailableBalance(ctx context.Context, account mode
 
 func (e *ledgerPostingEngine) Credit(ctx context.Context, account models.Account, amount int64, reference string, txnMetadata map[string]string) error {
 	accountUser := walletAvailableAddress(account.WalletID, account.Currency)
+	asset, err := currencyregistry.AssetFor(account.Currency)
+	if err != nil {
+		return err
+	}
 	accountSystem := fmt.Sprintf("system:control:%s", account.Currency)
 	script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s allowing unbounded overdraft
 			destination = @%s
 		)
-	`, account.Currency, amount, accountSystem, accountUser)
+	`, asset, amount, accountSystem, accountUser)
 
 	return e.createTransaction(ctx, e.cfg.LedgerName, script, reference, txnMetadata)
 }
 
 func (e *ledgerPostingEngine) Debit(ctx context.Context, account models.Account, amount int64, reference string, txnMetadata map[string]string) error {
 	accountUser := walletAvailableAddress(account.WalletID, account.Currency)
+	asset, err := currencyregistry.AssetFor(account.Currency)
+	if err != nil {
+		return err
+	}
 	accountSystem := fmt.Sprintf("system:control:%s", account.Currency)
 	script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s
 			destination = @%s
 		)
-	`, account.Currency, amount, accountUser, accountSystem)
+	`, asset, amount, accountUser, accountSystem)
 
 	return e.createTransaction(ctx, e.cfg.LedgerName, script, reference, txnMetadata)
 }
 
 func (e *ledgerPostingEngine) RecordFeeIncome(ctx context.Context, currency, reference string, amount int64, txnMetadata map[string]string) error {
+	asset, err := currencyregistry.AssetFor(currency)
+	if err != nil {
+		return err
+	}
 	revenueLedgerName := fmt.Sprintf("revenue-%s", currency)
 	script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @world
 			destination = @%s
 		)
-	`, currency, amount, e.cfg.FeeIncomeAccount)
+	`, asset, amount, e.cfg.FeeIncomeAccount)
 
 	return e.createTransaction(ctx, revenueLedgerName, script, reference, txnMetadata)
 }
 
 func (e *ledgerPostingEngine) RecordInterestExpense(ctx context.Context, currency, reference string, amount int64, txnMetadata map[string]string) error {
+	asset, err := currencyregistry.AssetFor(currency)
+	if err != nil {
+		return err
+	}
 	revenueLedgerName := fmt.Sprintf("revenue-%s", currency)
 	script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s allowing unbounded overdraft
 			destination = @world
 		)
-	`, currency, amount, e.cfg.InterestExpenseAccount)
+	`, asset, amount, e.cfg.InterestExpenseAccount)
 
 	return e.createTransaction(ctx, revenueLedgerName, script, reference, txnMetadata)
 }

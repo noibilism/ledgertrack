@@ -18,6 +18,7 @@ import (
 	"github.com/formancehq/ledger/internal/cba/models"
 	"github.com/formancehq/ledger/internal/cba/repositories"
 	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
+	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
 )
@@ -248,9 +249,13 @@ func (s *DefaultReportingService) AccountStatement(ctx context.Context, ledger l
 	}
 
 	availableAddress := reportingAvailableAddress(account.WalletID, account.Currency)
+	asset, err := currencyregistry.AssetFor(account.Currency)
+	if err != nil {
+		return nil, err
+	}
 	first := true
 	for _, tx := range transactions {
-		before, after, delta := reportingBalanceChange(tx, availableAddress, account.Currency)
+		before, after, delta := reportingBalanceChange(tx, availableAddress, asset)
 		if first {
 			report.OpeningBalance = before
 			first = false
@@ -307,7 +312,11 @@ func (s *DefaultReportingService) DailyTransactionSummary(ctx context.Context, l
 
 	for _, tx := range transactions {
 		for address, account := range accountByAvailableAddress {
-			_, _, delta := reportingBalanceChange(tx, address, account.Currency)
+			asset, err := currencyregistry.AssetFor(account.Currency)
+			if err != nil {
+				return nil, err
+			}
+			_, _, delta := reportingBalanceChange(tx, address, asset)
 			if delta == 0 {
 				continue
 			}
@@ -535,9 +544,8 @@ func listTransactionsForAccounts(ctx context.Context, ledger ledgercontroller.Co
 	return ret, err
 }
 
-func reportingBalanceChange(tx ledgerinternal.Transaction, trackedAccount, currency string) (int64, int64, int64) {
+func reportingBalanceChange(tx ledgerinternal.Transaction, trackedAccount, assetName string) (int64, int64, int64) {
 	var balanceBefore, balanceAfter int64
-	assetName := fmt.Sprintf("%s/2", currency)
 	if vol, ok := tx.PostCommitVolumes[trackedAccount]; ok {
 		if v, ok := vol[assetName]; ok {
 			balanceAfter = v.Balance().Int64()
@@ -566,7 +574,10 @@ func reportingAvailableBalance(ctx context.Context, ledger ledgercontroller.Cont
 	if err != nil {
 		return 0, err
 	}
-	assetName := fmt.Sprintf("%s/2", account.Currency)
+	assetName, err := currencyregistry.AssetFor(account.Currency)
+	if err != nil {
+		return 0, err
+	}
 	if amount, ok := balancesMap[assetName]; ok && amount != nil {
 		return amount.Int64(), nil
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/formancehq/ledger/internal/cba/services"
 	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
@@ -299,14 +300,19 @@ func creditAccount(accountService services.AccountService) http.HandlerFunc {
 			return
 		}
 
+		asset, err := currencyregistry.AssetFor(account.Currency)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
 		accountUser := walletAvailableAddress(account.WalletID, account.Currency)
 		accountSystem := systemControlAddress(account.WalletID, account.Currency)
 		script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s allowing unbounded overdraft
 			destination = @%s
 		)
-	`, account.Currency, amount, accountSystem, accountUser)
+	`, asset, amount, accountSystem, accountUser)
 
 		params := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -339,7 +345,7 @@ func creditAccount(accountService services.AccountService) http.HandlerFunc {
 			return
 		}
 
-		api.Created(w, accountTransactionResponse(tx.Transaction, accountUser, account.Currency))
+		api.Created(w, accountTransactionResponse(tx.Transaction, accountUser, asset))
 	}
 }
 
@@ -398,14 +404,19 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			return
 		}
 
+		asset, err := currencyregistry.AssetFor(account.Currency)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
 		accountUser := walletAvailableAddress(account.WalletID, account.Currency)
 		accountSystem := systemControlAddress(account.WalletID, account.Currency)
 		script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s
 			destination = @%s
 		)
-	`, account.Currency, amount, accountUser, accountSystem)
+	`, asset, amount, accountUser, accountSystem)
 
 		params := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -444,11 +455,11 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			}
 			channelAccount := fmt.Sprintf("channel:%s", req.ChannelID)
 			channelScript := fmt.Sprintf(`
-				send [%s/2 %d] (
+				send [%s %d] (
 					source = @%s allowing unbounded overdraft
 					destination = @world
 				)
-			`, account.Currency, channelAmount, channelAccount)
+			`, asset, channelAmount, channelAccount)
 			cParams := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 				Input: ledgercontroller.CreateTransaction{
 					RunScript: vm.RunScript{
@@ -467,7 +478,6 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			respMetadata["channel_tx_id"] = fmt.Sprintf("%d", cTx.Transaction.ID)
 
 			if volumes, ok := cTx.Transaction.PostCommitVolumes[channelAccount]; ok {
-				asset := fmt.Sprintf("%s/2", account.Currency)
 				if vol, ok := volumes[asset]; ok {
 					warningMsg = fmt.Sprintf("Channel balance: %s %s", vol.Balance().String(), account.Currency)
 					if vol.Balance().Sign() < 0 {
@@ -485,11 +495,11 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 					return
 				}
 				revenueScript := fmt.Sprintf(`
-					send [%s/2 %d] (
+					send [%s %d] (
 						source = @world
 						destination = @revenue:accumulated
 					)
-				`, account.Currency, revenue)
+				`, asset, revenue)
 				rParams := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 					Input: ledgercontroller.CreateTransaction{
 						RunScript: vm.RunScript{
@@ -518,7 +528,7 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			return
 		}
 
-		response := accountTransactionResponse(tx.Transaction, accountUser, account.Currency)
+		response := accountTransactionResponse(tx.Transaction, accountUser, asset)
 		response["metadata"] = respMetadata
 		if warningMsg != "" {
 			response["warning"] = warningMsg
@@ -567,14 +577,19 @@ func lienAccount(accountService services.AccountService) http.HandlerFunc {
 			return
 		}
 
+		asset, err := currencyregistry.AssetFor(account.Currency)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
 		accountAvailable := walletAvailableAddress(account.WalletID, account.Currency)
 		accountLien := walletLienAddress(account.WalletID, account.Currency)
 		script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s
 			destination = @%s
 		)
-	`, account.Currency, amount, accountAvailable, accountLien)
+	`, asset, amount, accountAvailable, accountLien)
 
 		params := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -606,7 +621,7 @@ func lienAccount(accountService services.AccountService) http.HandlerFunc {
 			handleAccountError(w, r, err)
 			return
 		}
-		api.Created(w, accountTransactionResponse(tx.Transaction, accountAvailable, account.Currency))
+		api.Created(w, accountTransactionResponse(tx.Transaction, accountAvailable, asset))
 	}
 }
 
@@ -663,6 +678,11 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 		}
 
 		l := common.LedgerFromContext(r.Context())
+		asset, err := currencyregistry.AssetFor(account.Currency)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
 		accountAvailable := walletAvailableAddress(account.WalletID, account.Currency)
 		accountLien := walletLienAddress(account.WalletID, account.Currency)
 
@@ -670,18 +690,18 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 		mode := strings.TrimSpace(req.Mode)
 		if mode == "PAY" {
 			script = fmt.Sprintf(`
-				send [%s/2 %d] (
+				send [%s %d] (
 					source = @%s
 					destination = @world
 				)
-			`, account.Currency, amount, accountLien)
+			`, asset, amount, accountLien)
 		} else {
 			script = fmt.Sprintf(`
-				send [%s/2 %d] (
+				send [%s %d] (
 					source = @%s
 					destination = @%s
 				)
-			`, account.Currency, amount, accountLien, accountAvailable)
+			`, asset, amount, accountLien, accountAvailable)
 		}
 
 		params := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
@@ -717,11 +737,11 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 			}
 			channelAccount := fmt.Sprintf("channel:%s", req.ChannelID)
 			channelScript := fmt.Sprintf(`
-				send [%s/2 %d] (
+				send [%s %d] (
 					source = @%s allowing unbounded overdraft
 					destination = @world
 				)
-			`, account.Currency, channelAmount, channelAccount)
+			`, asset, channelAmount, channelAccount)
 			cParams := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 				Input: ledgercontroller.CreateTransaction{
 					RunScript: vm.RunScript{
@@ -739,7 +759,6 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 			respMetadata["channel_ledger"] = channelLedgerName
 			respMetadata["channel_tx_id"] = fmt.Sprintf("%d", cTx.Transaction.ID)
 			if volumes, ok := cTx.Transaction.PostCommitVolumes[channelAccount]; ok {
-				asset := fmt.Sprintf("%s/2", account.Currency)
 				if vol, ok := volumes[asset]; ok && vol.Balance().Sign() < 0 {
 					warningMsg = fmt.Sprintf("Channel balance is negative: %s %s", vol.Balance().String(), account.Currency)
 				}
@@ -754,11 +773,11 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 					return
 				}
 				revenueScript := fmt.Sprintf(`
-					send [%s/2 %d] (
+					send [%s %d] (
 						source = @world
 						destination = @revenue:accumulated
 					)
-				`, account.Currency, revenue)
+				`, asset, revenue)
 				rParams := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 					Input: ledgercontroller.CreateTransaction{
 						RunScript: vm.RunScript{
@@ -783,7 +802,7 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 			return
 		}
 
-		response := accountTransactionResponse(tx.Transaction, accountAvailable, account.Currency)
+		response := accountTransactionResponse(tx.Transaction, accountAvailable, asset)
 		response["metadata"] = respMetadata
 		if warningMsg != "" {
 			response["warning"] = warningMsg
@@ -870,9 +889,8 @@ func lifecycleAccountHandler(fn func(context.Context, uuid.UUID) (*models.Accoun
 	}
 }
 
-func accountTransactionResponse(tx ledgerinternal.Transaction, trackedAccount string, currency string) map[string]any {
+func accountTransactionResponse(tx ledgerinternal.Transaction, trackedAccount string, assetName string) map[string]any {
 	var balanceBefore, balanceAfter int64
-	assetName := fmt.Sprintf("%s/2", currency)
 	if vol, ok := tx.PostCommitVolumes[trackedAccount]; ok {
 		if v, ok := vol[assetName]; ok {
 			bal := new(big.Int).Sub(v.Input, v.Output)
@@ -932,14 +950,19 @@ func creditOpeningDeposit(ctx context.Context, l ledgercontroller.Controller, ac
 		return nil
 	}
 
+	asset, err := currencyregistry.AssetFor(account.Currency)
+	if err != nil {
+		return err
+	}
+
 	accountUser := walletAvailableAddress(account.WalletID, account.Currency)
 	accountSystem := fmt.Sprintf("system:control:%s", account.Currency)
 	script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s allowing unbounded overdraft
 			destination = @%s
 		)
-	`, account.Currency, amount, accountSystem, accountUser)
+	`, asset, amount, accountSystem, accountUser)
 
 	params := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 		Input: ledgercontroller.CreateTransaction{
@@ -964,7 +987,10 @@ func creditOpeningDeposit(ctx context.Context, l ledgercontroller.Controller, ac
 
 func readAvailableBalance(ctx context.Context, l ledgercontroller.Controller, walletID, currency string) (int64, error) {
 	address := walletAvailableAddress(walletID, currency)
-	asset := fmt.Sprintf("%s/2", currency)
+	asset, err := currencyregistry.AssetFor(currency)
+	if err != nil {
+		return 0, err
+	}
 	var order bunpaginate.Order = bunpaginate.OrderAsc
 	rq := storagecommon.InitialPaginatedQuery[ledgerstore.GetVolumesOptions]{
 		Column:   "account",
