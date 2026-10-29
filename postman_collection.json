@@ -879,6 +879,221 @@
 			"name": "CBA",
 			"item": [
 				{
+					"name": "GL Registry",
+					"item": [
+						{
+							"name": "Create GL Account",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/gl/accounts",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"gl",
+										"accounts"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"code\": \"1001\",\n    \"name\": \"Cash at bank\",\n    \"type\": \"asset\",\n    \"currency\": \"NGN\",\n    \"parent_code\": \"\",\n    \"ledger\": \"ledgertrack\",\n    \"address\": \"gl:assets:cash_at_bank\"\n}"
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "List GL Accounts",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/gl/accounts?type=asset&currency=NGN&status=active",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"gl",
+										"accounts"
+									],
+									"query": [
+										{
+											"key": "type",
+											"value": "asset"
+										},
+										{
+											"key": "currency",
+											"value": "NGN"
+										},
+										{
+											"key": "status",
+											"value": "active"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get GL Account",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/gl/accounts/{{glCode}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"gl",
+										"accounts",
+										"{{glCode}}"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Patch GL Account",
+							"request": {
+								"method": "PATCH",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/gl/accounts/{{glCode}}",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"gl",
+										"accounts",
+										"{{glCode}}"
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "{\n    \"name\": \"Cash at bank (operating)\",\n    \"metadata\": {\n        \"owner\": \"finance\"\n    }\n}"
+								},
+								"description": "Only name, metadata and status can change."
+							},
+							"response": []
+						},
+						{
+							"name": "Import GL Chart (JSON, dry run)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/gl/accounts/import?dry_run=true",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"gl",
+										"accounts",
+										"import"
+									],
+									"query": [
+										{
+											"key": "dry_run",
+											"value": "true"
+										}
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "[\n    {\n        \"code\": \"1000\",\n        \"name\": \"Assets\",\n        \"type\": \"asset\",\n        \"currency\": \"NGN\",\n        \"ledger\": \"ledgertrack\",\n        \"address\": \"gl:assets\"\n    },\n    {\n        \"code\": \"1010\",\n        \"name\": \"Cash\",\n        \"type\": \"asset\",\n        \"currency\": \"NGN\",\n        \"parent_code\": \"1000\",\n        \"ledger\": \"ledgertrack\",\n        \"address\": \"gl:assets:cash\"\n    }\n]"
+								},
+								"description": "Validates and returns the per-row report without writing. Remove dry_run to apply."
+							},
+							"response": []
+						},
+						{
+							"name": "Import GL Chart (CSV)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "text/csv"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/gl/accounts/import?dry_run=true",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"gl",
+										"accounts",
+										"import"
+									],
+									"query": [
+										{
+											"key": "dry_run",
+											"value": "true"
+										}
+									]
+								},
+								"body": {
+									"mode": "raw",
+									"raw": "code,name,type,normal_side,currency,parent_code,ledger,address\n1000,Assets,asset,,NGN,,ledgertrack,gl:assets\n1010,Cash,asset,debit,NGN,1000,ledgertrack,gl:assets:cash\n"
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get GL Account Balance",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/gl/accounts/{{glCode}}/balance",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"gl",
+										"accounts",
+										"{{glCode}}",
+										"balance"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
 					"name": "Products",
 					"item": [
 						{
@@ -1348,6 +1563,33 @@
 							"response": []
 						},
 						{
+							"name": "Get GL Trial Balance",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/v2/ledgertrack/reports/finance/gl-trial-balance?currency=NGN",
+									"host": [
+										"{{baseUrl}}"
+									],
+									"path": [
+										"v2",
+										"ledgertrack",
+										"reports",
+										"finance",
+										"gl-trial-balance"
+									],
+									"query": [
+										{
+											"key": "currency",
+											"value": "NGN"
+										}
+									]
+								}
+							},
+							"response": []
+						},
+						{
 							"name": "Get Finance Balance Sheet",
 							"request": {
 								"method": "GET",
@@ -1473,6 +1715,11 @@
 		{
 			"key": "accountID",
 			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "glCode",
+			"value": "1001",
 			"type": "string"
 		}
 	]
