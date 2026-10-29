@@ -14,6 +14,7 @@ import (
 	"github.com/formancehq/ledger/internal/api/common"
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
+	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	"github.com/formancehq/ledger/internal/controller/system"
 )
 
@@ -28,6 +29,8 @@ type Config struct {
 	Bulk       BulkConfig
 	Pagination common.PaginationConfig
 	Exporters  bool
+	// WriteLimiter bounds the write requests in flight, shared with the ledger controllers (nil: no bound).
+	WriteLimiter *ledgercontroller.WriteLimiter
 }
 
 func Module(cfg Config) fx.Option {
@@ -58,6 +61,7 @@ func Module(cfg Config) fx.Option {
 				)),
 				WithPaginationConfiguration(cfg.Pagination),
 				WithExporters(cfg.Exporters),
+				WithWriteLimiter(cfg.WriteLimiter),
 				WithProductService(productService),
 				WithClientService(clientService),
 				WithKYCService(kycService),

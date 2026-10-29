@@ -67,7 +67,9 @@ type DefaultController struct {
 	interpreterParser          ledgercontroller.NumscriptParser
 	registry                   *ledgercontroller.StateRegistry
 	databaseRetryConfiguration DatabaseRetryConfiguration
-	replicationBackend         ReplicationBackend
+	// writeLimiter is shared by every ledger controller built by this system controller (nil: no limit).
+	writeLimiter       *ledgercontroller.WriteLimiter
+	replicationBackend ReplicationBackend
 
 	tracerProvider trace.TracerProvider
 	meterProvider  metric.MeterProvider
@@ -164,6 +166,10 @@ func (ctrl *DefaultController) GetLedgerController(ctx context.Context, name str
 			ledgercontroller.WithSchemaEnforcementMode(ctrl.schemaEnforcementMode),
 			ledgercontroller.WithMeter(meter),
 		)
+
+		// Bound the number of write transactions in flight (shared by all ledgers, since they share the pool).
+		// It sits below the retry wrapper so that a retry does not hold a slot while it sleeps.
+		ledgerController = ledgercontroller.NewControllerWithWriteLimiter(ledgerController, ctrl.writeLimiter)
 
 		// Add too many client error handling
 		ledgerController = ledgercontroller.NewControllerWithTooManyClientHandling(
@@ -289,6 +295,13 @@ func WithParser(
 		ctrl.defaultParser = defaultParser
 		ctrl.machineParser = machineParser
 		ctrl.interpreterParser = interpreterParser
+	}
+}
+
+// WithWriteLimiter bounds the number of ledger write transactions in flight (nil disables the bound).
+func WithWriteLimiter(limiter *ledgercontroller.WriteLimiter) Option {
+	return func(ctrl *DefaultController) {
+		ctrl.writeLimiter = limiter
 	}
 }
 
