@@ -258,7 +258,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "DEBUG ERROR: %v\n", err)
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
@@ -424,7 +424,7 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 		// Store multi-ledger transaction links
 		respMetadata := map[string]string{}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "insufficient fund") {
 				api.WriteErrorResponse(w, http.StatusPaymentRequired, common.ErrInsufficientFund, err)
@@ -666,7 +666,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			},
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") ||
 				strings.Contains(strings.ToLower(err.Error()), "duplicate") ||
@@ -864,7 +864,7 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 
 		respMetadata := map[string]string{}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
 				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
