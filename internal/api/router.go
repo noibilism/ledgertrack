@@ -26,6 +26,7 @@ import (
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	"github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/transfers"
 )
 
 // todo: refine textual errors
@@ -109,6 +110,7 @@ func NewRouter(
 		v2.WithGLReportingService(routerOptions.glReportingService),
 		v2.WithChannelFeeConfigService(routerOptions.channelFeeConfigService),
 		v2.WithChannelRevenueReportingService(routerOptions.channelRevenueReportingService),
+		v2.WithTransferService(routerOptions.transferService),
 	)
 	mux.Handle("/v2*", http.StripPrefix("/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chi.RouteContext(r.Context()).Reset()
@@ -142,6 +144,7 @@ type routerOptions struct {
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
+	transferService                *transfers.Service
 }
 
 type RouterOption func(ro *routerOptions)
@@ -227,6 +230,12 @@ func WithGLReportingService(glReportingService services.GLReportingService) Rout
 func WithChannelFeeConfigService(channelFeeConfigService channelservices.ChannelFeeConfigService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.channelFeeConfigService = channelFeeConfigService
+	}
+}
+
+func WithTransferService(transferService *transfers.Service) RouterOption {
+	return func(ro *routerOptions) {
+		ro.transferService = transferService
 	}
 }
 

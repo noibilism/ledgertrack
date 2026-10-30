@@ -17,6 +17,7 @@ import (
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/transfers"
 )
 
 // NewRouter creates a chi.Router configured with the v2 HTTP API routes for the ledger service.
@@ -162,9 +163,9 @@ func NewRouter(
 					router.Get("/balances", getWalletBalances(systemController))
 					router.Route("/{walletID}", func(router chi.Router) {
 						router.Post("/credit", creditWallet(systemController))
-						router.Post("/debit", debitWallet(systemController, routerOptions.channelFeeConfigService))
+						router.Post("/debit", debitWallet(systemController, routerOptions.channelFeeConfigService, routerOptions.transferService))
 						router.Post("/lien", lienWallet(systemController))
-						router.Post("/lien/release", releaseLien(systemController, routerOptions.channelFeeConfigService))
+						router.Post("/lien/release", releaseLien(systemController, routerOptions.channelFeeConfigService, routerOptions.transferService))
 						router.Get("/statement", getWalletStatement(systemController))
 						router.Get("/history", getWalletHistory(systemController))
 					})
@@ -297,6 +298,7 @@ type routerOptions struct {
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
+	transferService                *transfers.Service
 }
 
 type RouterOption func(ro *routerOptions)
@@ -382,6 +384,15 @@ func WithGLReportingService(glReportingService services.GLReportingService) Rout
 func WithChannelFeeConfigService(channelFeeConfigService channelservices.ChannelFeeConfigService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.channelFeeConfigService = channelFeeConfigService
+	}
+}
+
+// WithTransferService enables the recoverable multi-ledger flow for wallet
+// debits and lien releases with a channel. Without it the legacy inline flow
+// (non recoverable) is used; production wiring always provides it.
+func WithTransferService(transferService *transfers.Service) RouterOption {
+	return func(ro *routerOptions) {
+		ro.transferService = transferService
 	}
 }
 

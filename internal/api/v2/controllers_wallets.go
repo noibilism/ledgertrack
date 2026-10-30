@@ -26,6 +26,7 @@ import (
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
+	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -293,7 +294,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
-func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService) http.HandlerFunc {
+func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService, transferService *transfers.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
 		walletID := chi.URLParam(r, "walletID")
@@ -419,6 +420,20 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 				params.Input.RunScript.Metadata["channel_processing_fee_amount"] = fmt.Sprintf("%d", computedFees.ProcessingFee)
 				params.Input.RunScript.Metadata["channel_net_revenue_amount"] = fmt.Sprintf("%d", computedFees.NetRevenueAmount)
 			}
+		}
+
+		// Channel debits span several ledgers: run them through the durable,
+		// recoverable orchestrator (docs/design/atomic-transfers.md).
+		if req.ChannelID != "" && transferService != nil {
+			requested, _ := parseAmount(req.Amount, currency)
+			userFee, processingFee, netRevenue := channelFees(amount, channelAmount, computedFees)
+			runChannelTransfer(w, r, transferService, transfers.Input{
+				Reference: req.Reference, WalletID: walletID, Currency: currency, Kind: transfers.KindDebit,
+				RequestedAmount: requested, Amount: amount, ChannelID: req.ChannelID, ChannelAmount: channelAmount,
+				UserFee: userFee, ProcessingFee: processingFee, NetRevenue: netRevenue,
+				UserMetadata: params.Input.RunScript.Metadata,
+			})
+			return
 		}
 
 		// Store multi-ledger transaction links
@@ -711,7 +726,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
-func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService) http.HandlerFunc {
+func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService, transferService *transfers.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
 		walletID := chi.URLParam(r, "walletID")
@@ -869,6 +884,18 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 				},
 				Runtime: ledgerinternal.RuntimeMachine,
 			},
+		}
+
+		if req.ChannelID != "" && mode == "PAY" && transferService != nil {
+			requested, _ := parseAmount(req.Amount, currency)
+			userFee, processingFee, netRevenue := channelFees(amount, channelAmount, computedFees)
+			runChannelTransfer(w, r, transferService, transfers.Input{
+				Reference: req.Reference, WalletID: walletID, Currency: currency, Kind: transfers.KindReleasePay,
+				RequestedAmount: requested, Amount: amount, ChannelID: req.ChannelID, ChannelAmount: channelAmount,
+				UserFee: userFee, ProcessingFee: processingFee, NetRevenue: netRevenue,
+				UserMetadata: runMetadata,
+			})
+			return
 		}
 
 		respMetadata := map[string]string{}
