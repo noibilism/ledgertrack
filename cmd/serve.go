@@ -227,7 +227,7 @@ func NewServeCommand() *cobra.Command {
 	cmd.Flags().Int(WriteMaxQueueFlag, 0, "Max writes waiting for a slot before new ones are rejected with 503. 0 means 4 x the in-flight bound")
 	cmd.Flags().Int(WriteMaxWaitMsFlag, 2000, "Max time in milliseconds a write waits for a slot before it is rejected with 503 and a Retry-After header")
 	cmd.Flags().Uint(RevenueShardsFlag, 1, "Spread the revenue-{CCY} leg of channel transfers over N shards: world:{s} -> revenue:accumulated:{s} (and revenue:channel_processing_cost:{s}), s = hash(business reference) mod N. 1 keeps the historical single addresses. Reports always sum the base address and all shards")
-	cmd.Flags().Uint(ChannelWorldShardsFlag, 1, "Spread the channels-{CCY} leg of channel transfers over N shards: channel:{id} -> world:{s}, s = hash(business reference) mod N. 1 keeps the historical `world` counter account")
+	cmd.Flags().Uint(ChannelWorldShardsFlag, 1, "Spread the channels-{CCY} leg of channel transfers over N shards: channel:{id} -> world:{s}, s = hash(business reference) mod N. 1 keeps the historical 'world' counter account")
 	cmd.Flags().Bool(ExperimentalFeaturesFlag, false, "Enable features configurability")
 	cmd.Flags().Bool(NumscriptInterpreterFlag, false, "Enable experimental numscript rewrite")
 	cmd.Flags().StringSlice(NumscriptInterpreterFlagsToPass, nil, "Feature flags to pass to the experimental numscript interpreter")

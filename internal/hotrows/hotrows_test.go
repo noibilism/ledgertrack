@@ -137,3 +137,29 @@ func TestSourceClause(t *testing.T) {
 	require.Equal(t, "@world", SourceClause("world"))
 	require.Equal(t, "@world:3 allowing unbounded overdraft", SourceClause("world:3"))
 }
+
+func TestEquivalentAccount(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		a, b string
+		want bool
+	}{
+		{"revenue:accumulated", "revenue:accumulated", true},
+		{"revenue:accumulated", "revenue:accumulated:3", true},
+		{"revenue:accumulated:3", "revenue:accumulated:12", true},
+		{"world", "world:5", true},
+		{"world:1", "world:2", true},
+		{"revenue:channel_processing_cost", "revenue:channel_processing_cost:0", true},
+		// never across different accounts
+		{"revenue:accumulated", "revenue:channel_processing_cost", false},
+		{"revenue:accumulated:3", "revenue:channel_processing_cost:3", false},
+		{"world", "revenue:accumulated", false},
+		{"channel:abc", "channel:abd", false},
+		{"channel:abc:1", "channel:abc:2", false},
+		{"users:a:wallets:USD:available", "users:b:wallets:USD:available", false},
+	} {
+		require.Equal(t, tc.want, EquivalentAccount(tc.a, tc.b), "%s ~ %s", tc.a, tc.b)
+		require.Equal(t, tc.want, EquivalentAccount(tc.b, tc.a), "%s ~ %s", tc.b, tc.a)
+	}
+}

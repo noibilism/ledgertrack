@@ -157,3 +157,21 @@ func IsShardOf(base, address string) bool {
 	_, err := strconv.ParseUint(rest, 10, 32)
 	return err == nil
 }
+
+// EquivalentAccount reports whether a and b are the same logical hot-row account: equal, or the
+// same base with and without a numbered shard (revenue:accumulated and revenue:accumulated:3, world
+// and world:7, world:1 and world:2, ...). A replay of a leg that already exists on the ledger (the
+// reference is a duplicate) must compare the existing posting with the one it would post using this,
+// not ==: the shard count may have changed since the first attempt, and the hash of the reference
+// then points to another shard than the one the posting was made on.
+func EquivalentAccount(a, b string) bool {
+	if a == b {
+		return true
+	}
+	for _, base := range []string{AccumulatedBase, ProcessingCostBase, World} {
+		if IsShardOf(base, a) && IsShardOf(base, b) {
+			return true
+		}
+	}
+	return false
+}
