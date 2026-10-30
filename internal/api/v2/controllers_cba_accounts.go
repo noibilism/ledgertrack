@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"math/big"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1030,26 +1027,14 @@ func walletLienAddress(walletID, currency string) string {
 	return fmt.Sprintf("users:%s:wallets:%s:lien", walletID, currency)
 }
 
+// systemControlAddress is shared with the atomic transfer executor through hotrows, so the handler
+// and the transfer user leg always agree on the control shard of a wallet.
 func systemControlAddress(seed, currency string) string {
-	shards := systemControlShards()
-	if shards <= 1 {
-		return fmt.Sprintf("system:control:%s", currency)
-	}
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(seed))
-	return fmt.Sprintf("system:control:%s:%d", currency, h.Sum32()%shards)
+	return hotrows.SystemControlAddress(seed, currency)
 }
 
 func systemControlShards() uint32 {
-	v := strings.TrimSpace(os.Getenv("CBA_SYSTEM_CONTROL_SHARDS"))
-	if v == "" {
-		return 1
-	}
-	n, err := strconv.ParseUint(v, 10, 32)
-	if err != nil || n == 0 {
-		return 1
-	}
-	return uint32(n)
+	return hotrows.SystemControlShards()
 }
 
 func ledgertrackOnly(next http.HandlerFunc) http.HandlerFunc {

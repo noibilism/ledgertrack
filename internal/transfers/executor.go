@@ -7,6 +7,7 @@ import (
 	"math/big"
 
 	channelmodels "github.com/formancehq/ledger/internal/channels/models"
+	"github.com/formancehq/ledger/internal/hotrows"
 
 	ledgerinternal "github.com/formancehq/ledger/internal"
 )
@@ -68,7 +69,11 @@ func samePosting(m Movement, tx ledgerinternal.Transaction) bool {
 		return false
 	}
 	p := tx.Postings[0]
-	return p.Source == m.Source && p.Destination == m.Destination && p.Asset == m.Asset &&
+	// A replayed leg may sit on another shard than the one the current shard counts pick (the
+	// counts can change between the first attempt and the recovery run), so hot-row accounts are
+	// compared as logical accounts. Everything else must match exactly.
+	return hotrows.EquivalentAccount(p.Source, m.Source) && hotrows.EquivalentAccount(p.Destination, m.Destination) &&
+		p.Asset == m.Asset &&
 		p.Amount != nil && p.Amount.Cmp(big.NewInt(m.Amount)) == 0
 }
 
@@ -108,7 +113,7 @@ func (e *LedgerExecutor) PostUser(ctx context.Context, t *Transfer) (UserLeg, er
 	switch t.Kind {
 	case KindDebit:
 		m.Source = available
-		m.Destination = fmt.Sprintf("system:control:%s", t.Currency)
+		m.Destination = hotrows.SystemControlAddress(t.WalletID, t.Currency)
 	case KindReleasePay:
 		m.Source = fmt.Sprintf("users:%s:wallets:%s:lien", userID, t.Currency)
 		m.Destination = "world"
@@ -167,7 +172,7 @@ func (e *LedgerExecutor) PostChannel(ctx context.Context, t *Transfer) (ChannelL
 		Ledger:             channelLedgerName(t.Currency),
 		Reference:          t.Reference,
 		Source:             channelAccount,
-		Destination:        "world",
+		Destination:        hotrows.ChannelSink(t.Reference),
 		Asset:              asset,
 		Amount:             t.ChannelAmount,
 		UnboundedOverdraft: true,
@@ -191,13 +196,17 @@ func (e *LedgerExecutor) PostChannel(ctx context.Context, t *Transfer) (ChannelL
 }
 
 func (e *LedgerExecutor) PostRevenue(ctx context.Context, t *Transfer) (RevenueLeg, error) {
+	// The shard is a function of the business reference (t.Reference, never the per leg reference)
+	// and the shard count, which is read once so both entries agree even if it changes meanwhile.
+	shards := hotrows.RevenueShards()
+	source := hotrows.RevenueSourceN(t.Reference, shards)
 	entries := []struct {
 		suffix      string
 		destination string
 		amount      int64
 	}{
-		{"user-fee", "revenue:accumulated", t.UserFee},
-		{"processing-fee", "revenue:channel_processing_cost", t.ProcessingFee},
+		{"user-fee", hotrows.RevenueDestinationN(hotrows.AccumulatedBase, t.Reference, shards), t.UserFee},
+		{"processing-fee", hotrows.RevenueDestinationN(hotrows.ProcessingCostBase, t.Reference, shards), t.ProcessingFee},
 	}
 	asset := AssetName(t.Currency)
 
@@ -210,10 +219,12 @@ func (e *LedgerExecutor) PostRevenue(ctx context.Context, t *Transfer) (RevenueL
 		posted, err := e.post(ctx, Movement{
 			Ledger:      revenueLedgerName(t.Currency),
 			Reference:   fmt.Sprintf("%s-%s", t.Reference, entry.suffix),
-			Source:      "world",
+			Source:      source,
 			Destination: entry.destination,
 			Asset:       asset,
 			Amount:      entry.amount,
+			// world:{s} is an ordinary account, only the real world may go negative by itself.
+			UnboundedOverdraft: hotrows.IsUnboundedSource(source),
 		})
 		if err != nil {
 			return RevenueLeg{}, err

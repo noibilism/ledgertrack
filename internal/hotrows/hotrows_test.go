@@ -163,3 +163,41 @@ func TestEquivalentAccount(t *testing.T) {
 		require.Equal(t, tc.want, EquivalentAccount(tc.b, tc.a), "%s ~ %s", tc.b, tc.a)
 	}
 }
+
+func TestEquivalentAccountSystemControl(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		want bool
+	}{
+		{"system:control:USD", "system:control:USD:3", true},
+		{"system:control:USD:1", "system:control:USD:9", true},
+		{"system:control:USD", "system:control:USD", true},
+		{"system:control:USD", "system:control:NGN", false},
+		{"system:control:USD:3", "system:control:NGN:3", false},
+		{"system:control:USD", "system:control:USD:x", false},
+		{"system:control:", "system:control:", true}, // equal strings
+		{"system:control:USD", "users:u1:wallets:USD:available", false},
+	} {
+		if got := EquivalentAccount(tc.a, tc.b); got != tc.want {
+			t.Errorf("EquivalentAccount(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+func TestSystemControlAddress(t *testing.T) {
+	t.Setenv("CBA_SYSTEM_CONTROL_SHARDS", "")
+	if got := SystemControlAddress("w1", "USD"); got != "system:control:USD" {
+		t.Fatal(got)
+	}
+	t.Setenv("CBA_SYSTEM_CONTROL_SHARDS", "16")
+	a := SystemControlAddress("w1", "USD")
+	if a != SystemControlAddress("w1", "USD") || !IsShardOf("system:control:USD", a) || a == "system:control:USD" {
+		t.Fatalf("unstable or unsharded address %q", a)
+	}
+	for _, bad := range []string{"0", "-3", "abc"} {
+		t.Setenv("CBA_SYSTEM_CONTROL_SHARDS", bad)
+		if got := SystemControlAddress("w1", "USD"); got != "system:control:USD" {
+			t.Fatalf("%q: %s", bad, got)
+		}
+	}
+}

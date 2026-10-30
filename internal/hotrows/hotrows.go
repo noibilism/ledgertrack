@@ -34,6 +34,7 @@ package hotrows
 import (
 	"fmt"
 	"hash/fnv"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -160,10 +161,11 @@ func IsShardOf(base, address string) bool {
 
 // EquivalentAccount reports whether a and b are the same logical hot-row account: equal, or the
 // same base with and without a numbered shard (revenue:accumulated and revenue:accumulated:3, world
-// and world:7, world:1 and world:2, ...). A replay of a leg that already exists on the ledger (the
-// reference is a duplicate) must compare the existing posting with the one it would post using this,
-// not ==: the shard count may have changed since the first attempt, and the hash of the reference
-// then points to another shard than the one the posting was made on.
+// and world:7, world:1 and world:2, system:control:USD and system:control:USD:5, ...). A replay of a
+// leg that already exists on the ledger (the reference is a duplicate) must compare the existing
+// posting with the one it would post using this, not ==: the shard count may have changed since the
+// first attempt, and the hash of the reference then points to another shard than the one the
+// posting was made on.
 func EquivalentAccount(a, b string) bool {
 	if a == b {
 		return true
@@ -173,5 +175,58 @@ func EquivalentAccount(a, b string) bool {
 			return true
 		}
 	}
+	if ca, ok := systemControlCurrency(a); ok {
+		if cb, ok := systemControlCurrency(b); ok {
+			return ca == cb
+		}
+	}
 	return false
+}
+
+const systemControlPrefix = "system:control:"
+
+// systemControlCurrency returns the currency of system:control:{CCY} or system:control:{CCY}:{shard}.
+func systemControlCurrency(address string) (string, bool) {
+	rest, ok := strings.CutPrefix(address, systemControlPrefix)
+	if !ok || rest == "" {
+		return "", false
+	}
+	ccy, shard, hasShard := strings.Cut(rest, ":")
+	if ccy == "" {
+		return "", false
+	}
+	if hasShard {
+		if _, err := strconv.ParseUint(shard, 10, 32); err != nil {
+			return "", false
+		}
+	}
+	return ccy, true
+}
+
+// SystemControlShards returns the number of system:control shards configured with
+// CBA_SYSTEM_CONTROL_SHARDS (1 when unset or invalid).
+func SystemControlShards() uint32 {
+	v := strings.TrimSpace(os.Getenv("CBA_SYSTEM_CONTROL_SHARDS"))
+	if v == "" {
+		return 1
+	}
+	n, err := strconv.ParseUint(v, 10, 32)
+	if err != nil || n == 0 {
+		return 1
+	}
+	return uint32(n)
+}
+
+// SystemControlAddress returns the control account that the wallet credit and debit paths use for a
+// wallet: system:control:{CCY}, or system:control:{CCY}:{s} with s = fnv32a(seed) mod N when
+// CBA_SYSTEM_CONTROL_SHARDS=N > 1. seed is the wallet id, so every operation of one wallet hits the
+// same shard, including the user leg of an atomic transfer.
+func SystemControlAddress(seed, currency string) string {
+	shards := SystemControlShards()
+	if shards <= 1 {
+		return systemControlPrefix + currency
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(seed))
+	return fmt.Sprintf("%s%s:%d", systemControlPrefix, currency, h.Sum32()%shards)
 }
