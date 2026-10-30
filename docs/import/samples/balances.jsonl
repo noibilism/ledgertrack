@@ -1,0 +1,4 @@
+{"source_id":"b-1","account_source_id":"a-1","currency":"NGN","amount":"1250000.50","available":"1000000.50","lien":"250000.00","as_of":"2026-10-31T23:59:59Z"}
+{"source_id":"b-2","account_source_id":"a-2","currency":"USDT","amount":"5000.123456","available":"4500.123456","lien":"500.000000","as_of":"2026-10-31T23:59:59Z"}
+{"source_id":"b-3","account_source_id":"a-3","currency":"NGN","amount":"75000.00","available":"75000.00","lien":"0.00","as_of":"2026-10-31T23:59:59Z"}
+{"source_id":"b-4","account_source_id":"a-4","currency":"NGN","amount":"0","available":"0","lien":"0","as_of":"2026-10-31T23:59:59Z"}

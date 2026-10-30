@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ledgertrack/import/clients.schema.json",
+  "title": "LedgerTrack legacy import: clients.jsonl line (legacy merchant)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "legal_name", "phone", "kyc_level", "kyc_source"],
+  "properties": {
+    "source_id": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable identifier of the merchant in the legacy system." },
+    "legal_name": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "trading_name": { "type": "string", "maxLength": 255 },
+    "registration_number": { "type": "string", "maxLength": 128 },
+    "tax_id": { "type": "string", "maxLength": 128 },
+    "incorporation_country": { "type": "string", "maxLength": 64 },
+    "industry": { "type": "string", "maxLength": 128 },
+    "email": { "type": "string", "maxLength": 255 },
+    "phone": { "type": "string", "minLength": 5, "maxLength": 32, "description": "Required by the KYC submission rules of LedgerTrack." },
+    "address": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "line1": { "type": "string" },
+        "line2": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "country": { "type": "string" },
+        "postal": { "type": "string" }
+      }
+    },
+    "status": { "enum": ["pending", "active", "suspended", "closed"], "description": "Target client status. Default active." },
+    "kyc_level": { "type": "integer", "minimum": 0, "maximum": 3, "description": "KYC level asserted by the legacy system." },
+    "kyc_source": { "type": "string", "minLength": 1, "maxLength": 255, "description": "Free-text note describing where the KYC level comes from (for example 'bankman merchant_kyc.tier=2 approved 2024-03-01'). Stored in the KYC payload." },
+    "kyc_identifier": { "type": "string", "maxLength": 128, "description": "Identifier sent as national_id_number in the KYC payload (required by LedgerTrack for level 1 and above). Defaults to registration_number, then tax_id." },
+    "legacy_created_at": { "type": "string", "format": "date-time" }
+  }
+}
