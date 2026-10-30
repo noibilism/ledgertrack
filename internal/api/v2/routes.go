@@ -17,6 +17,7 @@ import (
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/transfers"
 )
 
 // NewRouter creates a chi.Router configured with the v2 HTTP API routes for the ledger service.
@@ -162,9 +163,9 @@ func NewRouter(
 					router.Get("/balances", getWalletBalances(systemController))
 					router.Route("/{walletID}", func(router chi.Router) {
 						router.Post("/credit", creditWallet(systemController))
-						router.Post("/debit", debitWallet(systemController, routerOptions.channelFeeConfigService))
+						router.Post("/debit", debitWallet(systemController, routerOptions.channelFeeConfigService, routerOptions.transferService))
 						router.Post("/lien", lienWallet(systemController))
-						router.Post("/lien/release", releaseLien(systemController, routerOptions.channelFeeConfigService))
+						router.Post("/lien/release", releaseLien(systemController, routerOptions.channelFeeConfigService, routerOptions.transferService))
 						router.Get("/statement", getWalletStatement(systemController))
 						router.Get("/history", getWalletHistory(systemController))
 					})
@@ -202,6 +203,21 @@ func NewRouter(
 					})
 				}
 
+				if routerOptions.glAccountService != nil {
+					router.Route("/gl/accounts", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createGLAccount(routerOptions.glAccountService)))
+						router.Get("/", ledgertrackOnly(listGLAccounts(routerOptions.glAccountService)))
+						router.Post("/import", ledgertrackOnly(importGLAccounts(routerOptions.glAccountService)))
+						router.Route("/{code}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readGLAccount(routerOptions.glAccountService)))
+							router.Patch("/", ledgertrackOnly(patchGLAccount(routerOptions.glAccountService)))
+							if routerOptions.glReportingService != nil {
+								router.Get("/balance", ledgertrackOnly(getGLAccountBalance(systemController, routerOptions.glReportingService)))
+							}
+						})
+					})
+				}
+
 				if routerOptions.clientService != nil && routerOptions.kycService != nil {
 					router.Route("/clients", func(router chi.Router) {
 						router.Post("/", createClient(routerOptions.clientService))
@@ -228,7 +244,7 @@ func NewRouter(
 					})
 				}
 
-				if routerOptions.reportingService != nil || routerOptions.financeReportingService != nil || routerOptions.channelRevenueReportingService != nil {
+				if routerOptions.reportingService != nil || routerOptions.financeReportingService != nil || routerOptions.glReportingService != nil || routerOptions.channelRevenueReportingService != nil {
 					router.Route("/reports", func(router chi.Router) {
 						if routerOptions.reportingService != nil {
 							router.Get("/clients/{clientID}/portfolio", ledgertrackOnly(getClientPortfolioReport(routerOptions.reportingService)))
@@ -243,6 +259,10 @@ func NewRouter(
 								router.Get("/pnl", ledgertrackOnly(getFinanceProfitAndLossReport(systemController, routerOptions.financeReportingService)))
 								router.Get("/cash-flow", ledgertrackOnly(getFinanceCashFlowReport(systemController, routerOptions.financeReportingService)))
 							})
+						}
+						if routerOptions.glReportingService != nil {
+							// registry-driven trial balance, independent of the fixed-line /finance/trial-balance above
+							router.Get("/finance/gl-trial-balance", ledgertrackOnly(getGLTrialBalanceReport(systemController, routerOptions.glReportingService)))
 						}
 						if routerOptions.channelRevenueReportingService != nil {
 							router.Route("/channels", func(router chi.Router) {
@@ -274,8 +294,11 @@ type routerOptions struct {
 	accountService                 services.AccountService
 	reportingService               services.ReportingService
 	financeReportingService        services.FinanceReportingService
+	glAccountService               services.GLAccountService
+	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
+	transferService                *transfers.Service
 }
 
 type RouterOption func(ro *routerOptions)
@@ -346,9 +369,30 @@ func WithFinanceReportingService(financeReportingService services.FinanceReporti
 	}
 }
 
+func WithGLAccountService(glAccountService services.GLAccountService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glAccountService = glAccountService
+	}
+}
+
+func WithGLReportingService(glReportingService services.GLReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glReportingService = glReportingService
+	}
+}
+
 func WithChannelFeeConfigService(channelFeeConfigService channelservices.ChannelFeeConfigService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.channelFeeConfigService = channelFeeConfigService
+	}
+}
+
+// WithTransferService enables the recoverable multi-ledger flow for wallet
+// debits and lien releases with a channel. Without it the legacy inline flow
+// (non recoverable) is used; production wiring always provides it.
+func WithTransferService(transferService *transfers.Service) RouterOption {
+	return func(ro *routerOptions) {
+		ro.transferService = transferService
 	}
 }
 

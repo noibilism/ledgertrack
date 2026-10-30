@@ -39,12 +39,14 @@ import (
 	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 	"github.com/formancehq/ledger/internal/currency"
+	"github.com/formancehq/ledger/internal/hotrows"
 	"github.com/formancehq/ledger/internal/replication"
 	"github.com/formancehq/ledger/internal/replication/drivers"
 	"github.com/formancehq/ledger/internal/replication/drivers/alldrivers"
 	"github.com/formancehq/ledger/internal/storage"
 	systemstore "github.com/formancehq/ledger/internal/storage/system"
 	"github.com/formancehq/ledger/internal/tracing"
+	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/formancehq/ledger/internal/worker"
 )
 
@@ -62,6 +64,15 @@ type ServeCommandConfig struct {
 	MaxPageSize            uint64 `mapstructure:"max-page-size"`
 	WorkerEnabled          bool   `mapstructure:"worker"`
 	WorkerAddress          string `mapstructure:"worker-grpc-address"`
+
+	// Write path admission control, see ledgercontroller.WriteLimiter.
+	WriteMaxInFlight int `mapstructure:"write-max-in-flight"`
+	WriteMaxQueue    int `mapstructure:"write-max-queue"`
+	WriteMaxWaitMs   int `mapstructure:"write-max-wait-ms"`
+
+	// Hot row relief for channel transfers, see internal/hotrows and docs/design/channel-hot-rows.md.
+	RevenueShards      uint `mapstructure:"revenue-shards"`
+	ChannelWorldShards uint `mapstructure:"channel-world-shards"`
 }
 
 const (
@@ -72,11 +83,17 @@ const (
 	BulkMaxSizeFlag            = "bulk-max-size"
 	BulkParallelFlag           = "bulk-parallel"
 
-	DefaultPageSizeFlag   = "default-page-size"
-	MaxPageSizeFlag       = "max-page-size"
-	WorkerEnabledFlag     = "worker"
-	SemconvMetricsNames   = "semconv-metrics-names"
-	SchemaEnforcementMode = "schema-enforcement-mode"
+	DefaultPageSizeFlag = "default-page-size"
+	MaxPageSizeFlag     = "max-page-size"
+	WorkerEnabledFlag   = "worker"
+
+	WriteMaxInFlightFlag   = "write-max-in-flight"
+	WriteMaxQueueFlag      = "write-max-queue"
+	WriteMaxWaitMsFlag     = "write-max-wait-ms"
+	RevenueShardsFlag      = "revenue-shards"
+	ChannelWorldShardsFlag = "channel-world-shards"
+	SemconvMetricsNames    = "semconv-metrics-names"
+	SchemaEnforcementMode  = "schema-enforcement-mode"
 )
 
 func NewServeCommand() *cobra.Command {
@@ -84,6 +101,10 @@ func NewServeCommand() *cobra.Command {
 		Use:          "serve",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+
+			if err := checkAuthGuard(cmd); err != nil {
+				return err
+			}
 
 			cfg, err := LoadConfig[ServeCommandConfig](cmd)
 			if err != nil {
@@ -93,11 +114,24 @@ func NewServeCommand() *cobra.Command {
 			if err := cfg.Validate(); err != nil {
 				return err
 			}
+			if err := systemcontroller.ValidateWalletLedgerHashMode(cfg.WalletLedgerHashMode); err != nil {
+				return err
+			}
 
 			connectionOptions, err := bunconnect.ConnectionOptionsFromFlags(cmd)
 			if err != nil {
 				return err
 			}
+
+			if cfg.RevenueShards > hotrows.MaxShards || cfg.ChannelWorldShards > hotrows.MaxShards {
+				return fmt.Errorf("--%s and --%s must be between 1 and %d", RevenueShardsFlag, ChannelWorldShardsFlag, hotrows.MaxShards)
+			}
+			hotrows.SetRevenueShards(uint32(cfg.RevenueShards))
+			hotrows.SetChannelWorldShards(uint32(cfg.ChannelWorldShards))
+
+			// One limiter for the whole process: the HTTP layer admits write requests with it, and the
+			// ledger controllers recognise admitted requests (non HTTP callers still go through it).
+			writeLimiter := cfg.newWriteLimiter(connectionOptions.MaxOpenConns)
 
 			options := []fx.Option{
 				fx.NopLogger,
@@ -123,15 +157,19 @@ func NewServeCommand() *cobra.Command {
 					},
 					EnableFeatures:        cfg.ExperimentalFeaturesEnabled,
 					SchemaEnforcementMode: cfg.commonConfig.SchemaEnforcementMode,
+					WriteLimiter:          writeLimiter,
+					WalletLedgerHashMode:  cfg.WalletLedgerHashMode,
 				}),
 				bus.NewFxModule(),
 				currency.NewFXModule(),
 				cba.NewFXModule(),
 				channels.NewFXModule(),
+				transfers.NewFXModule(transferConfig(cfg.WorkerConfiguration)),
 				ballast.Module(cfg.BallastSizeInBytes),
 				api.Module(api.Config{
-					Version: Version,
-					Debug:   service.IsDebug(cmd),
+					Version:      Version,
+					Debug:        service.IsDebug(cmd),
+					WriteLimiter: writeLimiter,
 					Bulk: api.BulkConfig{
 						MaxSize:  cfg.BulkMaxSize,
 						Parallel: cfg.BulkParallel,
@@ -195,12 +233,18 @@ func NewServeCommand() *cobra.Command {
 	cmd.Flags().Uint64(MaxPageSizeFlag, 100, "Max page size")
 	cmd.Flags().Uint64(DefaultPageSizeFlag, 15, "Default page size")
 	cmd.Flags().Bool(WorkerEnabledFlag, false, "Enable worker")
+	cmd.Flags().Int(WriteMaxInFlightFlag, 0, "Max ledger write transactions in flight. 0 derives it from --postgres-max-open-conns (pool minus a reserve for reads), a negative value disables the bound")
+	cmd.Flags().Int(WriteMaxQueueFlag, 0, "Max writes waiting for a slot before new ones are rejected with 503. 0 means 4 x the in-flight bound")
+	cmd.Flags().Int(WriteMaxWaitMsFlag, 2000, "Max time in milliseconds a write waits for a slot before it is rejected with 503 and a Retry-After header")
+	cmd.Flags().Uint(RevenueShardsFlag, 1, "Spread the revenue-{CCY} leg of channel transfers over N shards: world:{s} -> revenue:accumulated:{s} (and revenue:channel_processing_cost:{s}), s = hash(business reference) mod N. 1 keeps the historical single addresses. Reports always sum the base address and all shards")
+	cmd.Flags().Uint(ChannelWorldShardsFlag, 1, "Spread the channels-{CCY} leg of channel transfers over N shards: channel:{id} -> world:{s}, s = hash(business reference) mod N. 1 keeps the historical 'world' counter account")
 	cmd.Flags().Bool(ExperimentalFeaturesFlag, false, "Enable features configurability")
 	cmd.Flags().Bool(NumscriptInterpreterFlag, false, "Enable experimental numscript rewrite")
 	cmd.Flags().StringSlice(NumscriptInterpreterFlagsToPass, nil, "Feature flags to pass to the experimental numscript interpreter")
 	cmd.Flags().String(WorkerGRPCAddressFlag, "localhost:8081", "GRPC address")
 	cmd.Flags().Bool(SemconvMetricsNames, false, "Use semconv metrics names (recommended)")
 	cmd.Flags().String(SchemaEnforcementMode, "audit", "Schema enforcement mode. Values: `audit`, `strict`")
+	addWalletLedgerHashModeFlag(cmd)
 
 	addWorkerFlags(cmd)
 	bunconnect.AddFlags(cmd.Flags())
@@ -339,4 +383,21 @@ func otlpModule(cmd *cobra.Command, cfg commonConfig) fx.Option {
 		}),
 		otlpmetrics.FXModuleFromFlags(cmd),
 	)
+}
+
+// newWriteLimiter builds the write admission control. maxOpenConns is the size of the database pool.
+func (cfg ServeCommandConfig) newWriteLimiter(maxOpenConns int) *ledgercontroller.WriteLimiter {
+	maxInFlight := cfg.WriteMaxInFlight
+	switch {
+	case maxInFlight < 0:
+		return nil
+	case maxInFlight == 0:
+		maxInFlight = ledgercontroller.DefaultMaxInFlightWrites(maxOpenConns)
+	}
+
+	return ledgercontroller.NewWriteLimiter(ledgercontroller.WriteLimiterConfiguration{
+		MaxInFlight: maxInFlight,
+		MaxQueue:    cfg.WriteMaxQueue,
+		MaxWait:     time.Duration(cfg.WriteMaxWaitMs) * time.Millisecond,
+	})
 }

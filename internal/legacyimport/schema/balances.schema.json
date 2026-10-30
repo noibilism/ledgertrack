@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ledgertrack/import/balances.schema.json",
+  "title": "LedgerTrack legacy import: balances.jsonl line (opening balance, one per account)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "account_source_id", "currency", "amount", "available", "lien"],
+  "definitions": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+      "description": "Non-negative decimal string in major units. No sign, exponent or separators."
+    }
+  },
+  "properties": {
+    "source_id": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable id of this balance row. The opening transaction reference is import:opening:{source_id}." },
+    "account_source_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "currency": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,15}$" },
+    "amount": { "$ref": "#/definitions/decimal", "description": "Total ledger balance, must equal available + lien." },
+    "available": { "$ref": "#/definitions/decimal" },
+    "lien": { "$ref": "#/definitions/decimal", "description": "Must equal the sum of liens.jsonl amounts for the account." },
+    "as_of": { "type": "string", "format": "date-time", "description": "Cut-off time of the legacy snapshot. Stored in transaction metadata." }
+  }
+}

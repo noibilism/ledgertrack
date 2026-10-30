@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"net/http"
 	"os"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/bun/bunpaginate"
+	"github.com/formancehq/go-libs/v3/logging"
 	"github.com/formancehq/go-libs/v3/metadata"
 	"github.com/formancehq/go-libs/v3/query"
 	ledgerinternal "github.com/formancehq/ledger/internal"
@@ -23,9 +23,11 @@ import (
 	"github.com/formancehq/ledger/internal/controller/ledger"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
+	"github.com/formancehq/ledger/internal/hotrows"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
+	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -78,14 +80,19 @@ func postRevenueEntries(
 	}{
 		{
 			suffix:      "user-fee",
-			destination: "revenue:accumulated",
+			destination: hotrows.RevenueDestination(hotrows.AccumulatedBase, baseReference),
 			amount:      userFeeAmount,
 		},
 		{
 			suffix:      "processing-fee",
-			destination: "revenue:channel_processing_cost",
+			destination: hotrows.RevenueDestination(hotrows.ProcessingCostBase, baseReference),
 			amount:      processingFeeAmount,
 		},
+	}
+
+	asset, err := currencyregistry.AssetFor(currency)
+	if err != nil {
+		return "", nil, err
 	}
 
 	var revenueTxIDPtr *int64
@@ -95,11 +102,11 @@ func postRevenueEntries(
 		}
 
 		revenueScript := fmt.Sprintf(`
-			send [%s/2 %d] (
-				source = @world
+			send [%s %d] (
+				source = %s
 				destination = @%s
 			)
-		`, currency, entry.amount, entry.destination)
+		`, asset, entry.amount, hotrows.SourceClause(hotrows.RevenueSource(baseReference)), entry.destination)
 
 		rParams := ledger.Parameters[ledger.CreateTransaction]{
 			Input: ledger.CreateTransaction{
@@ -165,28 +172,11 @@ func createWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
+// parseAmount converts an API amount to minor units of the currency.
+// Integers are minor units, decimals are major units and must not carry more
+// fractional digits than the currency precision (see currencyregistry.ParseAmount).
 func parseAmount(amount json.Number, currency string) (int64, error) {
-	if amount == "" {
-		return 0, nil
-	}
-
-	reg, ok := currencyregistry.Lookup(currency)
-	if !ok {
-		reg = currencyregistry.Definition{Precision: 2, Enabled: true}
-	}
-
-	s := amount.String()
-	if strings.Contains(s, ".") {
-		f, err := amount.Float64()
-		if err != nil {
-			return 0, err
-		}
-		// Convert to atomic units
-		mult := math.Pow(10, float64(reg.Precision))
-		return int64(math.Round(f * mult)), nil
-	}
-
-	return amount.Int64()
+	return currencyregistry.ParseAmount(amount.String(), currency)
 }
 
 func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
@@ -229,14 +219,20 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		// Debit: system/control/{currency}
 
 		accountUser := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
-		accountSystem := fmt.Sprintf("system:control:%s", currency)
+		asset, err := currencyregistry.AssetFor(currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, err)
+			return
+		}
+
+		accountSystem := systemControlAddress(walletID, currency)
 
 		script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s allowing unbounded overdraft
 			destination = @%s
 		)
-	`, currency, amount, accountSystem, accountUser)
+	`, asset, amount, accountSystem, accountUser)
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -258,7 +254,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "DEBUG ERROR: %v\n", err)
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
@@ -271,7 +267,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 
 		// Calculate balances
 		var balanceBefore, balanceAfter int64
-		assetName := fmt.Sprintf("%s/2", currency)
+		assetName := asset
 
 		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
 
@@ -299,7 +295,7 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
-func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService) http.HandlerFunc {
+func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService, transferService *transfers.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
 		walletID := chi.URLParam(r, "walletID")
@@ -385,14 +381,20 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 		// Credit: system/control/{currency}
 
 		accountUser := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
-		accountSystem := fmt.Sprintf("system:control:%s", currency)
+		asset, err := currencyregistry.AssetFor(currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, err)
+			return
+		}
+
+		accountSystem := systemControlAddress(walletID, currency)
 
 		script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s
 			destination = @%s
 		)
-	`, currency, amount, accountUser, accountSystem)
+	`, asset, amount, accountUser, accountSystem)
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -421,10 +423,24 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 			}
 		}
 
+		// Channel debits span several ledgers: run them through the durable,
+		// recoverable orchestrator (docs/design/atomic-transfers.md).
+		if req.ChannelID != "" && transferService != nil {
+			requested, _ := parseAmount(req.Amount, currency)
+			userFee, processingFee, netRevenue := channelFees(amount, channelAmount, computedFees)
+			runChannelTransfer(w, r, transferService, transfers.Input{
+				Reference: req.Reference, WalletID: walletID, Currency: currency, Kind: transfers.KindDebit,
+				RequestedAmount: requested, Amount: amount, ChannelID: req.ChannelID, ChannelAmount: channelAmount,
+				UserFee: userFee, ProcessingFee: processingFee, NetRevenue: netRevenue,
+				UserMetadata: params.Input.RunScript.Metadata,
+			})
+			return
+		}
+
 		// Store multi-ledger transaction links
 		respMetadata := map[string]string{}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "insufficient fund") {
 				api.WriteErrorResponse(w, http.StatusPaymentRequired, common.ErrInsufficientFund, err)
@@ -440,7 +456,7 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 
 		// Calculate balances
 		var balanceBefore, balanceAfter int64
-		assetName := fmt.Sprintf("%s/2", currency)
+		assetName := asset
 
 		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
 
@@ -471,11 +487,11 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 			// Debit Channel: Channel -> World
 			channelAccount := fmt.Sprintf("channel:%s", req.ChannelID)
 			channelScript := fmt.Sprintf(`
-				send [%s/2 %d] (
+				send [%s %d] (
 					source = @%s allowing unbounded overdraft
-					destination = @world
+					destination = @%s
 				)
-			`, currency, channelAmount, channelAccount)
+			`, asset, channelAmount, channelAccount, hotrows.ChannelSink(req.Reference))
 
 			cParams := ledger.Parameters[ledger.CreateTransaction]{
 				Input: ledger.CreateTransaction{
@@ -498,7 +514,6 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 
 			// Check Overdraft using PostCommitVolumes from the transaction result
 			if volumes, ok := cTx.Transaction.PostCommitVolumes[channelAccount]; ok {
-				asset := fmt.Sprintf("%s/2", currency)
 				if vol, ok := volumes[asset]; ok {
 					// ALWAYS return balance for debug
 					warningMsg = fmt.Sprintf("Channel balance: %s %s", vol.Balance().String(), currency)
@@ -506,12 +521,10 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 						warningMsg = fmt.Sprintf("Channel balance is negative: %s %s", vol.Balance().String(), currency)
 					}
 				} else {
-					// DEBUG
-					warningMsg = fmt.Sprintf("DEBUG: Asset %s not found. Keys: %v", asset, volumes)
+					logging.FromContext(r.Context()).Debugf("channel balance check: asset %s not found in post commit volumes of %s", asset, channelAccount)
 				}
 			} else {
-				// DEBUG
-				warningMsg = fmt.Sprintf("DEBUG: Account %s not found. Keys: %v", channelAccount, cTx.Transaction.PostCommitVolumes)
+				logging.FromContext(r.Context()).Debugf("channel balance check: account %s not found in post commit volumes", channelAccount)
 			}
 
 			userFeeAmount := amount - channelAmount
@@ -646,12 +659,18 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
 		accountLien := fmt.Sprintf("users:%s:wallets:%s:lien", userID, currency)
 
+		asset, err := currencyregistry.AssetFor(currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, err)
+			return
+		}
+
 		script := fmt.Sprintf(`
-		send [%s/2 %d] (
+		send [%s %d] (
 			source = @%s
 			destination = @%s
 		)
-	`, currency, amount, accountAvailable, accountLien)
+	`, asset, amount, accountAvailable, accountLien)
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -666,7 +685,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			},
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") ||
 				strings.Contains(strings.ToLower(err.Error()), "duplicate") ||
@@ -680,7 +699,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 
 		// Calculate balances
 		var balanceBefore, balanceAfter int64
-		assetName := fmt.Sprintf("%s/2", currency)
+		assetName := asset
 
 		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
 
@@ -708,7 +727,7 @@ func lienWallet(sys systemcontroller.Controller) http.HandlerFunc {
 	}
 }
 
-func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService) http.HandlerFunc {
+func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService, transferService *transfers.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
 		walletID := chi.URLParam(r, "walletID")
@@ -809,24 +828,30 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 		// Lien Release Logic
 		accountLien := fmt.Sprintf("users:%s:wallets:%s:lien", userID, currency)
 
+		asset, err := currencyregistry.AssetFor(currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, err)
+			return
+		}
+
 		var script string
 		if mode == "PAY" {
 			// Pay: Lien -> World (Spend)
 			script = fmt.Sprintf(`
-				send [%s/2 %d] (
+				send [%s %d] (
 					source = @%s
 					destination = @world
 				)
-			`, currency, amount, accountLien)
+			`, asset, amount, accountLien)
 		} else {
 			// Release/Cancel: Lien -> Available
 			accountAvailable := fmt.Sprintf("users:%s:wallets:%s:available", userID, currency)
 			script = fmt.Sprintf(`
-				send [%s/2 %d] (
+				send [%s %d] (
 					source = @%s
 					destination = @%s
 				)
-			`, currency, amount, accountLien, accountAvailable)
+			`, asset, amount, accountLien, accountAvailable)
 		}
 
 		runMetadata := metadata.Metadata{}
@@ -862,9 +887,21 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 			},
 		}
 
+		if req.ChannelID != "" && mode == "PAY" && transferService != nil {
+			requested, _ := parseAmount(req.Amount, currency)
+			userFee, processingFee, netRevenue := channelFees(amount, channelAmount, computedFees)
+			runChannelTransfer(w, r, transferService, transfers.Input{
+				Reference: req.Reference, WalletID: walletID, Currency: currency, Kind: transfers.KindReleasePay,
+				RequestedAmount: requested, Amount: amount, ChannelID: req.ChannelID, ChannelAmount: channelAmount,
+				UserFee: userFee, ProcessingFee: processingFee, NetRevenue: netRevenue,
+				UserMetadata: runMetadata,
+			})
+			return
+		}
+
 		respMetadata := map[string]string{}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
 				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
@@ -876,7 +913,7 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 
 		// Calculate balances
 		var balanceBefore, balanceAfter int64
-		assetName := fmt.Sprintf("%s/2", currency)
+		assetName := asset
 
 		preCommitVolumes := tx.Transaction.PostCommitVolumes.SubtractPostings(tx.Transaction.Postings)
 
@@ -912,11 +949,11 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 
 			channelAccount := fmt.Sprintf("channel:%s", req.ChannelID)
 			channelScript := fmt.Sprintf(`
-				send [%s/2 %d] (
+				send [%s %d] (
 					source = @%s allowing unbounded overdraft
-					destination = @world
+					destination = @%s
 				)
-			`, currency, channelAmount, channelAccount)
+			`, asset, channelAmount, channelAccount, hotrows.ChannelSink(req.Reference))
 
 			cParams := ledger.Parameters[ledger.CreateTransaction]{
 				Input: ledger.CreateTransaction{

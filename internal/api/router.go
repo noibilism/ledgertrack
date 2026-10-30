@@ -25,7 +25,9 @@ import (
 	v2 "github.com/formancehq/ledger/internal/api/v2"
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
+	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	"github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/transfers"
 )
 
 // todo: refine textual errors
@@ -105,42 +107,58 @@ func NewRouter(
 		v2.WithAccountService(routerOptions.accountService),
 		v2.WithReportingService(routerOptions.reportingService),
 		v2.WithFinanceReportingService(routerOptions.financeReportingService),
+		v2.WithGLAccountService(routerOptions.glAccountService),
+		v2.WithGLReportingService(routerOptions.glReportingService),
 		v2.WithChannelFeeConfigService(routerOptions.channelFeeConfigService),
 		v2.WithChannelRevenueReportingService(routerOptions.channelRevenueReportingService),
+		v2.WithTransferService(routerOptions.transferService),
 	)
-	mux.Handle("/v2*", http.StripPrefix("/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Write requests are admitted (or rejected with 503 + Retry-After) before they touch the database.
+	admitWrites := common.WriteAdmission(routerOptions.writeLimiter)
+	mux.Handle("/v2*", admitWrites(http.StripPrefix("/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chi.RouteContext(r.Context()).Reset()
 		v2Router.ServeHTTP(w, r)
-	})))
-	mux.Handle("/*", v1.NewRouter(
+	}))))
+	mux.Handle("/*", admitWrites(v1.NewRouter(
 		systemController,
 		authenticator,
 		version,
 		debug,
 		v1.WithTracer(routerOptions.tracer),
-	))
+	)))
 
 	return mux
 }
 
 type routerOptions struct {
-	tracer                  trace.Tracer
-	meterProvider           metric.MeterProvider
-	bulkMaxSize             int
-	bulkerFactory           bulking.BulkerFactory
-	paginationConfig        common.PaginationConfig
-	exporters               bool
-	productService          services.ProductService
-	clientService           services.ClientService
-	kycService              services.KYCService
-	accountService          services.AccountService
-	reportingService        services.ReportingService
-	financeReportingService services.FinanceReportingService
-	channelFeeConfigService channelservices.ChannelFeeConfigService
+	tracer                         trace.Tracer
+	meterProvider                  metric.MeterProvider
+	bulkMaxSize                    int
+	bulkerFactory                  bulking.BulkerFactory
+	paginationConfig               common.PaginationConfig
+	exporters                      bool
+	productService                 services.ProductService
+	clientService                  services.ClientService
+	kycService                     services.KYCService
+	accountService                 services.AccountService
+	reportingService               services.ReportingService
+	financeReportingService        services.FinanceReportingService
+	glAccountService               services.GLAccountService
+	glReportingService             services.GLReportingService
+	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
+	transferService                *transfers.Service
+	writeLimiter                   *ledgercontroller.WriteLimiter
 }
 
 type RouterOption func(ro *routerOptions)
+
+// WithWriteLimiter bounds the write requests in flight (nil: no bound).
+func WithWriteLimiter(limiter *ledgercontroller.WriteLimiter) RouterOption {
+	return func(ro *routerOptions) {
+		ro.writeLimiter = limiter
+	}
+}
 
 func WithTracer(tracer trace.Tracer) RouterOption {
 	return func(ro *routerOptions) {
@@ -208,9 +226,27 @@ func WithFinanceReportingService(financeReportingService services.FinanceReporti
 	}
 }
 
+func WithGLAccountService(glAccountService services.GLAccountService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glAccountService = glAccountService
+	}
+}
+
+func WithGLReportingService(glReportingService services.GLReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glReportingService = glReportingService
+	}
+}
+
 func WithChannelFeeConfigService(channelFeeConfigService channelservices.ChannelFeeConfigService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.channelFeeConfigService = channelFeeConfigService
+	}
+}
+
+func WithTransferService(transferService *transfers.Service) RouterOption {
+	return func(ro *routerOptions) {
+		ro.transferService = transferService
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/formancehq/ledger/internal/api/common"
 	"github.com/formancehq/ledger/internal/controller/ledger"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	"github.com/go-chi/chi/v5"
@@ -59,7 +60,7 @@ func createChannel(sys systemcontroller.Controller) http.HandlerFunc {
 		// Create account (lazy via saving metadata)
 		// We just need to ensure the account is "known"
 		accountName := fmt.Sprintf("channel:%s", channelID)
-		
+
 		// To "create" it, we can save metadata if provided, or just return the ID.
 		// Since user asked for metadata storage:
 		if req.Metadata != nil {
@@ -111,13 +112,19 @@ func creditChannel(sys systemcontroller.Controller) http.HandlerFunc {
 		}
 
 		accountName := fmt.Sprintf("channel:%s", channelID)
-		
+
+		asset, err := currencyregistry.AssetFor(req.Currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, err)
+			return
+		}
+
 		script := fmt.Sprintf(`
-			send [%s/2 %d] (
+			send [%s %d] (
 				source = @world
 				destination = @%s
 			)
-		`, req.Currency, req.Amount, accountName)
+		`, asset, req.Amount, accountName)
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			Input: ledger.CreateTransaction{
@@ -146,12 +153,12 @@ func creditChannel(sys systemcontroller.Controller) http.HandlerFunc {
 func readChannel(sys systemcontroller.Controller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		channelID := chi.URLParam(r, "channelID")
-		// We need currency to find the ledger. 
-		// Since endpoints like GET /channels/{id} don't imply currency in path, 
+		// We need currency to find the ledger.
+		// Since endpoints like GET /channels/{id} don't imply currency in path,
 		// we should require it in query param, or iterate?
 		// User requirement says "Channel and Revenue Ledger is per currency".
 		// We'll require ?currency=USD
-		
+
 		currency := r.URL.Query().Get("currency")
 		if currency == "" {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("currency query param required"))

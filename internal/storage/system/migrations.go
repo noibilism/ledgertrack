@@ -500,6 +500,87 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add GL accounts registry table",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.gl_accounts (
+							id uuid primary key default gen_random_uuid(),
+							code varchar(64) not null,
+							name varchar(255) not null,
+							type varchar(16) not null check (type in ('asset', 'liability', 'equity', 'income', 'expense')),
+							normal_side varchar(8) not null check (normal_side in ('debit', 'credit')),
+							currency varchar(16) not null,
+							parent_code varchar(64),
+							ledger varchar(255) not null,
+							address varchar(512) not null check (address like 'gl:%'),
+							status varchar(16) not null default 'active' check (status in ('active', 'closed')),
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint gl_accounts_code_unique unique (code),
+							constraint gl_accounts_ledger_address_unique unique (ledger, address),
+							constraint gl_accounts_parent_fk foreign key (parent_code) references _system.gl_accounts(code),
+							constraint gl_accounts_not_own_parent check (parent_code is null or parent_code <> code)
+						);
+						create index if not exists idx_gl_accounts_currency_status on _system.gl_accounts(currency, status);
+						create index if not exists idx_gl_accounts_type on _system.gl_accounts(type);
+						create index if not exists idx_gl_accounts_parent on _system.gl_accounts(parent_code);
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add transfers table for multi-ledger wallet transfers",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.transfers (
+							id uuid primary key default gen_random_uuid(),
+							reference varchar(255) not null,
+							idempotency_key varchar(255) not null default '',
+							request_hash varchar(64) not null,
+							user_ledger varchar(63) not null,
+							wallet_id varchar(255) not null,
+							currency varchar(16) not null,
+							kind varchar(32) not null check (kind in ('debit', 'release_pay')),
+							state varchar(32) not null check (state in (
+								'created', 'user_posted', 'channel_posted', 'revenue_posted',
+								'completed', 'failed', 'failed_needs_review'
+							)),
+							amount bigint not null check (amount > 0),
+							channel_id varchar(255) not null default '',
+							channel_amount bigint not null default 0,
+							user_fee bigint not null default 0,
+							processing_fee bigint not null default 0,
+							net_revenue bigint not null default 0,
+							user_metadata jsonb not null default '{}'::jsonb,
+							user_tx_id bigint,
+							channel_tx_id bigint,
+							revenue_tx_id bigint,
+							result jsonb not null default '{}'::jsonb,
+							attempts integer not null default 0,
+							last_error text not null default '',
+							lease_owner varchar(255),
+							lease_until timestamp without time zone,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							completed_at timestamp without time zone,
+							constraint transfers_reference_unique unique (reference)
+						);
+						create index if not exists idx_transfers_recovery
+							on _system.transfers(updated_at)
+							where state in ('created', 'user_posted', 'channel_posted', 'revenue_posted');
+						create index if not exists idx_transfers_needs_review
+							on _system.transfers(updated_at)
+							where state = 'failed_needs_review';
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator

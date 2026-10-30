@@ -80,6 +80,15 @@ func NewFXModule() fx.Option {
 			func() services.FinanceReportingService {
 				return services.NewFinanceReportingService()
 			},
+			func(db *bun.DB) repositories.GLAccountRepository {
+				return repositories.NewGLAccountRepository(db)
+			},
+			func(glAccountRepository repositories.GLAccountRepository) services.GLAccountService {
+				return services.NewGLAccountService(glAccountRepository)
+			},
+			func(glAccountRepository repositories.GLAccountRepository) services.GLReportingService {
+				return services.NewGLReportingService(glAccountRepository)
+			},
 		),
 	)
 }

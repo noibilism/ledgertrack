@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ledgertrack/import/products.schema.json",
+  "title": "LedgerTrack legacy import: products.jsonl line (legacy currency)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "code", "name", "category", "currency"],
+  "properties": {
+    "source_id": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Stable identifier of the currency in the legacy system." },
+    "code": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "LedgerTrack product code. Becomes part of the wallet id and of ledger addresses, so only letters, digits, '-' and '_' are allowed." },
+    "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "description": { "type": "string", "maxLength": 1000 },
+    "category": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "currency": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,15}$", "description": "Currency code. Must be enabled in GET /v2/ledgertrack/currencies." },
+    "precision": { "type": "integer", "minimum": 0, "maximum": 8, "description": "Optional. Fractional digits of the legacy currency. Used for offline validation; plan/apply/verify use the server value and fail on mismatch." },
+    "status": { "enum": ["active", "retired"], "description": "Target status. Default active. 'retired' products are activated for the import and retired at the end." },
+    "rules": { "type": "object", "description": "Passed through to the product rules. rules.min_opening_balance must be '0' or absent because accounts are opened without a deposit." },
+    "interest_config": { "type": "object" },
+    "fee_schedule": { "type": "object" }
+  }
+}

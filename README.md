@@ -267,6 +267,21 @@ go run main.go serve --worker
 | POST   | `/v2/ledgertrack/products/{productID}/activate` | Activate |
 | POST   | `/v2/ledgertrack/products/{productID}/retire` | Retire |
 
+### GL Registry (chart of accounts)
+
+Accounts of the chart live in `_system.gl_accounts` and point at a ledger address under the `gl:` prefix. Balances are never stored, they are read from the ledger. Sign convention: ledger balance is `input - output`, a positive balance is a debit and a negative balance a credit; `normal_side` only decides which sign is natural for the account.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST   | `/v2/ledgertrack/gl/accounts` | Create a GL account |
+| GET    | `/v2/ledgertrack/gl/accounts?type=&currency=&parent=&status=` | List GL accounts |
+| GET    | `/v2/ledgertrack/gl/accounts/{code}` | Get a GL account by code |
+| PATCH  | `/v2/ledgertrack/gl/accounts/{code}` | Update name, metadata or status (other fields are rejected) |
+| POST   | `/v2/ledgertrack/gl/accounts/import?dry_run=true` | Bulk import a chart (JSON array or `text/csv`), all-or-nothing and idempotent; `dry_run=true` returns the per-row report without writing |
+| GET    | `/v2/ledgertrack/gl/accounts/{code}/balance?pit=...` | Ledger balance at the account address, optionally at a point in time |
+
+CSV import columns: `code,name,type,normal_side,currency,parent_code,ledger,address` (`normal_side` defaults from the type, `parent_code` may be blank).
+
 ### Clients
 
 | Method | Endpoint | Description |
@@ -322,6 +337,7 @@ All reporting endpoints return JSON and are scoped to the `ledgertrack` ledger.
 | GET    | `/v2/ledgertrack/reports/transactions/daily?date=YYYY-MM-DD` | Daily transaction summary |
 | GET    | `/v2/ledgertrack/reports/interest-fees` | Interest and fee summaries |
 | GET    | `/v2/ledgertrack/reports/finance/trial-balance?currency=USD` | Trial balance snapshot (per currency) |
+| GET    | `/v2/ledgertrack/reports/finance/gl-trial-balance?currency=USD&asOf=...` | GL registry trial balance: every active GL account, per-type subtotals and a `balanced` flag |
 | GET    | `/v2/ledgertrack/reports/finance/balance-sheet?currency=USD` | Balance sheet snapshot (per currency) |
 | GET    | `/v2/ledgertrack/reports/finance/pnl?currency=USD&startTime=...&endTime=...` | Profit and loss (per currency, period) |
 | GET    | `/v2/ledgertrack/reports/finance/cash-flow?currency=USD&startTime=...&endTime=...` | Cash flow (per currency, period) |
@@ -365,6 +381,7 @@ The `test/e2e` suite uses the repository's Docker-based test harness for Postgre
 
 * **CBA domain specification**: [`CBA_PRD.md`](CBA_PRD.md)
 * **Wallet wrapper behavior**: [`WalletPRD.md`](WalletPRD.md)
+* **Legacy import tool**: [`docs/import/README.md`](docs/import/README.md)
 * **OpenAPI document**: [`openapi/v2.yaml`](openapi/v2.yaml)
 * **Postman collection**: [`postman_collection.json`](postman_collection.json)
 
