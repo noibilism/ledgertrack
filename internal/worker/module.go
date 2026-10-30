@@ -15,6 +15,7 @@ import (
 	"github.com/formancehq/ledger/internal/replication"
 	innergrpc "github.com/formancehq/ledger/internal/replication/grpc"
 	"github.com/formancehq/ledger/internal/storage"
+	"github.com/formancehq/ledger/internal/storage/loghash"
 )
 
 type GRPCServerModuleConfig struct {
@@ -23,7 +24,11 @@ type GRPCServerModuleConfig struct {
 }
 
 type ModuleConfig struct {
-	AsyncBlockRunnerConfig    storage.AsyncBlockRunnerConfig
+	AsyncBlockRunnerConfig storage.AsyncBlockRunnerConfig
+	// AsyncBlockRunnerDisabled turns the legacy block hasher off.
+	AsyncBlockRunnerDisabled bool
+	// LogHasherConfig configures the log hasher of the HASH_LOGS=ASYNC ledgers.
+	LogHasherConfig           loghash.Config
 	ReplicationConfig         replication.WorkerModuleConfig
 	BucketCleanupRunnerConfig storage.BucketCleanupRunnerConfig
 	CBASchedulerConfig        scheduler.ModuleConfig
@@ -33,9 +38,14 @@ type ModuleConfig struct {
 // the replication worker, and the bucket cleanup runner modules into an Fx application.
 // The provided cfg supplies each submodule's configuration.
 func NewFXModule(cfg ModuleConfig) fx.Option {
+	blockRunner := fx.Options()
+	if !cfg.AsyncBlockRunnerDisabled {
+		blockRunner = storage.NewAsyncBlockRunnerModule(cfg.AsyncBlockRunnerConfig)
+	}
 	return fx.Options(
 		// todo: add auto discovery
-		storage.NewAsyncBlockRunnerModule(cfg.AsyncBlockRunnerConfig),
+		blockRunner,
+		loghash.NewFXModule(cfg.LogHasherConfig),
 		replication.NewWorkerFXModule(cfg.ReplicationConfig),
 		storage.NewBucketCleanupRunnerModule(cfg.BucketCleanupRunnerConfig),
 		scheduler.NewFXModule(cfg.CBASchedulerConfig),

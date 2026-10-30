@@ -76,6 +76,9 @@ type DefaultController struct {
 	enableFeatures bool
 
 	schemaEnforcementMode ledgercontroller.SchemaEnforcementMode
+
+	// walletLedgerHashMode is the HASH_LOGS mode given to wallet ledgers at creation ("" keeps the default).
+	walletLedgerHashMode string
 }
 
 func (ctrl *DefaultController) ListExporters(ctx context.Context) (*bunpaginate.Cursor[ledger.Exporter], error) {
@@ -201,6 +204,7 @@ func (ctrl *DefaultController) GetLedgerController(ctx context.Context, name str
 
 func (ctrl *DefaultController) CreateLedger(ctx context.Context, name string, configuration ledger.Configuration) error {
 	return tracing.SkipResult(tracing.Trace(ctx, ctrl.tracerProvider.Tracer("system"), "CreateLedger", tracing.NoResult(func(ctx context.Context) error {
+		_, explicitHashLogs := configuration.Features[features.FeatureHashLogs]
 		configuration.SetDefaults()
 
 		if !ctrl.enableFeatures {
@@ -208,6 +212,9 @@ func (ctrl *DefaultController) CreateLedger(ctx context.Context, name string, co
 				return ErrExperimentalFeaturesDisabled
 			}
 		}
+
+		// After the experimental features gate, see applyWalletLedgerHashMode.
+		applyWalletLedgerHashMode(ctrl.walletLedgerHashMode, name, explicitHashLogs, &configuration)
 
 		l, err := ledger.New(name, configuration)
 		if err != nil {
@@ -326,6 +333,13 @@ func WithTracerProvider(t trace.TracerProvider) Option {
 func WithEnableFeatures(v bool) Option {
 	return func(ctrl *DefaultController) {
 		ctrl.enableFeatures = v
+	}
+}
+
+// WithWalletLedgerHashMode sets the HASH_LOGS mode (SYNC or ASYNC) of the wallet ledgers created from now on.
+func WithWalletLedgerHashMode(mode string) Option {
+	return func(ctrl *DefaultController) {
+		ctrl.walletLedgerHashMode = mode
 	}
 }
 

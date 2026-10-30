@@ -102,6 +102,9 @@ func NewServeCommand() *cobra.Command {
 			if err := cfg.Validate(); err != nil {
 				return err
 			}
+			if err := systemcontroller.ValidateWalletLedgerHashMode(cfg.WalletLedgerHashMode); err != nil {
+				return err
+			}
 
 			connectionOptions, err := bunconnect.ConnectionOptionsFromFlags(cmd)
 			if err != nil {
@@ -137,6 +140,7 @@ func NewServeCommand() *cobra.Command {
 					EnableFeatures:        cfg.ExperimentalFeaturesEnabled,
 					SchemaEnforcementMode: cfg.commonConfig.SchemaEnforcementMode,
 					WriteLimiter:          writeLimiter,
+					WalletLedgerHashMode:  cfg.WalletLedgerHashMode,
 				}),
 				bus.NewFxModule(),
 				currency.NewFXModule(),
@@ -219,6 +223,7 @@ func NewServeCommand() *cobra.Command {
 	cmd.Flags().String(WorkerGRPCAddressFlag, "localhost:8081", "GRPC address")
 	cmd.Flags().Bool(SemconvMetricsNames, false, "Use semconv metrics names (recommended)")
 	cmd.Flags().String(SchemaEnforcementMode, "audit", "Schema enforcement mode. Values: `audit`, `strict`")
+	addWalletLedgerHashModeFlag(cmd)
 
 	addWorkerFlags(cmd)
 	bunconnect.AddFlags(cmd.Flags())

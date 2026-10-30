@@ -42,6 +42,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(NewBucketsCommand())
 	root.AddCommand(NewVersionCommand())
 	root.AddCommand(NewWorkerCommand())
+	root.AddCommand(NewHashChainCommand())
 	root.AddCommand(NewDocsCommand())
 
 	root.AddCommand(newMigrationCommand())

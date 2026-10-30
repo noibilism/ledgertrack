@@ -25,6 +25,7 @@ import (
 	"github.com/formancehq/ledger/internal/replication/drivers"
 	"github.com/formancehq/ledger/internal/replication/drivers/alldrivers"
 	"github.com/formancehq/ledger/internal/storage"
+	"github.com/formancehq/ledger/internal/storage/loghash"
 	"github.com/formancehq/ledger/internal/worker"
 )
 
@@ -58,6 +59,13 @@ type WorkerGRPCConfig struct {
 type WorkerConfiguration struct {
 	HashLogsBlockMaxSize  int           `mapstructure:"worker-async-block-hasher-max-block-size"`
 	HashLogsBlockCRONSpec cron.Schedule `mapstructure:"worker-async-block-hasher-schedule"`
+	// HashLogsBlockDisabled turns the legacy block hasher off, see docs/design/async-log-hashing.md.
+	HashLogsBlockDisabled bool `mapstructure:"worker-async-block-hasher-disabled"`
+
+	LogHasherInterval  time.Duration `mapstructure:"worker-log-hasher-interval"`
+	LogHasherBatchSize int           `mapstructure:"worker-log-hasher-batch-size"`
+	LogHasherGapGrace  time.Duration `mapstructure:"worker-log-hasher-gap-grace"`
+	LogHasherAlertLag  time.Duration `mapstructure:"worker-log-hasher-alert-lag"`
 
 	PushRetryPeriod time.Duration `mapstructure:"worker-pipelines-push-retry-period"`
 	PullInterval    time.Duration `mapstructure:"worker-pipelines-pull-interval"`
@@ -119,6 +127,11 @@ type WorkerCommandConfiguration struct {
 func addWorkerFlags(cmd *cobra.Command) {
 	cmd.Flags().Int(WorkerAsyncBlockHasherMaxBlockSizeFlag, 1000, "Max block size")
 	cmd.Flags().String(WorkerAsyncBlockHasherScheduleFlag, "0 * * * * *", "Schedule")
+	cmd.Flags().Bool("worker-async-block-hasher-disabled", false, "Disable the legacy block hasher (it chains nothing per log and is superseded by the log hasher for HASH_LOGS=ASYNC ledgers)")
+	cmd.Flags().Duration("worker-log-hasher-interval", loghash.DefaultInterval, "Interval between two runs of the log hasher (HASH_LOGS=ASYNC ledgers)")
+	cmd.Flags().Int("worker-log-hasher-batch-size", loghash.DefaultBatchSize, "Max logs chained per database transaction by the log hasher")
+	cmd.Flags().Duration("worker-log-hasher-gap-grace", loghash.DefaultGapGrace, "Time a hole in the log ids must have been observed before the log hasher considers it final")
+	cmd.Flags().Duration("worker-log-hasher-alert-lag", loghash.DefaultAlertLag, "Age of the oldest unchained log above which the log hasher logs an ALERT")
 	cmd.Flags().Duration(WorkerPipelinesPullIntervalFlag, 5*time.Second, "Pipelines pull interval")
 	cmd.Flags().Duration(WorkerPipelinesPushRetryPeriodFlag, 10*time.Second, "Pipelines push retry period")
 	cmd.Flags().Duration(WorkerPipelinesSyncPeriod, time.Minute, "Pipelines sync period")
@@ -175,6 +188,7 @@ func NewWorkerCommand() *cobra.Command {
 					},
 					EnableFeatures:        cfg.ExperimentalFeaturesEnabled,
 					SchemaEnforcementMode: cfg.commonConfig.SchemaEnforcementMode,
+					WalletLedgerHashMode:  cfg.WalletLedgerHashMode,
 				}),
 				bus.NewFxModule(),
 				currency.NewFXModule(),
@@ -193,6 +207,7 @@ func NewWorkerCommand() *cobra.Command {
 	cmd.Flags().String(WorkerGRPCAddressFlag, ":8081", "GRPC address")
 
 	addWorkerFlags(cmd)
+	addWalletLedgerHashModeFlag(cmd)
 	service.AddFlags(cmd.Flags())
 	bunconnect.AddFlags(cmd.Flags())
 	otlpmetrics.AddFlags(cmd.Flags())
@@ -208,6 +223,13 @@ func newWorkerModule(configuration WorkerConfiguration) fx.Option {
 		AsyncBlockRunnerConfig: storage.AsyncBlockRunnerConfig{
 			MaxBlockSize: configuration.HashLogsBlockMaxSize,
 			Schedule:     configuration.HashLogsBlockCRONSpec,
+		},
+		AsyncBlockRunnerDisabled: configuration.HashLogsBlockDisabled,
+		LogHasherConfig: loghash.Config{
+			Interval:  configuration.LogHasherInterval,
+			BatchSize: configuration.LogHasherBatchSize,
+			GapGrace:  configuration.LogHasherGapGrace,
+			AlertLag:  configuration.LogHasherAlertLag,
 		},
 		ReplicationConfig: replication.WorkerModuleConfig{
 			PushRetryPeriod: configuration.PushRetryPeriod,

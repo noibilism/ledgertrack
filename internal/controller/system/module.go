@@ -26,6 +26,9 @@ type ModuleConfiguration struct {
 	SchemaEnforcementMode     ledgercontroller.SchemaEnforcementMode
 	// WriteLimiter bounds the ledger writes in flight. nil means no limit.
 	WriteLimiter *ledgercontroller.WriteLimiter
+	// WalletLedgerHashMode is the HASH_LOGS mode (SYNC or ASYNC) given to the wallet ledgers (ledgertrack, channels-*,
+	// revenue-*) when they are created. Empty keeps the default configuration. See docs/design/async-log-hashing.md.
+	WalletLedgerHashMode string
 }
 
 func NewFXModule(configuration ModuleConfiguration) fx.Option {
@@ -73,6 +76,7 @@ func NewFXModule(configuration ModuleConfiguration) fx.Option {
 				WithTracerProvider(tracerProvider),
 				WithEnableFeatures(configuration.EnableFeatures),
 				WithSchemaEnforcementMode(configuration.SchemaEnforcementMode),
+				WithWalletLedgerHashMode(configuration.WalletLedgerHashMode),
 			)
 		}),
 	)
