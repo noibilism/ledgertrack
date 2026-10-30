@@ -28,6 +28,7 @@ type fakeServer struct {
 	dropEveryNthCredit int // acknowledge but do not apply
 	creditCount        int
 	failEveryNthDebit  int // return 500 without applying
+	shedEveryNthDebit  int // return 503 OVERLOADED without applying (write limiter)
 	debitCount         int
 
 	srv *httptest.Server
@@ -319,6 +320,11 @@ func (f *fakeServer) walletOp(w http.ResponseWriter, r *http.Request) {
 		finish()
 	case "debit":
 		f.debitCount++
+		if f.shedEveryNthDebit > 0 && f.debitCount%f.shedEveryNthDebit == 0 {
+			w.Header().Set("Retry-After", "1")
+			apiErr(w, 503, "OVERLOADED", "write queue full")
+			return
+		}
 		if f.failEveryNthDebit > 0 && f.debitCount%f.failEveryNthDebit == 0 {
 			apiErr(w, 500, "INTERNAL", "boom")
 			return

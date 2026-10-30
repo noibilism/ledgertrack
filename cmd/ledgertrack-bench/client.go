@@ -27,10 +27,11 @@ const (
 	ClassTimeout                   // client timeout or deadline
 	ClassNetwork                   // connection level failure
 	ClassDropped                   // open loop arrival never sent (backlog overflow or run ended)
+	ClassShed                      // 503 with code OVERLOADED: the server refused the write before doing anything
 	numClasses
 )
 
-var classNames = [numClasses]string{"2xx", "402_insufficient", "409_conflict", "4xx_other", "5xx", "timeout", "network", "dropped"}
+var classNames = [numClasses]string{"2xx", "402_insufficient", "409_conflict", "4xx_other", "5xx", "timeout", "network", "dropped", "shed"}
 
 func (c Class) String() string { return classNames[c] }
 
@@ -52,6 +53,10 @@ func classify(status int, body []byte, err error) Class {
 		return ClassInsufficient
 	case status == http.StatusConflict:
 		return ClassConflict
+	case status == http.StatusServiceUnavailable && bytes.Contains(body, []byte("OVERLOADED")):
+		// The write limiter answers 503 + Retry-After before reading or writing anything. It is
+		// load shedding working as designed, not a failure, and the outcome is known: nothing committed.
+		return ClassShed
 	case status >= 500:
 		return Class5xx
 	default:
@@ -68,13 +73,15 @@ func isError(op Op, c Class) bool {
 		return false
 	case ClassInsufficient:
 		return op == OpCredit || op == OpLienRelease || op == OpLienPay
+	case ClassShed:
+		return false // reported separately, see Report.Shed
 	default:
 		return true
 	}
 }
 
 // definite reports whether the class proves the server committed nothing.
-func definitelyNotCommitted(c Class) bool { return c == ClassInsufficient }
+func definitelyNotCommitted(c Class) bool { return c == ClassInsufficient || c == ClassShed }
 
 type client struct {
 	http   *http.Client

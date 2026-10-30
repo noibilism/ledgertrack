@@ -142,6 +142,10 @@ type Config struct {
 	MaxP99             time.Duration
 	MaxErrorRate       float64
 	MaxInsufficientPct float64
+
+	// MaxUncertainFrac makes the consistency check fail when more than this fraction of the operations
+	// (shed ones excluded) had an unknown outcome. Negative disables the cap.
+	MaxUncertainFrac float64
 }
 
 func (c *Config) openLoop() bool { return c.Rate > 0 }
@@ -205,6 +209,7 @@ func parseConfig(args []string, stderr io.Writer) (*Config, error) {
 	fs.BoolVar(&c.Idempotency, "idempotency-key", false, "also send the reference as an Idempotency-Key header")
 	fs.IntVar(&c.SetupConcurrency, "setup-concurrency", 32, "parallelism for wallet creation, funding and baseline reads")
 
+	fs.Float64Var(&c.MaxUncertainFrac, "max-uncertain-frac", 0.01, "consistency check fails when more than this fraction of the operations (503 OVERLOADED excluded) had an unknown outcome (timeout, 5xx, network); those operations widen the tolerances, so too many of them make the check meaningless. Negative disables the cap")
 	fs.BoolVar(&c.Check, "check", true, "run the post-run consistency check")
 	fs.IntVar(&c.CheckConcurrency, "check-concurrency", 32, "parallelism for the consistency check reads")
 
@@ -282,6 +287,8 @@ func (c *Config) validate() error {
 		return errors.New("-fund must be at least -amount-max")
 	case c.FeeUser < 0 || c.FeeProc < 0:
 		return errors.New("fees must not be negative")
+	case c.MaxUncertainFrac > 1:
+		return errors.New("-max-uncertain-frac must be at most 1 (or negative to disable)")
 	case c.SetupConcurrency <= 0 || c.CheckConcurrency <= 0:
 		return errors.New("setup and check concurrency must be positive")
 	}

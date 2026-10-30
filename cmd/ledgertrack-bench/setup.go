@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/formancehq/ledger/internal/hotrows"
 	"net/http"
 	"net/url"
 	"strings"
@@ -257,10 +258,10 @@ func setup(ctx context.Context, cfg *Config, cl *client, runID string) (*univers
 		}
 		if cfg.mixUsesChannel() {
 			rev := "revenue-" + ccy
-			if bl.revAcc[ci], err = cl.aggregateBalance(ctx, rev, "revenue:accumulated", asset); err != nil {
+			if bl.revAcc[ci], err = cl.aggregateBalance(ctx, rev, hotrows.Pattern(hotrows.AccumulatedBase), asset); err != nil {
 				return nil, nil, err
 			}
-			if bl.revProc[ci], err = cl.aggregateBalance(ctx, rev, "revenue:channel_processing_cost", asset); err != nil {
+			if bl.revProc[ci], err = cl.aggregateBalance(ctx, rev, hotrows.Pattern(hotrows.ProcessingCostBase), asset); err != nil {
 				return nil, nil, err
 			}
 		}

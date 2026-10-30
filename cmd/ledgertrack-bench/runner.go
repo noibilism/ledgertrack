@@ -19,10 +19,11 @@ type runner struct {
 	mix  *chooser
 	refs refGen
 
-	seq      atomic.Uint64
-	okTotal  atomic.Uint64
-	errTotal atomic.Uint64
-	hardStop atomic.Int64 // unix nanos; queued arrivals after this are dropped
+	seq       atomic.Uint64
+	okTotal   atomic.Uint64
+	errTotal  atomic.Uint64
+	shedTotal atomic.Uint64
+	hardStop  atomic.Int64 // unix nanos; queued arrivals after this are dropped
 	// unexpected409 counts 409 responses in the whole run (warmup included):
 	// every reference is unique, so a conflict means the server saw a duplicate.
 	unexpected409 atomic.Uint64
@@ -233,7 +234,15 @@ func (w *worker) process(intended time.Time) {
 	done := time.Now()
 
 	class := classify(resp.Status, resp.Body, err)
+	r.book.sentOps.Add(1)
 	switch {
+	case class == ClassShed:
+		r.book.shedOps.Add(1)
+		r.shedTotal.Add(1)
+		// Nothing committed: give a consumed lien back so it can be released or paid later.
+		if (e.op == OpLienRelease || e.op == OpLienPay) && !fallback {
+			r.pool.push(lienItem{wallet: e.wallet, amount: e.total})
+		}
 	case class == ClassOK:
 		if e.op.usesChannel() {
 			applyReportedFees(&e, resp.Body)

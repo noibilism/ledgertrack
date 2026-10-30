@@ -4,7 +4,9 @@
 // avoids coordinated omission, and a closed-loop max-throughput mode.
 //
 // Exit codes: 0 success, 1 usage or setup failure, 2 an SLO gate failed,
-// 3 the post-run consistency check failed (3 wins over 2).
+// 3 the post-run consistency check failed (3 wins over 2). Too many operations
+// with an unknown outcome (-max-uncertain-frac) fail the check. With no gate
+// flags the gates are reported as "not evaluated" and never fail the run.
 package main
 
 import (
@@ -100,7 +102,7 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	switch {
 	case !rep.Check.Passed:
 		return exitConsistency
-	case !rep.GatesPassed:
+	case rep.gatesFailed():
 		return exitGate
 	}
 	return exitOK

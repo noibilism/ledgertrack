@@ -274,9 +274,9 @@ func TestGates(t *testing.T) {
 	rep.Total.ErrorRate = 0.0004
 	rep.MinWindow10sTPS = 1190
 	cfg := &Config{MinTPS: 1200, MaxP99: 250 * time.Millisecond, MaxErrorRate: 0.001, MinWindowTPS: 1200}
-	gates, ok := evaluateGates(cfg, rep)
-	if ok || len(gates) != 4 {
-		t.Fatalf("expected 4 gates with one failure, got %d ok=%v", len(gates), ok)
+	gates, evaluated, ok := evaluateGates(cfg, rep)
+	if !evaluated || ok == nil || *ok || len(gates) != 4 {
+		t.Fatalf("expected 4 gates with one failure, got %d evaluated=%v ok=%v", len(gates), evaluated, ok)
 	}
 	for _, g := range gates {
 		if g.Pass == (g.Name == "min-window-tps") {
@@ -284,8 +284,9 @@ func TestGates(t *testing.T) {
 		}
 	}
 	cfg = &Config{MaxErrorRate: -1}
-	if g, ok := evaluateGates(cfg, rep); !ok || len(g) != 0 {
-		t.Error("no configured gates must pass")
+	// No gate flags: nothing was evaluated, which must not be reported as a pass.
+	if g, evaluated, ok := evaluateGates(cfg, rep); evaluated || ok != nil || len(g) != 0 {
+		t.Errorf("no configured gates must be reported as not evaluated, got evaluated=%v ok=%v", evaluated, ok)
 	}
 }
 
@@ -336,7 +337,7 @@ func TestEndToEndOpenLoopConsistent(t *testing.T) {
 	if rep.Check == nil || !rep.Check.Ran || !rep.Check.Passed || rep.Check.WalletsChecked != 24 {
 		t.Fatalf("check should pass: %+v", rep.Check)
 	}
-	if len(rep.Ops) < 4 || len(rep.Gates) != 3 || !rep.GatesPassed {
+	if len(rep.Ops) < 4 || len(rep.Gates) != 3 || !rep.GatesEvaluated || rep.GatesPassed == nil || !*rep.GatesPassed {
 		t.Errorf("ops=%d gates=%d passed=%v", len(rep.Ops), len(rep.Gates), rep.GatesPassed)
 	}
 	for _, cc := range rep.Check.Currencies {
@@ -386,7 +387,7 @@ func TestSLOGateFailureExitCode(t *testing.T) {
 	f := newFakeServer(t)
 	args := append([]string{"-url", f.url(), "-rate", "40", "-duration", "500ms", "-warmup", "0s", "-min-tps", "100000"}, smallRun...)
 	code, rep, out := runBench(t, args...)
-	if code != exitGate || rep.GatesPassed || !rep.Check.Passed {
+	if code != exitGate || !rep.GatesEvaluated || rep.GatesPassed == nil || *rep.GatesPassed || !rep.Check.Passed {
 		t.Fatalf("want exit %d with consistent data, got %d\n%s", exitGate, code, out)
 	}
 	if !strings.Contains(out, "FAIL") {
@@ -407,7 +408,8 @@ func TestConsistencyCheckCatchesLostWrites(t *testing.T) {
 func TestUncertainOutcomesWidenTolerance(t *testing.T) {
 	f := newFakeServer(t)
 	f.failEveryNthDebit = 5 // 500 without applying: outcome treated as unknown
-	args := append([]string{"-url", f.url(), "-rate", "80", "-duration", "1s", "-warmup", "0s"}, smallRun...)
+	// about 7% of the operations: tolerated only because the threshold is raised explicitly
+	args := append([]string{"-url", f.url(), "-rate", "80", "-duration", "1s", "-warmup", "0s", "-max-uncertain-frac", "0.25"}, smallRun...)
 	code, rep, out := runBench(t, args...)
 	if code != exitOK || !rep.Check.Passed || rep.Check.UncertainOps == 0 {
 		t.Fatalf("5xx must be tolerated as unknown outcomes, exit %d\n%s", code, out)
@@ -460,4 +462,107 @@ func newFrontServer(t *testing.T, h http.Handler) string {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv.URL
+}
+
+// (a) too many unknown outcomes must fail the check instead of widening the tolerance until it passes.
+func TestTooManyUncertainOpsFailTheCheck(t *testing.T) {
+	f := newFakeServer(t)
+	f.failEveryNthDebit = 5                                                                                   // roughly 7% of the operations get a 500 without applying
+	args := append([]string{"-url", f.url(), "-rate", "80", "-duration", "1s", "-warmup", "0s"}, smallRun...) // default threshold: 1%
+	code, rep, out := runBench(t, args...)
+	if code != exitConsistency {
+		t.Fatalf("want exit %d (consistency), got %d\n%s", exitConsistency, code, out)
+	}
+	c := rep.Check
+	if c.Passed || !c.UncertainExceeded || c.UncertainOps == 0 || c.MaxUncertainFrac != 0.01 || c.UncertainFrac <= 0.01 {
+		t.Fatalf("check must fail on uncertain ops: %+v", c)
+	}
+	if !strings.Contains(strings.Join(c.Failures, "\n"), "INCONCLUSIVE") || !strings.Contains(out, "-max-uncertain-frac") {
+		t.Errorf("failure must say why:\n%s", out)
+	}
+	// The balances themselves are fine: the failure is about the evidence, not about a mismatch.
+	if c.WalletMismatches != 0 {
+		t.Errorf("unexpected wallet mismatches: %d", c.WalletMismatches)
+	}
+}
+
+func TestUncertainFractionThresholds(t *testing.T) {
+	t.Parallel()
+	res := &CheckResult{UncertainOps: 1, SentOps: 100, UncertainFrac: 0.01}
+	if uncertainVerdict(res, 0.01) != "" {
+		t.Error("exactly at the threshold is allowed")
+	}
+	res = &CheckResult{UncertainOps: 2, SentOps: 100, UncertainFrac: 0.02}
+	if uncertainVerdict(res, 0.01) == "" {
+		t.Error("above the threshold must fail")
+	}
+	if uncertainVerdict(res, -1) != "" {
+		t.Error("a negative threshold disables the cap")
+	}
+	if uncertainVerdict(&CheckResult{}, 0) != "" {
+		t.Error("no uncertain ops can never fail, even with a zero threshold")
+	}
+	if uncertainVerdict(&CheckResult{UncertainOps: 3}, 0.5) == "" {
+		t.Error("uncertain ops without any considered op must fail")
+	}
+}
+
+// (b) no gate flags: gates are reported as not evaluated, never as passed.
+func TestNoGateFlagsReportsNotEvaluated(t *testing.T) {
+	f := newFakeServer(t)
+	args := append([]string{"-url", f.url(), "-rate", "40", "-duration", "500ms", "-warmup", "0s"}, smallRun...)
+	code, rep, out := runBench(t, args...)
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	if rep.GatesEvaluated || rep.GatesPassed != nil || len(rep.Gates) != 0 {
+		t.Errorf("gates must be not evaluated: evaluated=%v passed=%v", rep.GatesEvaluated, rep.GatesPassed)
+	}
+	if !strings.Contains(out, "not evaluated") {
+		t.Errorf("table must say gates were not evaluated:\n%s", out)
+	}
+	raw, _ := json.Marshal(rep)
+	if !strings.Contains(string(raw), `"gates_passed":null`) || !strings.Contains(string(raw), `"gates_evaluated":false`) {
+		t.Errorf("JSON must carry gates_passed:null: %s", raw)
+	}
+}
+
+// (c) 503 OVERLOADED is shed load: separate from errors, not uncertain.
+func TestClassifyShed(t *testing.T) {
+	t.Parallel()
+	overloaded := []byte(`{"errorCode":"OVERLOADED","errorMessage":"write queue full"}`)
+	if c := classify(503, overloaded, nil); c != ClassShed {
+		t.Errorf("503 OVERLOADED = %v, want shed", c)
+	}
+	if c := classify(503, []byte(`{"errorCode":"INTERNAL"}`), nil); c != Class5xx {
+		t.Errorf("plain 503 = %v, want 5xx", c)
+	}
+	if c := classify(500, overloaded, nil); c != Class5xx {
+		t.Errorf("500 = %v, want 5xx", c)
+	}
+	if isError(OpDebit, ClassShed) || !definitelyNotCommitted(ClassShed) {
+		t.Error("shed is neither an error nor an uncertain outcome")
+	}
+}
+
+func TestShedLoadIsReportedSeparatelyAndNotUncertain(t *testing.T) {
+	f := newFakeServer(t)
+	f.shedEveryNthDebit = 3 // 503 OVERLOADED before anything is applied
+	args := append([]string{"-url", f.url(), "-rate", "80", "-duration", "1s", "-warmup", "0s", "-max-error-rate", "0.001"}, smallRun...)
+	code, rep, out := runBench(t, args...)
+	if code != exitOK {
+		t.Fatalf("shed load must neither fail the check nor the gates: exit %d\n%s", code, out)
+	}
+	if rep.Shed == 0 || rep.Total.Classes["shed"] != rep.Shed || rep.ShedRate <= 0 {
+		t.Fatalf("shed not reported: shed=%d rate=%v classes=%v", rep.Shed, rep.ShedRate, rep.Total.Classes)
+	}
+	if rep.Total.Errors != 0 || rep.Total.Classes["5xx"] != 0 {
+		t.Errorf("shed must not count as errors: errors=%d classes=%v", rep.Total.Errors, rep.Total.Classes)
+	}
+	if rep.Check.UncertainOps != 0 || rep.Check.ShedOps != rep.Shed || !rep.Check.Passed {
+		t.Errorf("shed must not be uncertain: %+v", rep.Check)
+	}
+	if !strings.Contains(out, "shed (503 OVERLOADED)") {
+		t.Errorf("table must show the shed line:\n%s", out)
+	}
 }

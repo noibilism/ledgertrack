@@ -84,6 +84,8 @@ type Report struct {
 	Total           OpReport        `json:"total"`
 	Ops             []OpReport      `json:"ops"`
 	Dropped         uint64          `json:"dropped_arrivals"`
+	Shed            uint64          `json:"shed"`
+	ShedRate        float64         `json:"shed_rate"`
 	OfferedTPS      float64         `json:"offered_tps"`
 	ProcessedTPS    float64         `json:"processed_tps"`
 	InsufficientPct float64         `json:"insufficient_funds_rate"`
@@ -91,8 +93,11 @@ type Report struct {
 	MinWindow10sTPS float64         `json:"min_10s_window_tps"`
 	Timeline        []TimelinePoint `json:"timeline"`
 	Gates           []Gate          `json:"gates"`
-	GatesPassed     bool            `json:"gates_passed"`
-	Check           *CheckResult    `json:"consistency_check,omitempty"`
+	// GatesEvaluated is false when no gate flag was given. GatesPassed is then null: "not evaluated" is
+	// not a pass, and a script that requires gates_passed == true fails instead of passing silently.
+	GatesEvaluated bool         `json:"gates_evaluated"`
+	GatesPassed    *bool        `json:"gates_passed"`
+	Check          *CheckResult `json:"consistency_check,omitempty"`
 }
 
 func buildReport(cfg *Config, rt runTimes, rec *recorder, m *merged, started time.Time) *Report {
@@ -186,7 +191,11 @@ func buildReport(cfg *Config, rt runTimes, rec *recorder, m *merged, started tim
 	}
 	rep.MinWindow10sTPS = minWindowTPS(m.tlOK[:nsec], 10)
 
-	rep.Gates, rep.GatesPassed = evaluateGates(cfg, rep)
+	rep.Shed = total.Classes[ClassShed.String()]
+	if offered > 0 {
+		rep.ShedRate = float64(rep.Shed) / float64(offered)
+	}
+	rep.Gates, rep.GatesEvaluated, rep.GatesPassed = evaluateGates(cfg, rep)
 	return rep
 }
 
@@ -214,7 +223,8 @@ func minWindowTPS(perSec []uint64, w int) float64 {
 	return float64(best) / float64(w)
 }
 
-func evaluateGates(cfg *Config, rep *Report) ([]Gate, bool) {
+// evaluateGates returns the gates, whether any was evaluated, and the verdict (nil when none was).
+func evaluateGates(cfg *Config, rep *Report) ([]Gate, bool, *bool) {
 	var gates []Gate
 	add := func(name, limit, actual string, pass bool) {
 		gates = append(gates, Gate{Name: name, Limit: limit, Actual: actual, Pass: pass})
@@ -234,11 +244,19 @@ func evaluateGates(cfg *Config, rep *Report) ([]Gate, bool) {
 	if cfg.MaxInsufficientPct > 0 {
 		add("max-insufficient-rate", fmt.Sprintf("<= %.2f%%", cfg.MaxInsufficientPct*100), fmt.Sprintf("%.2f%%", rep.InsufficientPct*100), rep.InsufficientPct <= cfg.MaxInsufficientPct)
 	}
+	if len(gates) == 0 {
+		return gates, false, nil
+	}
 	ok := true
 	for _, g := range gates {
 		ok = ok && g.Pass
 	}
-	return gates, ok
+	return gates, true, &ok
+}
+
+// gatesFailed reports an evaluated gate that did not pass.
+func (r *Report) gatesFailed() bool {
+	return r.GatesEvaluated && r.GatesPassed != nil && !*r.GatesPassed
 }
 
 func fmtMS(v float64) string {
@@ -267,11 +285,11 @@ func (r *Report) writeTable(w io.Writer) {
 	fmt.Fprintf(w, "window   : %.1fs measured after %s warmup\n\n", r.WindowSeconds, run.Warmup)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(tw, "op\tattempts\t2xx\t402\t409\t4xx\t5xx\ttimeout\tnet\terr%\tok/s\tp50ms\tp90ms\tp95ms\tp99ms\tmaxms\t")
+	fmt.Fprintln(tw, "op\tattempts\t2xx\t402\t409\t4xx\t5xx\ttimeout\tnet\tshed\terr%\tok/s\tp50ms\tp90ms\tp95ms\tp99ms\tmaxms\t")
 	row := func(o OpReport) {
 		c := o.Classes
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.3f\t%.1f\t%s\t%s\t%s\t%s\t%s\t\n",
-			o.Op, o.Attempts, c["2xx"], c["402_insufficient"], c["409_conflict"], c["4xx_other"], c["5xx"], c["timeout"], c["network"],
+		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.3f\t%.1f\t%s\t%s\t%s\t%s\t%s\t\n",
+			o.Op, o.Attempts, c["2xx"], c["402_insufficient"], c["409_conflict"], c["4xx_other"], c["5xx"], c["timeout"], c["network"], c["shed"],
 			o.ErrorRate*100, o.OKTPS, fmtMS(o.Latency.P50), fmtMS(o.Latency.P90), fmtMS(o.Latency.P95), fmtMS(o.Latency.P99), fmtMS(o.Latency.Max))
 	}
 	ops := append([]OpReport(nil), r.Ops...)
@@ -286,6 +304,7 @@ func (r *Report) writeTable(w io.Writer) {
 	fmt.Fprintf(w, "est. ledger tx/s          : %.1f   (channel ops write 2-4 ledger transactions)\n", r.Total.LedgerTxPS)
 	fmt.Fprintf(w, "slowest 10s window        : %.1f TPS\n", r.MinWindow10sTPS)
 	fmt.Fprintf(w, "error rate                : %.4f%%   insufficient funds (expected): %.2f%%   dropped arrivals: %d\n", r.Total.ErrorRate*100, r.InsufficientPct*100, r.Dropped)
+	fmt.Fprintf(w, "shed (503 OVERLOADED)     : %d (%.2f%% of offered), not counted as errors\n", r.Shed, r.ShedRate*100)
 	fmt.Fprintf(w, "latency ms (from intended): p50 %s  p90 %s  p95 %s  p99 %s  max %s\n",
 		fmtMS(r.Total.Latency.P50), fmtMS(r.Total.Latency.P90), fmtMS(r.Total.Latency.P95), fmtMS(r.Total.Latency.P99), fmtMS(r.Total.Latency.Max))
 	fmt.Fprintf(w, "service time ms (on wire) : p50 %s  p99 %s  max %s\n", fmtMS(r.ServiceTime.P50), fmtMS(r.ServiceTime.P99), fmtMS(r.ServiceTime.Max))
@@ -293,7 +312,9 @@ func (r *Report) writeTable(w io.Writer) {
 		fmt.Fprintf(w, "note: %d lien_release/lien_pay draws ran as lien because no lien was on hold\n", r.Total.Fallbacks)
 	}
 
-	if len(r.Gates) > 0 {
+	if !r.GatesEvaluated {
+		fmt.Fprintln(w, "\nSLO gates: not evaluated (no -min-tps, -min-window-tps, -max-p99, -max-error-rate or -max-insufficient-rate given)")
+	} else {
 		fmt.Fprintln(w, "\nSLO gates")
 		for _, g := range r.Gates {
 			status := "PASS"
@@ -314,8 +335,8 @@ func (r *Report) writeTable(w io.Writer) {
 		if !c.Passed {
 			verdict = "FAIL"
 		}
-		fmt.Fprintf(w, "  result: %s   wallets checked %d, mismatches %d, negative balances %d, channels checked %d (mismatches %d), unexpected 409s %d, uncertain ops %d\n",
-			verdict, c.WalletsChecked, c.WalletMismatches, c.NegativeBalances, c.ChannelsChecked, c.ChannelMismatches, c.Conflicts409, c.UncertainOps)
+		fmt.Fprintf(w, "  result: %s   wallets checked %d, mismatches %d, negative balances %d, channels checked %d (mismatches %d), unexpected 409s %d, uncertain ops %d (%.2f%%), shed %d\n",
+			verdict, c.WalletsChecked, c.WalletMismatches, c.NegativeBalances, c.ChannelsChecked, c.ChannelMismatches, c.Conflicts409, c.UncertainOps, c.UncertainFrac*100, c.ShedOps)
 		for _, cc := range c.Currencies {
 			fmt.Fprintf(w, "  %s: control delta %d (expected %d +-%d), world delta %d (expected %d +-%d), conservation %d",
 				cc.Currency, cc.ControlDelta, cc.ControlExpected, cc.ControlTolerance, cc.WorldDelta, cc.WorldExpected, cc.WorldTolerance, cc.Conservation)
@@ -343,7 +364,7 @@ func (r *Report) writeJSON(w io.Writer) error {
 func (r *Report) writeCSV(w io.Writer) error {
 	cw := csv.NewWriter(w)
 	header := []string{"label", "mode", "target_tps", "shards", "dist", "op", "attempts", "2xx", "402_insufficient", "409_conflict",
-		"4xx_other", "5xx", "timeout", "network", "dropped", "error_rate", "ok_tps", "ledger_tx_per_sec_est",
+		"4xx_other", "5xx", "timeout", "network", "dropped", "shed", "error_rate", "ok_tps", "ledger_tx_per_sec_est",
 		"p50_ms", "p90_ms", "p95_ms", "p99_ms", "max_ms", "mean_ms", "ok_p50_ms", "ok_p99_ms"}
 	if err := cw.Write(header); err != nil {
 		return err
@@ -353,7 +374,7 @@ func (r *Report) writeCSV(w io.Writer) error {
 	for _, o := range append(append([]OpReport(nil), r.Ops...), r.Total) {
 		c := o.Classes
 		rec := []string{r.Run.Label, r.Run.Mode, f(r.Run.TargetTPS), strconv.Itoa(r.Run.Shards), r.Run.Dist, o.Op, u(o.Attempts),
-			u(c["2xx"]), u(c["402_insufficient"]), u(c["409_conflict"]), u(c["4xx_other"]), u(c["5xx"]), u(c["timeout"]), u(c["network"]), u(c["dropped"]),
+			u(c["2xx"]), u(c["402_insufficient"]), u(c["409_conflict"]), u(c["4xx_other"]), u(c["5xx"]), u(c["timeout"]), u(c["network"]), u(c["dropped"]), u(c["shed"]),
 			f(o.ErrorRate), f(o.OKTPS), f(o.LedgerTxPS),
 			f(o.Latency.P50), f(o.Latency.P90), f(o.Latency.P95), f(o.Latency.P99), f(o.Latency.Max), f(o.Latency.Mean),
 			f(o.LatencyOK.P50), f(o.LatencyOK.P99)}

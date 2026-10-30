@@ -63,6 +63,10 @@ Gate run (the decision run):
   -json-out results/s1-zipf.json -csv-out results/s1-zipf.csv
 ```
 
+Prerequisites on the host that runs the harness and the helper scripts around it: the Go toolchain
+to build it, plus `jq` and `bc` (`apt-get update && apt-get install -y jq bc`) for the shell
+snippets that read the JSON report and compute rates. The harness binary itself needs neither.
+
 Run the harness from a different host than the server, in the same network zone. It is light, but
 on a shared small box it competes with the server and distorts the numbers.
 
@@ -77,6 +81,13 @@ on a shared small box it competes with the server and distorts the numbers.
   315, default 256 is too low for the gate run, use 512). If arrivals queue behind the cap, the wait
   counts as latency. Arrivals beyond `-max-backlog` are dropped and counted as errors.
 * `-warmup` sends traffic but excludes it from every number.
+* `-setup-concurrency` is the parallelism of wallet creation, funding and baseline reads (default
+  32). **Use `-setup-concurrency 8` against a remote or small server** (Railway included). With 32
+  parallel setup calls on a small Postgres the setup itself can be shed with 503 or time out,
+  and a half funded wallet set makes the run meaningless. `-check-concurrency` (default 32) is the
+  same knob for the read back after the run.
+* `-max-uncertain-frac` (default 0.01) is the share of operations with an unknown outcome the
+  consistency check tolerates, see below.
 * `-dist zipf` makes a few wallets hot (rank 0 gets roughly 20% of traffic at `-zipf-s 1.2`);
   `-dist uniform` spreads evenly. `-wallets` are spread round-robin over `-currencies`, all in the
   one `-ledger`.
@@ -105,16 +116,30 @@ goes to stderr). JSON has totals, per-op stats, a per-second timeline, gate resu
 consistency check. CSV has one row per op plus `ALL`.
 
 Response classes: `2xx`, `402_insufficient` (also a 400 carrying `INSUFFICIENT_FUND`, which is
-what lien returns), `409_conflict`, `4xx_other`, `5xx`, `timeout`, `network`, `dropped`. An
+what lien returns), `409_conflict`, `4xx_other`, `5xx`, `timeout`, `network`, `dropped`, `shed`. An
 insufficient-funds answer is an expected outcome for debit, lien and channel debit and is not an
 error; for credit and releases it is. 409s are always errors, because references are unique.
 
+`shed` is a 503 whose body carries the code `OVERLOADED`: the server's write limiter refused the
+request before reading or writing anything (it also sends `Retry-After`). It is load shedding
+working as designed, so it is **not** an error, does not count against `-max-error-rate`, and is
+**not** an uncertain operation (nothing was committed). It is reported on its own: `shed` and
+`shed_rate` in the JSON, a `shed` column in the table and CSV. A high shed rate means the server
+was past its admission limit; the achieved TPS is what the server accepted, so read the two
+together. Any other 503, or a 5xx without `OVERLOADED`, stays a `5xx` error with an unknown
+outcome.
+
+When no gate flag is given the gates are **not evaluated**: the table says so,
+`gates_evaluated` is `false` and `gates_passed` is `null` (not `true`), and the exit code is not
+affected. A script that needs a verdict must pass at least one gate flag and require
+`gates_passed == true`.
+
 | Exit code | Meaning |
 | --- | --- |
-| 0 | ran, gates passed, consistency passed |
+| 0 | ran, no gate failed (or none was evaluated), consistency passed |
 | 1 | usage error or setup failure |
 | 2 | an SLO gate failed |
-| 3 | the consistency check failed (takes priority over 2) |
+| 3 | the consistency check failed, including too many uncertain operations (takes priority over 2) |
 
 Definitions to keep results comparable:
 
@@ -139,16 +164,23 @@ After the run the harness reads balances back and fails (exit 3) if any of these
 3. **System control**: delta of `system:control:{CCY}` plus all shards (read with the prefix
    pattern `system:control:{CCY}:`) equals expected.
 4. **Channels and revenue**: each channel balance, `revenue:accumulated` and
-   `revenue:channel_processing_cost` deltas equal expected (fees are taken from the response
+   `revenue:channel_processing_cost` deltas equal expected (both read by prefix, so the base account
+   and every `:N` shard written with `--revenue-shards` are summed) (fees are taken from the response
    metadata, so fee config is honoured).
 5. **Conservation**: control + sum(available) + sum(lien) + `world` deltas equal exactly 0 per
    currency, independent of the harness bookkeeping.
 6. **No duplicate handling**: zero 409s, since every reference is unique.
 
-Operations with an unknown outcome (timeout, 5xx, a channel leg failing after the wallet leg) are
-added to a tolerance for the affected accounts and listed as `uncertain_ops`. A run with many of
-those is a failed run on the error gate anyway; the tolerance only stops the check from reporting
-false corruption. If you see `uncertain_ops > 0` with a passing check, note it in the results.
+Operations with an unknown outcome (timeout, 5xx, network error, a channel leg failing after the
+wallet leg) are added to a tolerance for the affected accounts and listed as `uncertain_ops`. The
+tolerance only stops the check from reporting false corruption for a few ambiguous operations. It
+is not allowed to grow without limit: the check **fails** (exit 3, failure text starting with
+`INCONCLUSIVE`) when `uncertain_ops` is more than `-max-uncertain-frac` (default `0.01`, 1%) of the
+operations sent. The base is every operation that got an answer or an error, warmup included,
+without the `shed` ones. With enough unknown outcomes the tolerance is wider than the amounts the
+check is looking for, so a pass would prove nothing. Do not raise the flag to make a run pass; fix
+the cause (5xx, timeouts, capacity) and rerun. `-max-uncertain-frac -1` disables the cap and is
+only for debugging. If you see `uncertain_ops > 0` with a passing check, note it in the results.
 
 ## SLO gates
 
@@ -241,6 +273,9 @@ connection or cache warmup effects outside the warmup window.
   breaks the conservation check; use a dedicated ledger.
 * Wallet creation (`POST /wallets`) does not persist anything today, so the first credit creates
   the account.
-* All wallet assets are `{CCY}/2`, matching the server code.
+* The harness reads every wallet asset as `{CCY}/2`. The server derives the asset from the currency
+  registry precision (`currency.AssetFor`), which is 2 for USD, NGN, GHS and KES. Do not use a
+  currency with another precision (USDT is 6, JPY is 0) with this harness: its balance reads would
+  look at the wrong asset. Amounts and `-fund` are in minor units of a 2 decimal currency.
 * It has been validated against an in-memory fake of the API only (unit tests), never against a
   live LedgerTrack with Postgres.

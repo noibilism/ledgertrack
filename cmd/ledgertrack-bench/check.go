@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/formancehq/ledger/internal/hotrows"
 	"net/http"
 	"net/url"
 	"sync"
@@ -21,6 +22,12 @@ type CheckResult struct {
 	ChannelMismatches int    `json:"channel_mismatches"`
 	Conflicts409      uint64 `json:"unexpected_409"`
 	UncertainOps      uint64 `json:"uncertain_ops"`
+	// SentOps is the number of operations the uncertain fraction is computed on (503 OVERLOADED excluded).
+	SentOps           uint64  `json:"ops_considered"`
+	ShedOps           uint64  `json:"shed_ops"`
+	UncertainFrac     float64 `json:"uncertain_fraction"`
+	MaxUncertainFrac  float64 `json:"max_uncertain_fraction"`
+	UncertainExceeded bool    `json:"uncertain_exceeded"`
 
 	Currencies []CurrencyCheck `json:"currencies"`
 	Failures   []string        `json:"failures,omitempty"`
@@ -57,6 +64,22 @@ type CurrencyCheck struct {
 	SystemControlPattern string `json:"system_control_pattern"`
 }
 
+// uncertainVerdict returns a failure message when too many operations had an unknown outcome.
+// Every uncertain operation widens the tolerance of the balances it touches, so past a point the
+// check can no longer tell lost writes from unknown ones. That is reported as a failure
+// (inconclusive), never absorbed into the tolerance.
+func uncertainVerdict(res *CheckResult, maxFrac float64) string {
+	if maxFrac < 0 || res.UncertainOps == 0 {
+		return ""
+	}
+	if res.SentOps > 0 && res.UncertainFrac <= maxFrac {
+		return ""
+	}
+	return fmt.Sprintf("INCONCLUSIVE: %d of %d operations (%.2f%%) had an unknown outcome (timeout, 5xx or network error), above the allowed %.2f%% (-max-uncertain-frac). "+
+		"Their amounts widen the tolerances, so the balance check cannot prove that no write was lost. Fix the cause (server errors, -timeout, capacity) and rerun; do not raise the threshold to make this pass",
+		res.UncertainOps, res.SentOps, res.UncertainFrac*100, maxFrac*100)
+}
+
 func abs64(v int64) int64 {
 	if v < 0 {
 		return -v
@@ -83,6 +106,16 @@ func (f *failureLog) add(format string, args ...any) {
 // harness expectations.
 func runCheck(ctx context.Context, cfg *Config, cl *client, uni *universe, bl *baselines, bk *book, unexpected409 uint64) *CheckResult {
 	res := &CheckResult{Ran: true, Conflicts409: unexpected409, UncertainOps: bk.uncertainOps.Load()}
+	res.ShedOps = bk.shedOps.Load()
+	res.SentOps = bk.sentOps.Load() - res.ShedOps
+	res.MaxUncertainFrac = cfg.MaxUncertainFrac
+	if res.SentOps > 0 {
+		res.UncertainFrac = float64(res.UncertainOps) / float64(res.SentOps)
+	}
+	if msg := uncertainVerdict(res, cfg.MaxUncertainFrac); msg != "" {
+		res.UncertainExceeded = true
+		res.Failures = append(res.Failures, msg)
+	}
 	var fl failureLog
 	nc := len(cfg.Currencies)
 
@@ -171,8 +204,8 @@ func runCheck(ctx context.Context, cfg *Config, cl *client, uni *universe, bl *b
 		if cfg.mixUsesChannel() {
 			cc.RevenueChecked = true
 			rev := "revenue-" + ccy
-			acc, err1 := cl.aggregateBalance(ctx, rev, "revenue:accumulated", asset)
-			proc, err2 := cl.aggregateBalance(ctx, rev, "revenue:channel_processing_cost", asset)
+			acc, err1 := cl.aggregateBalance(ctx, rev, hotrows.Pattern(hotrows.AccumulatedBase), asset)
+			proc, err2 := cl.aggregateBalance(ctx, rev, hotrows.Pattern(hotrows.ProcessingCostBase), asset)
 			if err1 != nil || err2 != nil {
 				res.Failures = append(res.Failures, fmt.Sprintf("%s revenue read: %v %v", ccy, err1, err2))
 			} else {
@@ -223,6 +256,9 @@ func runCheck(ctx context.Context, cfg *Config, cl *client, uni *universe, bl *b
 	}
 	if res.UncertainOps > 0 {
 		res.Notes = append(res.Notes, fmt.Sprintf("%d operations had an unknown outcome (timeout, 5xx or partial failure); their amounts widen the tolerances", res.UncertainOps))
+	}
+	if res.ShedOps > 0 {
+		res.Notes = append(res.Notes, fmt.Sprintf("%d operations were shed by the server (503 OVERLOADED, nothing committed); they are not uncertain", res.ShedOps))
 	}
 	res.Notes = append(res.Notes, "references are unique by construction (run id + sequence); duplicate detection relies on the server returning 409 for a reused reference")
 	res.Passed = len(res.Failures) == 0

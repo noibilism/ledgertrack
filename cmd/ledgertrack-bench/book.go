@@ -35,6 +35,11 @@ type book struct {
 	chanUnc   []atomic.Int64
 
 	uncertainOps atomic.Uint64
+	// sentOps counts every operation that got an answer or an error (warmup included), shedOps those the
+	// server shed with 503 OVERLOADED. Shed operations are known not to have committed, so they are
+	// not uncertain and are left out of the base the uncertain fraction is computed on.
+	sentOps atomic.Uint64
+	shedOps atomic.Uint64
 }
 
 type ccyBook struct {
