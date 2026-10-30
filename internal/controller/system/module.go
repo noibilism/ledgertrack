@@ -73,6 +73,9 @@ func NewFXModule(configuration ModuleConfiguration) fx.Option {
 				WithTracerProvider(tracerProvider),
 				WithEnableFeatures(configuration.EnableFeatures),
 				WithSchemaEnforcementMode(configuration.SchemaEnforcementMode),
+				// Without this the limiter built in cmd/serve.go would only gate the HTTP layer
+				// and the ledger controllers (including non HTTP callers) would run unbounded.
+				WithWriteLimiter(configuration.WriteLimiter),
 			)
 		}),
 	)
