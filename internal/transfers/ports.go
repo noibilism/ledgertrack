@@ -15,6 +15,7 @@ import (
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
+	"github.com/formancehq/ledger/internal/walletlock"
 )
 
 // ErrReferenceMismatch means a reference is already used on a ledger by a
@@ -106,7 +107,17 @@ func (l *SystemLedgers) Post(ctx context.Context, m Movement) (*Posted, error) {
 			Runtime: ledgerinternal.RuntimeMachine,
 		},
 	}
+	// The wallet leg of a transfer must take the same per wallet lock as the plain wallet routes,
+	// otherwise a channel debit and a credit on one wallet lock the wallet and system:control rows
+	// in opposite orders and deadlock in Postgres. The lock is only held while the transaction is
+	// created, never across the legs of a transfer.
+	unlock, err := walletlock.Default.LockAddresses(ctx, m.Ledger, m.Source, m.Destination)
+	if err != nil {
+		// Nothing was written: the request was cancelled while waiting for the wallet.
+		return nil, &RejectedError{Err: err}
+	}
 	_, created, _, err := ctrl.CreateTransaction(ctx, params)
+	unlock()
 	if err == nil {
 		return &Posted{Tx: created.Transaction}, nil
 	}

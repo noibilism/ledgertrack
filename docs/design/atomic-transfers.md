@@ -120,3 +120,16 @@ from _system.transfers where state = 'failed_needs_review' order by updated_at;
 Stuck-in-flight check: `select state, count(*), min(updated_at) from _system.transfers where state not in ('completed','failed','failed_needs_review') group by 1;`
 
 Behaviour changes versus the old handlers (all intended): a retry of a completed reference returns the stored 201 with `Idempotency-Hit: true` instead of 409; `metadata.channel_tx_id` carries the real transaction id (the old code printed a pointer address); a legacy request that stopped half way is healed by the client retrying it.
+
+## Wallet lock on the wallet leg
+
+A wallet debit locks the wallet row and then `system:control`; a wallet credit locks them in the
+opposite order. The plain wallet routes avoid the resulting Postgres deadlock with an in-process
+per-wallet lock (`internal/walletlock`). The wallet leg of a transfer (`channel_debit`, `lien_pay`)
+is posted by `SystemLedgers.Post`, and it takes the same lock, keyed on the wallet account of the
+movement, only for the duration of that one transaction (never across legs). Legs that touch no
+wallet account (channel, revenue, `world`) take no lock.
+
+Before this, a channel transfer and a credit on the same wallet deadlocked in Postgres: the loser was
+only detected after `deadlock_timeout` (1s) and replayed. The lock is per process; several server
+instances still rely on Postgres deadlock detection and the retry in `logProcessor.forgeLog`.

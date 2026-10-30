@@ -19,12 +19,13 @@ import (
 	ledger "github.com/formancehq/ledger/internal"
 	"github.com/formancehq/ledger/internal/api/common"
 	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
+	"github.com/formancehq/ledger/internal/walletlock"
 )
 
 func TestWalletLockerIsExclusivePerKey(t *testing.T) {
 	t.Parallel()
 
-	l := newWalletLocker()
+	l := walletlock.New()
 
 	var (
 		inside, violations atomic.Int64
@@ -34,7 +35,7 @@ func TestWalletLockerIsExclusivePerKey(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			unlock, err := l.lock(context.Background(), "ledger/w1")
+			unlock, err := l.Lock(context.Background(), "ledger/w1")
 			require.NoError(t, err)
 			defer unlock()
 
@@ -48,21 +49,21 @@ func TestWalletLockerIsExclusivePerKey(t *testing.T) {
 	wg.Wait()
 
 	require.Zero(t, violations.Load())
-	require.Zero(t, l.size(), "entries must be garbage collected")
+	require.Zero(t, l.Size(), "entries must be garbage collected")
 }
 
 func TestWalletLockerDoesNotBlockOtherKeys(t *testing.T) {
 	t.Parallel()
 
-	l := newWalletLocker()
-	unlock1, err := l.lock(context.Background(), "ledger/w1")
+	l := walletlock.New()
+	unlock1, err := l.Lock(context.Background(), "ledger/w1")
 	require.NoError(t, err)
 	defer unlock1()
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		unlock2, err := l.lock(context.Background(), "ledger/w2")
+		unlock2, err := l.Lock(context.Background(), "ledger/w2")
 		require.NoError(t, err)
 		unlock2()
 	}()
@@ -77,24 +78,24 @@ func TestWalletLockerDoesNotBlockOtherKeys(t *testing.T) {
 func TestWalletLockerCancelWhileWaiting(t *testing.T) {
 	t.Parallel()
 
-	l := newWalletLocker()
-	unlock, err := l.lock(context.Background(), "k")
+	l := walletlock.New()
+	unlock, err := l.Lock(context.Background(), "k")
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	_, err = l.lock(ctx, "k")
+	_, err = l.Lock(ctx, "k")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	unlock()
 	unlock() // idempotent
-	require.Zero(t, l.size())
+	require.Zero(t, l.Size())
 
 	// the key is usable again
-	unlock, err = l.lock(context.Background(), "k")
+	unlock, err = l.Lock(context.Background(), "k")
 	require.NoError(t, err)
 	unlock()
-	require.Zero(t, l.size())
+	require.Zero(t, l.Size())
 }
 
 // Two writes on the same wallet must never reach the ledger controller at the same time, otherwise
@@ -143,7 +144,7 @@ func TestWalletWritesOnSameWalletAreSerialized(t *testing.T) {
 
 	require.EqualValues(t, 24, calls.Load())
 	require.Zero(t, violations.Load())
-	require.Zero(t, defaultWalletLocker.size())
+	require.Zero(t, defaultWalletLocker.Size())
 }
 
 func TestWalletWriteOverloadedAnswers503WithRetryAfter(t *testing.T) {
