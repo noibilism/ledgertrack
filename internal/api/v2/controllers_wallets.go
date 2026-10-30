@@ -23,6 +23,7 @@ import (
 	"github.com/formancehq/ledger/internal/controller/ledger"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
+	"github.com/formancehq/ledger/internal/hotrows"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
@@ -78,12 +79,12 @@ func postRevenueEntries(
 	}{
 		{
 			suffix:      "user-fee",
-			destination: "revenue:accumulated",
+			destination: hotrows.RevenueDestination(hotrows.AccumulatedBase, baseReference),
 			amount:      userFeeAmount,
 		},
 		{
 			suffix:      "processing-fee",
-			destination: "revenue:channel_processing_cost",
+			destination: hotrows.RevenueDestination(hotrows.ProcessingCostBase, baseReference),
 			amount:      processingFeeAmount,
 		},
 	}
@@ -96,10 +97,10 @@ func postRevenueEntries(
 
 		revenueScript := fmt.Sprintf(`
 			send [%s/2 %d] (
-				source = @world
+				source = %s
 				destination = @%s
 			)
-		`, currency, entry.amount, entry.destination)
+		`, currency, entry.amount, hotrows.SourceClause(hotrows.RevenueSource(baseReference)), entry.destination)
 
 		rParams := ledger.Parameters[ledger.CreateTransaction]{
 			Input: ledger.CreateTransaction{
@@ -473,9 +474,9 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 			channelScript := fmt.Sprintf(`
 				send [%s/2 %d] (
 					source = @%s allowing unbounded overdraft
-					destination = @world
+					destination = @%s
 				)
-			`, currency, channelAmount, channelAccount)
+			`, currency, channelAmount, channelAccount, hotrows.ChannelSink(req.Reference))
 
 			cParams := ledger.Parameters[ledger.CreateTransaction]{
 				Input: ledger.CreateTransaction{
@@ -914,9 +915,9 @@ func releaseLien(sys systemcontroller.Controller, channelFeeConfigService channe
 			channelScript := fmt.Sprintf(`
 				send [%s/2 %d] (
 					source = @%s allowing unbounded overdraft
-					destination = @world
+					destination = @%s
 				)
-			`, currency, channelAmount, channelAccount)
+			`, currency, channelAmount, channelAccount, hotrows.ChannelSink(req.Reference))
 
 			cParams := ledger.Parameters[ledger.CreateTransaction]{
 				Input: ledger.CreateTransaction{
