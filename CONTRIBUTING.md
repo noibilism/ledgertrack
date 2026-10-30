@@ -187,7 +187,7 @@ Current set of features:
 |------------------------------|---------------|------------------------|------------------------------------------------------------------|
 | ACCOUNT_METADATA_HISTORY     | SYNC          | SYNC \| DISABLED       | Historize metadata changes on accounts                           |
 | TRANSACTION_METADATA_HISTORY | SYNC          | SYNC \| DISABLED       | Historize metadata changes on transactions                       |
-| HASH_LOGS                    | SYNC          | SYNC \| DISABLED       | [Hash logs](#hashed-log)                                         |
+| HASH_LOGS                    | SYNC          | SYNC \| ASYNC \| DISABLED | [Hash logs](#hashed-log), ASYNC: [design](docs/design/async-log-hashing.md) |
 | MOVES_HISTORY                | ON            | ON \| OFF              | [Historize funds movements by account](#funds-movements-history) |
 | MOVES_HISTORY_POST_COMMIT_EFFECTIVE_VOLUMES | SYNC          | SYNC \| DISABLED       | Compute and maintains post commit effective volumes              |
  
@@ -292,6 +292,7 @@ TODO
 ### Hashed log
 
 Ledgers can be configured with feature `HASH_LOGS` to `SYNC`.
+`ASYNC` chains the logs in the background (worker) instead of at commit time, see [async log hashing](docs/design/async-log-hashing.md).
 By using this feature, each log will be hashed with the previous hash. 
 The generated signature is included in the log model.
 
