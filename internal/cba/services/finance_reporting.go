@@ -13,6 +13,7 @@ import (
 
 	ledgerinternal "github.com/formancehq/ledger/internal"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
 )
@@ -281,7 +282,10 @@ func (s *DefaultFinanceReportingService) ProfitAndLoss(ctx context.Context, sys 
 		return nil, err
 	}
 
-	asset := fmt.Sprintf("%s/2", currency)
+	asset, err := currencyregistry.AssetFor(currency)
+	if err != nil {
+		return nil, err
+	}
 	qb := query.Or(
 		query.Match("account", feeIncomeAccount),
 		query.Match("account", interestExpenseAccount),
@@ -447,7 +451,10 @@ func aggregatedBalance(ctx context.Context, sys systemcontroller.Controller, led
 	if err != nil {
 		return 0, err
 	}
-	asset := fmt.Sprintf("%s/2", currency)
+	asset, err := currencyregistry.AssetFor(currency)
+	if err != nil {
+		return 0, err
+	}
 	if amount, ok := balances[asset]; ok && amount != nil {
 		return amount.Int64(), nil
 	}
