@@ -305,6 +305,9 @@ func (r *Report) writeTable(w io.Writer) {
 	fmt.Fprintf(w, "slowest 10s window        : %.1f TPS\n", r.MinWindow10sTPS)
 	fmt.Fprintf(w, "error rate                : %.4f%%   insufficient funds (expected): %.2f%%   dropped arrivals: %d\n", r.Total.ErrorRate*100, r.InsufficientPct*100, r.Dropped)
 	fmt.Fprintf(w, "shed (503 OVERLOADED)     : %d (%.2f%% of offered), not counted as errors\n", r.Shed, r.ShedRate*100)
+	if r.ShedRate > 0.05 {
+		fmt.Fprintf(w, "WARNING: %.1f%% of the offered load was shed by the server's write limiter; the achieved TPS is what it admitted, not what it can sustain. Lower -concurrency or raise --write-max-in-flight before reading anything into the numbers\n", r.ShedRate*100)
+	}
 	fmt.Fprintf(w, "latency ms (from intended): p50 %s  p90 %s  p95 %s  p99 %s  max %s\n",
 		fmtMS(r.Total.Latency.P50), fmtMS(r.Total.Latency.P90), fmtMS(r.Total.Latency.P95), fmtMS(r.Total.Latency.P99), fmtMS(r.Total.Latency.Max))
 	fmt.Fprintf(w, "service time ms (on wire) : p50 %s  p99 %s  max %s\n", fmtMS(r.ServiceTime.P50), fmtMS(r.ServiceTime.P99), fmtMS(r.ServiceTime.Max))
