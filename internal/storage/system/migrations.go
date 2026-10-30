@@ -500,6 +500,38 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add GL accounts registry table",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.gl_accounts (
+							id uuid primary key default gen_random_uuid(),
+							code varchar(64) not null,
+							name varchar(255) not null,
+							type varchar(16) not null check (type in ('asset', 'liability', 'equity', 'income', 'expense')),
+							normal_side varchar(8) not null check (normal_side in ('debit', 'credit')),
+							currency varchar(16) not null,
+							parent_code varchar(64),
+							ledger varchar(255) not null,
+							address varchar(512) not null check (address like 'gl:%'),
+							status varchar(16) not null default 'active' check (status in ('active', 'closed')),
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint gl_accounts_code_unique unique (code),
+							constraint gl_accounts_ledger_address_unique unique (ledger, address),
+							constraint gl_accounts_parent_fk foreign key (parent_code) references _system.gl_accounts(code),
+							constraint gl_accounts_not_own_parent check (parent_code is null or parent_code <> code)
+						);
+						create index if not exists idx_gl_accounts_currency_status on _system.gl_accounts(currency, status);
+						create index if not exists idx_gl_accounts_type on _system.gl_accounts(type);
+						create index if not exists idx_gl_accounts_parent on _system.gl_accounts(parent_code);
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator

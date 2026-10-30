@@ -105,6 +105,8 @@ func NewRouter(
 		v2.WithAccountService(routerOptions.accountService),
 		v2.WithReportingService(routerOptions.reportingService),
 		v2.WithFinanceReportingService(routerOptions.financeReportingService),
+		v2.WithGLAccountService(routerOptions.glAccountService),
+		v2.WithGLReportingService(routerOptions.glReportingService),
 		v2.WithChannelFeeConfigService(routerOptions.channelFeeConfigService),
 		v2.WithChannelRevenueReportingService(routerOptions.channelRevenueReportingService),
 	)
@@ -124,19 +126,21 @@ func NewRouter(
 }
 
 type routerOptions struct {
-	tracer                  trace.Tracer
-	meterProvider           metric.MeterProvider
-	bulkMaxSize             int
-	bulkerFactory           bulking.BulkerFactory
-	paginationConfig        common.PaginationConfig
-	exporters               bool
-	productService          services.ProductService
-	clientService           services.ClientService
-	kycService              services.KYCService
-	accountService          services.AccountService
-	reportingService        services.ReportingService
-	financeReportingService services.FinanceReportingService
-	channelFeeConfigService channelservices.ChannelFeeConfigService
+	tracer                         trace.Tracer
+	meterProvider                  metric.MeterProvider
+	bulkMaxSize                    int
+	bulkerFactory                  bulking.BulkerFactory
+	paginationConfig               common.PaginationConfig
+	exporters                      bool
+	productService                 services.ProductService
+	clientService                  services.ClientService
+	kycService                     services.KYCService
+	accountService                 services.AccountService
+	reportingService               services.ReportingService
+	financeReportingService        services.FinanceReportingService
+	glAccountService               services.GLAccountService
+	glReportingService             services.GLReportingService
+	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
 }
 
@@ -205,6 +209,18 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithGLAccountService(glAccountService services.GLAccountService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glAccountService = glAccountService
+	}
+}
+
+func WithGLReportingService(glReportingService services.GLReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glReportingService = glReportingService
 	}
 }
 

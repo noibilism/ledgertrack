@@ -202,6 +202,21 @@ func NewRouter(
 					})
 				}
 
+				if routerOptions.glAccountService != nil {
+					router.Route("/gl/accounts", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createGLAccount(routerOptions.glAccountService)))
+						router.Get("/", ledgertrackOnly(listGLAccounts(routerOptions.glAccountService)))
+						router.Post("/import", ledgertrackOnly(importGLAccounts(routerOptions.glAccountService)))
+						router.Route("/{code}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readGLAccount(routerOptions.glAccountService)))
+							router.Patch("/", ledgertrackOnly(patchGLAccount(routerOptions.glAccountService)))
+							if routerOptions.glReportingService != nil {
+								router.Get("/balance", ledgertrackOnly(getGLAccountBalance(systemController, routerOptions.glReportingService)))
+							}
+						})
+					})
+				}
+
 				if routerOptions.clientService != nil && routerOptions.kycService != nil {
 					router.Route("/clients", func(router chi.Router) {
 						router.Post("/", createClient(routerOptions.clientService))
@@ -228,7 +243,7 @@ func NewRouter(
 					})
 				}
 
-				if routerOptions.reportingService != nil || routerOptions.financeReportingService != nil || routerOptions.channelRevenueReportingService != nil {
+				if routerOptions.reportingService != nil || routerOptions.financeReportingService != nil || routerOptions.glReportingService != nil || routerOptions.channelRevenueReportingService != nil {
 					router.Route("/reports", func(router chi.Router) {
 						if routerOptions.reportingService != nil {
 							router.Get("/clients/{clientID}/portfolio", ledgertrackOnly(getClientPortfolioReport(routerOptions.reportingService)))
@@ -243,6 +258,10 @@ func NewRouter(
 								router.Get("/pnl", ledgertrackOnly(getFinanceProfitAndLossReport(systemController, routerOptions.financeReportingService)))
 								router.Get("/cash-flow", ledgertrackOnly(getFinanceCashFlowReport(systemController, routerOptions.financeReportingService)))
 							})
+						}
+						if routerOptions.glReportingService != nil {
+							// registry-driven trial balance, independent of the fixed-line /finance/trial-balance above
+							router.Get("/finance/gl-trial-balance", ledgertrackOnly(getGLTrialBalanceReport(systemController, routerOptions.glReportingService)))
 						}
 						if routerOptions.channelRevenueReportingService != nil {
 							router.Route("/channels", func(router chi.Router) {
@@ -274,6 +293,8 @@ type routerOptions struct {
 	accountService                 services.AccountService
 	reportingService               services.ReportingService
 	financeReportingService        services.FinanceReportingService
+	glAccountService               services.GLAccountService
+	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
 }
@@ -343,6 +364,18 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithGLAccountService(glAccountService services.GLAccountService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glAccountService = glAccountService
+	}
+}
+
+func WithGLReportingService(glReportingService services.GLReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glReportingService = glReportingService
 	}
 }
 
