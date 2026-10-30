@@ -25,8 +25,8 @@ import (
 	"github.com/formancehq/ledger/internal/replication/drivers"
 	"github.com/formancehq/ledger/internal/replication/drivers/alldrivers"
 	"github.com/formancehq/ledger/internal/storage"
-	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/formancehq/ledger/internal/storage/loghash"
+	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/formancehq/ledger/internal/worker"
 )
 
