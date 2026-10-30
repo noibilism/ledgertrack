@@ -14,6 +14,7 @@ import (
 	ledgerinternal "github.com/formancehq/ledger/internal"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
+	"github.com/formancehq/ledger/internal/hotrows"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
 )
@@ -196,7 +197,7 @@ func (s *DefaultFinanceReportingService) TrialBalance(ctx context.Context, sys s
 	}
 	revenueLine(interestExpenseAccount, interestExpenseBalance)
 
-	revenueAccumulated, err := aggregatedBalance(ctx, sys, fmt.Sprintf("revenue-%s", currency), "revenue:accumulated", filter.AsOf, currency)
+	revenueAccumulated, err := aggregatedBalance(ctx, sys, fmt.Sprintf("revenue-%s", currency), hotrows.Pattern(hotrows.AccumulatedBase), filter.AsOf, currency)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +290,12 @@ func (s *DefaultFinanceReportingService) ProfitAndLoss(ctx context.Context, sys 
 	qb := query.Or(
 		query.Match("account", feeIncomeAccount),
 		query.Match("account", interestExpenseAccount),
-		query.Match("account", "revenue:accumulated"),
+		// The base address and every --revenue-shards shard. The transactions filter counts the
+		// trailing empty segment as a segment, so "revenue:accumulated:" alone would miss the
+		// unsharded address: both are needed (and balances posted before sharding was turned on
+		// stay on the unsharded one).
+		query.Match("account", hotrows.AccumulatedBase),
+		query.Match("account", hotrows.Pattern(hotrows.AccumulatedBase)),
 	)
 	qb = query.And(qb,
 		query.Gte("timestamp", filter.StartTime.UTC().Format(stdtime.RFC3339)),
@@ -318,7 +324,7 @@ func (s *DefaultFinanceReportingService) ProfitAndLoss(ctx context.Context, sys 
 				if p.Destination == feeIncomeAccount {
 					feeIncome += p.Amount.Int64()
 				}
-				if p.Destination == "revenue:accumulated" {
+				if hotrows.IsShardOf(hotrows.AccumulatedBase, p.Destination) {
 					walletRevenue += p.Amount.Int64()
 				}
 				if p.Source == interestExpenseAccount {

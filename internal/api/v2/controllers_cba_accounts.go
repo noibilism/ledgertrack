@@ -29,6 +29,7 @@ import (
 	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
+	"github.com/formancehq/ledger/internal/hotrows"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
@@ -457,9 +458,9 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			channelScript := fmt.Sprintf(`
 				send [%s %d] (
 					source = @%s allowing unbounded overdraft
-					destination = @world
+					destination = @%s
 				)
-			`, asset, channelAmount, channelAccount)
+			`, asset, channelAmount, channelAccount, hotrows.ChannelSink(req.Reference))
 			cParams := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 				Input: ledgercontroller.CreateTransaction{
 					RunScript: vm.RunScript{
@@ -496,10 +497,10 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 				}
 				revenueScript := fmt.Sprintf(`
 					send [%s %d] (
-						source = @world
-						destination = @revenue:accumulated
+						source = %s
+						destination = @%s
 					)
-				`, asset, revenue)
+				`, asset, revenue, hotrows.SourceClause(hotrows.RevenueSource(req.Reference)), hotrows.RevenueDestination(hotrows.AccumulatedBase, req.Reference))
 				rParams := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 					Input: ledgercontroller.CreateTransaction{
 						RunScript: vm.RunScript{
@@ -739,9 +740,9 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 			channelScript := fmt.Sprintf(`
 				send [%s %d] (
 					source = @%s allowing unbounded overdraft
-					destination = @world
+					destination = @%s
 				)
-			`, asset, channelAmount, channelAccount)
+			`, asset, channelAmount, channelAccount, hotrows.ChannelSink(req.Reference))
 			cParams := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 				Input: ledgercontroller.CreateTransaction{
 					RunScript: vm.RunScript{
@@ -774,10 +775,10 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 				}
 				revenueScript := fmt.Sprintf(`
 					send [%s %d] (
-						source = @world
-						destination = @revenue:accumulated
+						source = %s
+						destination = @%s
 					)
-				`, asset, revenue)
+				`, asset, revenue, hotrows.SourceClause(hotrows.RevenueSource(req.Reference)), hotrows.RevenueDestination(hotrows.AccumulatedBase, req.Reference))
 				rParams := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 					Input: ledgercontroller.CreateTransaction{
 						RunScript: vm.RunScript{

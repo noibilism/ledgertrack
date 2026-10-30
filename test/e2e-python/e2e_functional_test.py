@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -1420,9 +1421,11 @@ def section_4_cross_layer_reconciliation(
             if asset != currency and asset != f"{currency}/2":
                 continue
             amt = _posting_amount_minor(p)
-            if p.get("destination") == "revenue:accumulated":
+            # --revenue-shards N spreads these over revenue:accumulated:{0..N-1}; N=1 keeps the bare address
+            dest = str(p.get("destination", ""))
+            if dest == "revenue:accumulated" or re.fullmatch(r"revenue:accumulated:\d+", dest):
                 gross += amt
-            if p.get("destination") == "revenue:channel_processing_cost":
+            if dest == "revenue:channel_processing_cost" or re.fullmatch(r"revenue:channel_processing_cost:\d+", dest):
                 cost += amt
     _require(gross == section3["gross_sum"], "revenue ledger gross postings do not match fee engine gross sum")
     _require(cost == section3["cost_sum"], "revenue ledger processing postings do not match fee engine cost sum")
