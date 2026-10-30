@@ -234,7 +234,7 @@ Turning on `ASYNC` for the wallet ledgers accepts the following:
 What it does not change: balances and idempotency checks, API contracts, double-entry integrity, or the data that is
 stored. The verifier makes the audit state observable, which SYNC never offered.
 
-Not verified here: behaviour at 1,200 TPS on the production PostgreSQL, a real regulator's reading of the wording above
+Not verified here: behaviour at 1,200 TPS on the production PostgreSQL (in particular whether one hasher keeps up, see section 11), a real regulator's reading of the wording above
 (needs compliance/legal), behaviour with several worker replicas under load (two concurrent hashers are tested for
 correctness only), and anything involving exporters.
 
@@ -346,8 +346,12 @@ Retest on Railway (production-like PostgreSQL, API and PostgreSQL not sharing 2 
 
 1. `lien=100`, then `credit=50,debit=50`, then the gate mix at 1,260 TPS open loop, SYNC against ASYNC, same pool, 10 minutes each.
 2. Sample `pg_stat_activity.wait_event` during the run, the lock evidence is more robust than TPS.
-3. Watch `ledger.log_hasher.lag_seconds` during the run: the hasher must keep up at the target rate (the hasher does a batch of 500 in
-   about 25 ms here; 1,200 TPS needs 2.4 batches per second), and look at its share of database CPU, because it rewrites every
-   log row once (an UPDATE per log, so an extra row version per log: watch table bloat and autovacuum on `logs`).
+3. Watch `ledger.log_hasher.lag_seconds` during the run. **The hasher's own throughput is the main open risk.** It writes every log
+   row a second time (an UPDATE of a wide row: a new row version, index entries, WAL). Measured here on the shared, saturated VM:
+   about 540 to 1,200 logs per second for one ledger (20,000 logs, batch of 500; the hash computation alone is about 30 ms per 500),
+   which is close to the 1,200 TPS target and varied by 2x between two runs, so it is not a reliable figure. If the hasher cannot keep
+   up the lag grows without bound. Levers, in the order to try: bigger `--worker-log-hasher-batch-size`, a lower `fillfactor` on the
+   bucket `logs` table so the update can be a HOT update (untested), and, if neither is enough, store the hash in a narrow side table
+   instead of updating `logs` (a design change, the API reads `logs.hash`). Also watch table bloat and autovacuum on `logs`.
 4. Run `hashchain verify` on the benchmark ledger at the end, and with `--anchor-id/--anchor-hash` taken mid run.
 5. Kill the worker for 2 minutes during a run, restart it, and check the backlog drains and verify passes.

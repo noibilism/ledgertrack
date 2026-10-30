@@ -349,7 +349,7 @@ func (h *Hasher) hashLedgerOnce(ctx context.Context, l ledger.Ledger, bucket str
 		res.Blocked = n < len(ids)
 		if n > 0 {
 			first, last := ids[0], ids[n-1]
-			r, err := tx.NewRaw(chainSQL(bucket), l.Name, first, last, headHash, l.Name).Exec(ctx)
+			r, err := tx.NewRaw(chainSQL(bucket), l.Name, first, last, headHash, l.Name, first, last).Exec(ctx)
 			if err != nil {
 				return fmt.Errorf("chaining logs: %w", err)
 			}
@@ -399,21 +399,26 @@ func (h *Hasher) hashLedgerOnce(ctx context.Context, l ledger.Ledger, bucket str
 
 // chainSQL chains the logs of a ledger between two ids, using the same compute_hash function as the
 // SYNC trigger, starting from the hash of the previous log.
-// $2 and $3 are bounds, every visible log between them is part of the batch (holes are skipped).
+// Every visible log between the bounds is part of the batch (holes are skipped).
+// The rows are gathered in an array so that the recursion is linear (a join on a CTE is quadratic), and the update is
+// bounded on the primary key so that it never turns into a scan of the whole logs table.
+// Parameters: ledger, first id, last id, previous hash, ledger, first id, last id.
 func chainSQL(bucket string) string {
 	return `
-with recursive todo as (
-	select l as r, l.id as id, row_number() over (order by l.id) as rn
+with recursive src as (
+	select array_agg(l order by l.id) as rows, array_agg(l.id order by l.id) as ids
 	from ` + bucket + `.logs l
 	where l.ledger = ? and l.id >= ? and l.id <= ?
-), chain(rn, id, hash) as (
-	select t.rn, t.id, ` + bucket + `.compute_hash(?::bytea, t.r) from todo t where t.rn = 1
+), chain(i, hash) as (
+	select 1, ` + bucket + `.compute_hash(?::bytea, (select rows[1] from src))
 	union all
-	select t.rn, t.id, ` + bucket + `.compute_hash(c.hash, t.r) from chain c join todo t on t.rn = c.rn + 1
+	select i + 1, ` + bucket + `.compute_hash(hash, (select rows[i + 1] from src))
+	from chain
+	where i < (select cardinality(rows) from src)
 )
-update ` + bucket + `.logs set hash = chain.hash
-from chain
-where logs.ledger = ? and logs.id = chain.id and logs.hash is null`
+update ` + bucket + `.logs set hash = x.hash
+from (select src.ids[chain.i] as id, chain.hash from chain, src) x
+where logs.ledger = ? and logs.id >= ? and logs.id <= ? and logs.id = x.id and logs.hash is null`
 }
 
 // HashLedgerUntilCaughtUp calls HashLedger until the backlog is empty, blocked, or maxBatchesPerCycle batches were processed.
