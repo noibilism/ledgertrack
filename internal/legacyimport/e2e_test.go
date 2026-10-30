@@ -155,7 +155,7 @@ func TestEndToEndPlanApplyVerify(t *testing.T) {
 	if got := f.balance("gl:migration:opening:NGN", "NGN/2"); got.String() != "-132500050" {
 		t.Errorf("NGN migration source balance = %s", got)
 	}
-	if got := f.balance("gl:migration:opening:USDT", "USDT/2"); got.String() != "-5000123456" {
+	if got := f.balance("gl:migration:opening:USDT", "USDT/6"); got.String() != "-5000123456" {
 		t.Errorf("USDT migration source balance = %s", got)
 	}
 	// Wallet addresses use the server generated client number and product code.
@@ -393,7 +393,7 @@ func TestConflictingDataIsReportedAndNeverOverwritten(t *testing.T) {
 	// 3. A transaction already using an opening reference with another amount.
 	f.txCount++
 	f.txByRef["import:opening:b-2"] = map[string]any{"id": f.txCount, "reference": "import:opening:b-2", "metadata": map[string]string{},
-		"postings": []any{map[string]any{"source": "world", "destination": "somewhere", "asset": "USDT/2", "amount": "1"}}}
+		"postings": []any{map[string]any{"source": "world", "destination": "somewhere", "asset": "USDT/6", "amount": "1"}}}
 	f.mu.Unlock()
 
 	pl := doPlan(t, c, samplesDir, "")

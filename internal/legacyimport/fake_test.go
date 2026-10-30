@@ -410,7 +410,7 @@ func (f *fakeLT) openAccount(b map[string]any) (any, *fakeErr) {
 
 func (f *fakeLT) availableBalance(a map[string]any) *big.Int {
 	addr := fmt.Sprintf("users:%s:wallets:%s:available", a["wallet_id"], a["currency"])
-	v := f.volumes[addr][fmt.Sprintf("%s/2", a["currency"])]
+	v := f.volumes[addr][f.assetFor(fmt.Sprint(a["currency"]))]
 	if v[0] == nil {
 		return new(big.Int)
 	}
@@ -570,4 +570,14 @@ func (f *fakeLT) sizes() (products, clients, accounts, txs int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.products), len(f.clients), len(f.accounts), len(f.txByRef)
+}
+
+// assetFor mirrors currency.AssetFor against the fake's currency list.
+func (f *fakeLT) assetFor(ccy string) string {
+	for _, c := range f.currencies {
+		if c.Code == ccy {
+			return fmt.Sprintf("%s/%d", ccy, c.Precision)
+		}
+	}
+	return ccy + "/2"
 }

@@ -142,7 +142,9 @@ Tolerance is zero: one minor unit of difference fails. The currency row passes o
 
 ## Amount scale
 
-LedgerTrack's wallet and reporting code posts and reads the asset `{CCY}/2` for every currency, while it scales amounts by the registry precision (a 6 decimal currency such as USDT is stored as `USDT/2` with an integer of 10^6 units per unit). The tool follows that convention (`--asset-template` default `{CCY}/2`) so balance, statement and finance report endpoints see the imported funds. Use `{CCY}/{PREC}` only if the server is changed to match. Check this on staging before the real run.
+LedgerTrack's wallet and reporting code resolves the ledger asset with `currency.AssetFor`, which is `{CCY}/{registry precision}` (`NGN/2`, `USDT/6`, `JPY/0`), and scales amounts by the same precision. The tool follows that convention: the `--asset-template` default is `{CCY}/{PREC}`, where `{PREC}` is the precision the server reports for the currency, so imported balances are visible to balance, statement and finance report endpoints. A test pins the default against `currency.AssetFor`.
+
+Ledgers imported with an earlier build of this tool that used `{CCY}/2` for every currency hold a different asset for any currency whose precision is not 2 (for example `USDT/2` instead of `USDT/6`). Re-import those on a clean ledger, or pass `--asset-template '{CCY}/2'` only when matching a server build that still hard-codes `/2`. Check this on staging before the real run.
 
 ## Limitations
 

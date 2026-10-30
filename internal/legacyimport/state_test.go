@@ -2,6 +2,7 @@ package legacyimport
 
 import (
 	"encoding/json"
+	"github.com/formancehq/ledger/internal/currency"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,5 +168,36 @@ func TestOptionsValidation(t *testing.T) {
 		if (err == nil) != tc.ok {
 			t.Errorf("%s: err=%v", tc.name, err)
 		}
+	}
+}
+
+// The importer's default asset names must equal what the server produces via
+// currency.AssetFor, otherwise imported funds are invisible to balance,
+// statement and finance report endpoints.
+func TestDefaultAssetTemplateMatchesServerAssetFor(t *testing.T) {
+	currency.SetDefinitions(map[string]currency.Definition{
+		"NGN":  {Precision: 2, Enabled: true},
+		"USDT": {Precision: 6, Enabled: true},
+		"JPY":  {Precision: 0, Enabled: true},
+	})
+	t.Cleanup(func() { currency.SetDefinitions(map[string]currency.Definition{}) })
+
+	var opt Options
+	opt.defaults()
+	for ccy, prec := range map[string]int{"NGN": 2, "USDT": 6, "JPY": 0} {
+		want, err := currency.AssetFor(ccy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := opt.asset(ccy, prec); got != want {
+			t.Errorf("%s: importer asset %q != server asset %q", ccy, got, want)
+		}
+	}
+	if err := opt.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	// A zero-precision asset must also pass the importer's own asset validation.
+	if a := opt.asset("JPY", 0); !assetRe.MatchString(a) {
+		t.Errorf("%q rejected by assetRe", a)
 	}
 }

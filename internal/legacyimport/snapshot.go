@@ -15,8 +15,10 @@ type Options struct {
 	Concurrency int
 	FailFast    bool
 	// AssetTemplate renders the ledger asset. {CCY} and {PREC} are replaced.
-	// The default "{CCY}/2" mirrors what the LedgerTrack wallet layer hard-codes:
-	// the asset suffix is always /2 while amounts use the registry precision.
+	// The default "{CCY}/{PREC}" mirrors currency.AssetFor, which the LedgerTrack
+	// wallet and reporting layer use: the asset suffix is the registry precision
+	// of the currency (USD/2, USDT/6, JPY/0), and PREC is the precision the
+	// server reports for the currency.
 	AssetTemplate string
 	// SourceTemplate renders the migration source account, one per currency.
 	SourceTemplate string
@@ -29,7 +31,7 @@ type Options struct {
 }
 
 const (
-	DefaultAssetTemplate  = "{CCY}/2"
+	DefaultAssetTemplate  = "{CCY}/{PREC}"
 	DefaultSourceTemplate = "gl:migration:opening:{CCY}"
 )
 
