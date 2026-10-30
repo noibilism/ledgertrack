@@ -28,10 +28,12 @@ func NewRouter(
 
 	router := chi.NewMux()
 
-	router.Get("/_info", GetInfo(systemController, version))
-
 	router.Group(func(router chi.Router) {
 		router.Use(auth.Middleware(authenticator))
+
+		// /_info lists every ledger name and the server version, so it sits behind
+		// auth. Liveness probes must use /_healthcheck or /_/healthcheck instead.
+		router.Get("/_info", GetInfo(systemController, version))
 
 		router.Route("/{ledger}", func(router chi.Router) {
 			router.Use(func(handler http.Handler) http.Handler {
