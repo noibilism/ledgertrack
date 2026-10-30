@@ -63,6 +63,11 @@ type ServeCommandConfig struct {
 	MaxPageSize            uint64 `mapstructure:"max-page-size"`
 	WorkerEnabled          bool   `mapstructure:"worker"`
 	WorkerAddress          string `mapstructure:"worker-grpc-address"`
+
+	// Write path admission control, see ledgercontroller.WriteLimiter.
+	WriteMaxInFlight int `mapstructure:"write-max-in-flight"`
+	WriteMaxQueue    int `mapstructure:"write-max-queue"`
+	WriteMaxWaitMs   int `mapstructure:"write-max-wait-ms"`
 }
 
 const (
@@ -73,9 +78,13 @@ const (
 	BulkMaxSizeFlag            = "bulk-max-size"
 	BulkParallelFlag           = "bulk-parallel"
 
-	DefaultPageSizeFlag   = "default-page-size"
-	MaxPageSizeFlag       = "max-page-size"
-	WorkerEnabledFlag     = "worker"
+	DefaultPageSizeFlag = "default-page-size"
+	MaxPageSizeFlag     = "max-page-size"
+	WorkerEnabledFlag   = "worker"
+
+	WriteMaxInFlightFlag  = "write-max-in-flight"
+	WriteMaxQueueFlag     = "write-max-queue"
+	WriteMaxWaitMsFlag    = "write-max-wait-ms"
 	SemconvMetricsNames   = "semconv-metrics-names"
 	SchemaEnforcementMode = "schema-enforcement-mode"
 )
@@ -104,6 +113,10 @@ func NewServeCommand() *cobra.Command {
 				return err
 			}
 
+			// One limiter for the whole process: the HTTP layer admits write requests with it, and the
+			// ledger controllers recognise admitted requests (non HTTP callers still go through it).
+			writeLimiter := cfg.newWriteLimiter(connectionOptions.MaxOpenConns)
+
 			options := []fx.Option{
 				fx.NopLogger,
 				otlpModule(cmd, cfg.commonConfig),
@@ -128,6 +141,7 @@ func NewServeCommand() *cobra.Command {
 					},
 					EnableFeatures:        cfg.ExperimentalFeaturesEnabled,
 					SchemaEnforcementMode: cfg.commonConfig.SchemaEnforcementMode,
+					WriteLimiter:          writeLimiter,
 				}),
 				bus.NewFxModule(),
 				currency.NewFXModule(),
@@ -136,8 +150,9 @@ func NewServeCommand() *cobra.Command {
 				transfers.NewFXModule(transferConfig(cfg.WorkerConfiguration)),
 				ballast.Module(cfg.BallastSizeInBytes),
 				api.Module(api.Config{
-					Version: Version,
-					Debug:   service.IsDebug(cmd),
+					Version:      Version,
+					Debug:        service.IsDebug(cmd),
+					WriteLimiter: writeLimiter,
 					Bulk: api.BulkConfig{
 						MaxSize:  cfg.BulkMaxSize,
 						Parallel: cfg.BulkParallel,
@@ -201,6 +216,9 @@ func NewServeCommand() *cobra.Command {
 	cmd.Flags().Uint64(MaxPageSizeFlag, 100, "Max page size")
 	cmd.Flags().Uint64(DefaultPageSizeFlag, 15, "Default page size")
 	cmd.Flags().Bool(WorkerEnabledFlag, false, "Enable worker")
+	cmd.Flags().Int(WriteMaxInFlightFlag, 0, "Max ledger write transactions in flight. 0 derives it from --postgres-max-open-conns (pool minus a reserve for reads), a negative value disables the bound")
+	cmd.Flags().Int(WriteMaxQueueFlag, 0, "Max writes waiting for a slot before new ones are rejected with 503. 0 means 4 x the in-flight bound")
+	cmd.Flags().Int(WriteMaxWaitMsFlag, 2000, "Max time in milliseconds a write waits for a slot before it is rejected with 503 and a Retry-After header")
 	cmd.Flags().Bool(ExperimentalFeaturesFlag, false, "Enable features configurability")
 	cmd.Flags().Bool(NumscriptInterpreterFlag, false, "Enable experimental numscript rewrite")
 	cmd.Flags().StringSlice(NumscriptInterpreterFlagsToPass, nil, "Feature flags to pass to the experimental numscript interpreter")
@@ -345,4 +363,21 @@ func otlpModule(cmd *cobra.Command, cfg commonConfig) fx.Option {
 		}),
 		otlpmetrics.FXModuleFromFlags(cmd),
 	)
+}
+
+// newWriteLimiter builds the write admission control. maxOpenConns is the size of the database pool.
+func (cfg ServeCommandConfig) newWriteLimiter(maxOpenConns int) *ledgercontroller.WriteLimiter {
+	maxInFlight := cfg.WriteMaxInFlight
+	switch {
+	case maxInFlight < 0:
+		return nil
+	case maxInFlight == 0:
+		maxInFlight = ledgercontroller.DefaultMaxInFlightWrites(maxOpenConns)
+	}
+
+	return ledgercontroller.NewWriteLimiter(ledgercontroller.WriteLimiterConfiguration{
+		MaxInFlight: maxInFlight,
+		MaxQueue:    cfg.WriteMaxQueue,
+		MaxWait:     time.Duration(cfg.WriteMaxWaitMs) * time.Millisecond,
+	})
 }

@@ -24,6 +24,8 @@ type ModuleConfiguration struct {
 	// Ignored whenever NumscriptInterpreter is set to false
 	NumscriptInterpreterFlags []string
 	SchemaEnforcementMode     ledgercontroller.SchemaEnforcementMode
+	// WriteLimiter bounds the ledger writes in flight. nil means no limit.
+	WriteLimiter *ledgercontroller.WriteLimiter
 }
 
 func NewFXModule(configuration ModuleConfiguration) fx.Option {

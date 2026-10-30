@@ -25,6 +25,7 @@ import (
 	v2 "github.com/formancehq/ledger/internal/api/v2"
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
+	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	"github.com/formancehq/ledger/internal/controller/system"
 	"github.com/formancehq/ledger/internal/transfers"
 )
@@ -112,17 +113,19 @@ func NewRouter(
 		v2.WithChannelRevenueReportingService(routerOptions.channelRevenueReportingService),
 		v2.WithTransferService(routerOptions.transferService),
 	)
-	mux.Handle("/v2*", http.StripPrefix("/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Write requests are admitted (or rejected with 503 + Retry-After) before they touch the database.
+	admitWrites := common.WriteAdmission(routerOptions.writeLimiter)
+	mux.Handle("/v2*", admitWrites(http.StripPrefix("/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chi.RouteContext(r.Context()).Reset()
 		v2Router.ServeHTTP(w, r)
-	})))
-	mux.Handle("/*", v1.NewRouter(
+	}))))
+	mux.Handle("/*", admitWrites(v1.NewRouter(
 		systemController,
 		authenticator,
 		version,
 		debug,
 		v1.WithTracer(routerOptions.tracer),
-	))
+	)))
 
 	return mux
 }
@@ -145,9 +148,17 @@ type routerOptions struct {
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
 	transferService                *transfers.Service
+	writeLimiter                   *ledgercontroller.WriteLimiter
 }
 
 type RouterOption func(ro *routerOptions)
+
+// WithWriteLimiter bounds the write requests in flight (nil: no bound).
+func WithWriteLimiter(limiter *ledgercontroller.WriteLimiter) RouterOption {
+	return func(ro *routerOptions) {
+		ro.writeLimiter = limiter
+	}
+}
 
 func WithTracer(tracer trace.Tracer) RouterOption {
 	return func(ro *routerOptions) {
