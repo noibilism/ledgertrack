@@ -11,11 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/bun/bunpaginate"
 	"github.com/formancehq/go-libs/v3/logging"
 	"github.com/formancehq/go-libs/v3/metadata"
 	"github.com/formancehq/go-libs/v3/query"
+
 	ledgerinternal "github.com/formancehq/ledger/internal"
 	"github.com/formancehq/ledger/internal/api/common"
 	channelmodels "github.com/formancehq/ledger/internal/channels/models"
@@ -28,7 +31,6 @@ import (
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
 	"github.com/formancehq/ledger/internal/transfers"
-	"github.com/go-chi/chi/v5"
 )
 
 // WalletController handles wallet operations

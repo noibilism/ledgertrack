@@ -36,4 +36,3 @@ func NewFXModule() fx.Option {
 		),
 	)
 }
-

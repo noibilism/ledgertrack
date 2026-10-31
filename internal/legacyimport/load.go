@@ -101,7 +101,7 @@ func LoadDataset(dir string) (*Dataset, []Issue) {
 
 func loadFile[T any](dir, name string, required bool, setLine func(*T, int)) ([]*T, []Issue) {
 	path := filepath.Join(dir, name)
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // path comes from the operator/CLI, not from request input
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if required {
@@ -111,7 +111,7 @@ func loadFile[T any](dir, name string, required bool, setLine func(*T, int)) ([]
 		}
 		return nil, []Issue{errIssue(name, 0, "cannot open: %v", err)}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	schema, err := loadSchema(name)
 	if err != nil {

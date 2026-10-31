@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/formancehq/go-libs/v3/logging"
@@ -17,7 +18,6 @@ import (
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/formancehq/ledger/internal/transfers/transferstest"
-	"github.com/google/uuid"
 )
 
 func init() {

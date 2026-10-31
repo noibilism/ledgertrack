@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"math/big"
 
+	ledgerinternal "github.com/formancehq/ledger/internal"
 	channelmodels "github.com/formancehq/ledger/internal/channels/models"
 	"github.com/formancehq/ledger/internal/hotrows"
-
-	ledgerinternal "github.com/formancehq/ledger/internal"
 )
 
 // UserLeg is the outcome of the first leg.

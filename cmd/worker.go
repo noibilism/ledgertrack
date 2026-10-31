@@ -13,6 +13,7 @@ import (
 	"github.com/formancehq/go-libs/v3/bun/bunconnect"
 	"github.com/formancehq/go-libs/v3/otlp/otlpmetrics"
 	"github.com/formancehq/go-libs/v3/otlp/otlptraces"
+	"github.com/formancehq/go-libs/v3/publish"
 	"github.com/formancehq/go-libs/v3/service"
 
 	"github.com/formancehq/ledger/internal/bus"
@@ -26,6 +27,7 @@ import (
 	"github.com/formancehq/ledger/internal/replication/drivers/alldrivers"
 	"github.com/formancehq/ledger/internal/storage"
 	"github.com/formancehq/ledger/internal/storage/loghash"
+	systemstore "github.com/formancehq/ledger/internal/storage/system"
 	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/formancehq/ledger/internal/worker"
 )
@@ -204,6 +206,7 @@ func NewWorkerCommand() *cobra.Command {
 				fx.NopLogger,
 				otlpModule(cmd, cfg.commonConfig),
 				bunconnect.Module(*connectionOptions, service.IsDebug(cmd)),
+				publish.FXModuleFromFlags(cmd, service.IsDebug(cmd)),
 				storage.NewFXModule(storage.ModuleConfig{}),
 				drivers.NewFXModule(),
 				fx.Invoke(alldrivers.Register),
@@ -226,6 +229,9 @@ func NewWorkerCommand() *cobra.Command {
 				cba.NewFXModule(),
 				transfers.NewFXModule(transferConfig(cfg.WorkerConfiguration)),
 				newWorkerModule(cfg.WorkerConfiguration),
+				// The system controller needs a ReplicationBackend. The worker hosts the
+				// replication manager itself, so use it directly (same as `serve --worker`).
+				replication.NewFXEmbeddedClientModule(),
 				worker.NewGRPCServerFXModule(worker.GRPCServerModuleConfig{
 					Address: cfg.Address,
 					ServerOptions: []grpc.ServerOption{
@@ -244,6 +250,9 @@ func NewWorkerCommand() *cobra.Command {
 	bunconnect.AddFlags(cmd.Flags())
 	otlpmetrics.AddFlags(cmd.Flags())
 	otlptraces.AddFlags(cmd.Flags())
+	publish.AddFlags(ServiceName, cmd.Flags(), func(cd *publish.ConfigDefault) {
+		cd.PublisherCircuitBreakerSchema = systemstore.SchemaSystem
+	})
 
 	return cmd
 }

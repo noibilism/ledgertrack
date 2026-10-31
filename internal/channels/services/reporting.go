@@ -24,12 +24,12 @@ type ChannelRevenueReportingService interface {
 }
 
 type ChannelRevenueSummaryFilter struct {
-	Currency   string
-	ChannelID  *string
-	StartTime  *time.Time
-	EndTime    *time.Time
-	Limit      int
-	Offset     int
+	Currency  string
+	ChannelID *string
+	StartTime *time.Time
+	EndTime   *time.Time
+	Limit     int
+	Offset    int
 }
 
 type ChannelRevenueTimeseriesFilter struct {
@@ -41,14 +41,14 @@ type ChannelRevenueTimeseriesFilter struct {
 }
 
 type ChannelRevenueSummaryRow struct {
-	ChannelID           string `json:"channel_id"`
-	TransactionCount    int64  `json:"transaction_count"`
-	PrincipalAmount     int64  `json:"principal_amount"`
-	GrossRevenue        int64  `json:"gross_revenue"`
-	ProcessingCost      int64  `json:"processing_cost"`
-	NetRevenue          int64  `json:"net_revenue"`
-	AverageNetPerTx     int64  `json:"average_net_revenue_per_transaction"`
-	AverageGrossPerTx   int64  `json:"average_gross_revenue_per_transaction"`
+	ChannelID         string `json:"channel_id"`
+	TransactionCount  int64  `json:"transaction_count"`
+	PrincipalAmount   int64  `json:"principal_amount"`
+	GrossRevenue      int64  `json:"gross_revenue"`
+	ProcessingCost    int64  `json:"processing_cost"`
+	NetRevenue        int64  `json:"net_revenue"`
+	AverageNetPerTx   int64  `json:"average_net_revenue_per_transaction"`
+	AverageGrossPerTx int64  `json:"average_gross_revenue_per_transaction"`
 }
 
 type ChannelRevenueTotals struct {
@@ -60,31 +60,31 @@ type ChannelRevenueTotals struct {
 }
 
 type ChannelRevenueSummaryReport struct {
-	Currency   string                 `json:"currency"`
-	StartTime  *time.Time             `json:"start_time,omitempty"`
-	EndTime    *time.Time             `json:"end_time,omitempty"`
-	Rows       []ChannelRevenueSummaryRow `json:"rows"`
-	Totals     ChannelRevenueTotals   `json:"totals"`
+	Currency  string                     `json:"currency"`
+	StartTime *time.Time                 `json:"start_time,omitempty"`
+	EndTime   *time.Time                 `json:"end_time,omitempty"`
+	Rows      []ChannelRevenueSummaryRow `json:"rows"`
+	Totals    ChannelRevenueTotals       `json:"totals"`
 }
 
 type ChannelRevenueTimeseriesPoint struct {
-	StartTime       time.Time `json:"start_time"`
-	GrossRevenue    int64     `json:"gross_revenue"`
-	ProcessingCost  int64     `json:"processing_cost"`
-	NetRevenue      int64     `json:"net_revenue"`
-	TransactionCount int64    `json:"transaction_count"`
+	StartTime        time.Time `json:"start_time"`
+	GrossRevenue     int64     `json:"gross_revenue"`
+	ProcessingCost   int64     `json:"processing_cost"`
+	NetRevenue       int64     `json:"net_revenue"`
+	TransactionCount int64     `json:"transaction_count"`
 }
 
 type ChannelRevenueTimeseriesReport struct {
-	Currency  string                      `json:"currency"`
-	Interval  string                      `json:"interval"`
-	StartTime time.Time                   `json:"start_time"`
-	EndTime   time.Time                   `json:"end_time"`
+	Currency  string                          `json:"currency"`
+	Interval  string                          `json:"interval"`
+	StartTime time.Time                       `json:"start_time"`
+	EndTime   time.Time                       `json:"end_time"`
 	Points    []ChannelRevenueTimeseriesPoint `json:"points"`
 }
 
 type DefaultChannelRevenueReportingService struct {
-	db        bun.IDB
+	db         bun.IDB
 	recordRepo repositories.ChannelFeeRecordRepository
 }
 
@@ -102,12 +102,12 @@ func (s *DefaultChannelRevenueReportingService) RevenueSummary(ctx context.Conte
 	}
 
 	type row struct {
-		ChannelID        string `bun:"channel_id"`
-		TxCount          int64  `bun:"tx_count"`
-		PrincipalAmount  int64  `bun:"principal_amount"`
-		GrossRevenue     int64  `bun:"gross_revenue"`
-		ProcessingCost   int64  `bun:"processing_cost"`
-		NetRevenue       int64  `bun:"net_revenue"`
+		ChannelID       string `bun:"channel_id"`
+		TxCount         int64  `bun:"tx_count"`
+		PrincipalAmount int64  `bun:"principal_amount"`
+		GrossRevenue    int64  `bun:"gross_revenue"`
+		ProcessingCost  int64  `bun:"processing_cost"`
+		NetRevenue      int64  `bun:"net_revenue"`
 	}
 
 	rows := make([]row, 0)
@@ -243,4 +243,3 @@ func (s *DefaultChannelRevenueReportingService) RevenueTimeseries(ctx context.Co
 func (s *DefaultChannelRevenueReportingService) ListFeeRecords(ctx context.Context, filter repositories.ChannelFeeRecordFilter) ([]models.ChannelFeeRecord, error) {
 	return s.recordRepo.List(ctx, filter)
 }
-

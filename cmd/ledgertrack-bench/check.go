@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/formancehq/ledger/internal/hotrows"
 	"net/http"
 	"net/url"
 	"sync"
 	"sync/atomic"
+
+	"github.com/formancehq/ledger/internal/hotrows"
 )
 
 // CheckResult is the outcome of the post-run consistency check.

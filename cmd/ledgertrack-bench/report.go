@@ -272,23 +272,23 @@ func fmtMS(v float64) string {
 
 func (r *Report) writeTable(w io.Writer) {
 	run := r.Run
-	fmt.Fprintf(w, "\nLedgerTrack bench  %s\n", run.StartedAt)
+	_, _ = fmt.Fprintf(w, "\nLedgerTrack bench  %s\n", run.StartedAt)
 	if run.Label != "" {
-		fmt.Fprintf(w, "scenario : %s\n", run.Label)
+		_, _ = fmt.Fprintf(w, "scenario : %s\n", run.Label)
 	}
 	target := "max throughput (closed loop)"
 	if run.Mode == "open-loop" {
 		target = fmt.Sprintf("%.0f TPS target, %s arrivals (open loop)", run.TargetTPS, run.Arrival)
 	}
-	fmt.Fprintf(w, "target   : %s, %d workers\n", target, run.Concurrency)
-	fmt.Fprintf(w, "workload : %d wallets, %v, dist=%s, mix=%s\n", run.Wallets, run.Currencies, run.Dist, run.Mix)
-	fmt.Fprintf(w, "window   : %.1fs measured after %s warmup\n\n", r.WindowSeconds, run.Warmup)
+	_, _ = fmt.Fprintf(w, "target   : %s, %d workers\n", target, run.Concurrency)
+	_, _ = fmt.Fprintf(w, "workload : %d wallets, %v, dist=%s, mix=%s\n", run.Wallets, run.Currencies, run.Dist, run.Mix)
+	_, _ = fmt.Fprintf(w, "window   : %.1fs measured after %s warmup\n\n", r.WindowSeconds, run.Warmup)
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(tw, "op\tattempts\t2xx\t402\t409\t4xx\t5xx\ttimeout\tnet\tshed\terr%\tok/s\tp50ms\tp90ms\tp95ms\tp99ms\tmaxms\t")
+	_, _ = fmt.Fprintln(tw, "op\tattempts\t2xx\t402\t409\t4xx\t5xx\ttimeout\tnet\tshed\terr%\tok/s\tp50ms\tp90ms\tp95ms\tp99ms\tmaxms\t")
 	row := func(o OpReport) {
 		c := o.Classes
-		fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.3f\t%.1f\t%s\t%s\t%s\t%s\t%s\t\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.3f\t%.1f\t%s\t%s\t%s\t%s\t%s\t\n",
 			o.Op, o.Attempts, c["2xx"], c["402_insufficient"], c["409_conflict"], c["4xx_other"], c["5xx"], c["timeout"], c["network"], c["shed"],
 			o.ErrorRate*100, o.OKTPS, fmtMS(o.Latency.P50), fmtMS(o.Latency.P90), fmtMS(o.Latency.P95), fmtMS(o.Latency.P99), fmtMS(o.Latency.Max))
 	}
@@ -298,61 +298,61 @@ func (r *Report) writeTable(w io.Writer) {
 		row(o)
 	}
 	row(r.Total)
-	tw.Flush()
+	_ = tw.Flush()
 
-	fmt.Fprintf(w, "\nachieved TPS (2xx)        : %.1f   (processed incl. 402: %.1f, offered: %.1f)\n", r.Total.OKTPS, r.ProcessedTPS, r.OfferedTPS)
-	fmt.Fprintf(w, "est. ledger tx/s          : %.1f   (channel ops write 2-4 ledger transactions)\n", r.Total.LedgerTxPS)
-	fmt.Fprintf(w, "slowest 10s window        : %.1f TPS\n", r.MinWindow10sTPS)
-	fmt.Fprintf(w, "error rate                : %.4f%%   insufficient funds (expected): %.2f%%   dropped arrivals: %d\n", r.Total.ErrorRate*100, r.InsufficientPct*100, r.Dropped)
-	fmt.Fprintf(w, "shed (503 OVERLOADED)     : %d (%.2f%% of offered), not counted as errors\n", r.Shed, r.ShedRate*100)
+	_, _ = fmt.Fprintf(w, "\nachieved TPS (2xx)        : %.1f   (processed incl. 402: %.1f, offered: %.1f)\n", r.Total.OKTPS, r.ProcessedTPS, r.OfferedTPS)
+	_, _ = fmt.Fprintf(w, "est. ledger tx/s          : %.1f   (channel ops write 2-4 ledger transactions)\n", r.Total.LedgerTxPS)
+	_, _ = fmt.Fprintf(w, "slowest 10s window        : %.1f TPS\n", r.MinWindow10sTPS)
+	_, _ = fmt.Fprintf(w, "error rate                : %.4f%%   insufficient funds (expected): %.2f%%   dropped arrivals: %d\n", r.Total.ErrorRate*100, r.InsufficientPct*100, r.Dropped)
+	_, _ = fmt.Fprintf(w, "shed (503 OVERLOADED)     : %d (%.2f%% of offered), not counted as errors\n", r.Shed, r.ShedRate*100)
 	if r.ShedRate > 0.05 {
-		fmt.Fprintf(w, "WARNING: %.1f%% of the offered load was shed by the server's write limiter; the achieved TPS is what it admitted, not what it can sustain. Lower -concurrency or raise --write-max-in-flight before reading anything into the numbers\n", r.ShedRate*100)
+		_, _ = fmt.Fprintf(w, "WARNING: %.1f%% of the offered load was shed by the server's write limiter; the achieved TPS is what it admitted, not what it can sustain. Lower -concurrency or raise --write-max-in-flight before reading anything into the numbers\n", r.ShedRate*100)
 	}
-	fmt.Fprintf(w, "latency ms (from intended): p50 %s  p90 %s  p95 %s  p99 %s  max %s\n",
+	_, _ = fmt.Fprintf(w, "latency ms (from intended): p50 %s  p90 %s  p95 %s  p99 %s  max %s\n",
 		fmtMS(r.Total.Latency.P50), fmtMS(r.Total.Latency.P90), fmtMS(r.Total.Latency.P95), fmtMS(r.Total.Latency.P99), fmtMS(r.Total.Latency.Max))
-	fmt.Fprintf(w, "service time ms (on wire) : p50 %s  p99 %s  max %s\n", fmtMS(r.ServiceTime.P50), fmtMS(r.ServiceTime.P99), fmtMS(r.ServiceTime.Max))
+	_, _ = fmt.Fprintf(w, "service time ms (on wire) : p50 %s  p99 %s  max %s\n", fmtMS(r.ServiceTime.P50), fmtMS(r.ServiceTime.P99), fmtMS(r.ServiceTime.Max))
 	if r.Total.Fallbacks > 0 {
-		fmt.Fprintf(w, "note: %d lien_release/lien_pay draws ran as lien because no lien was on hold\n", r.Total.Fallbacks)
+		_, _ = fmt.Fprintf(w, "note: %d lien_release/lien_pay draws ran as lien because no lien was on hold\n", r.Total.Fallbacks)
 	}
 
 	if !r.GatesEvaluated {
-		fmt.Fprintln(w, "\nSLO gates: not evaluated (no -min-tps, -min-window-tps, -max-p99, -max-error-rate or -max-insufficient-rate given)")
+		_, _ = fmt.Fprintln(w, "\nSLO gates: not evaluated (no -min-tps, -min-window-tps, -max-p99, -max-error-rate or -max-insufficient-rate given)")
 	} else {
-		fmt.Fprintln(w, "\nSLO gates")
+		_, _ = fmt.Fprintln(w, "\nSLO gates")
 		for _, g := range r.Gates {
 			status := "PASS"
 			if !g.Pass {
 				status = "FAIL"
 			}
-			fmt.Fprintf(w, "  %-22s %-14s actual %-14s %s\n", g.Name, g.Limit, g.Actual, status)
+			_, _ = fmt.Fprintf(w, "  %-22s %-14s actual %-14s %s\n", g.Name, g.Limit, g.Actual, status)
 		}
 	}
 
 	if c := r.Check; c != nil {
-		fmt.Fprintln(w, "\nConsistency check")
+		_, _ = fmt.Fprintln(w, "\nConsistency check")
 		if !c.Ran {
-			fmt.Fprintln(w, "  skipped")
+			_, _ = fmt.Fprintln(w, "  skipped")
 			return
 		}
 		verdict := "PASS"
 		if !c.Passed {
 			verdict = "FAIL"
 		}
-		fmt.Fprintf(w, "  result: %s   wallets checked %d, mismatches %d, negative balances %d, channels checked %d (mismatches %d), unexpected 409s %d, uncertain ops %d (%.2f%%), shed %d\n",
+		_, _ = fmt.Fprintf(w, "  result: %s   wallets checked %d, mismatches %d, negative balances %d, channels checked %d (mismatches %d), unexpected 409s %d, uncertain ops %d (%.2f%%), shed %d\n",
 			verdict, c.WalletsChecked, c.WalletMismatches, c.NegativeBalances, c.ChannelsChecked, c.ChannelMismatches, c.Conflicts409, c.UncertainOps, c.UncertainFrac*100, c.ShedOps)
 		for _, cc := range c.Currencies {
-			fmt.Fprintf(w, "  %s: control delta %d (expected %d +-%d), world delta %d (expected %d +-%d), conservation %d",
+			_, _ = fmt.Fprintf(w, "  %s: control delta %d (expected %d +-%d), world delta %d (expected %d +-%d), conservation %d",
 				cc.Currency, cc.ControlDelta, cc.ControlExpected, cc.ControlTolerance, cc.WorldDelta, cc.WorldExpected, cc.WorldTolerance, cc.Conservation)
 			if cc.RevenueChecked {
-				fmt.Fprintf(w, ", revenue acc %d/%d proc %d/%d", cc.RevenueAccDelta, cc.RevenueAccExpected, cc.RevenueProcDelta, cc.RevenueProcExpected)
+				_, _ = fmt.Fprintf(w, ", revenue acc %d/%d proc %d/%d", cc.RevenueAccDelta, cc.RevenueAccExpected, cc.RevenueProcDelta, cc.RevenueProcExpected)
 			}
-			fmt.Fprintln(w)
+			_, _ = fmt.Fprintln(w)
 		}
 		for _, f := range c.Failures {
-			fmt.Fprintf(w, "  - %s\n", f)
+			_, _ = fmt.Fprintf(w, "  - %s\n", f)
 		}
 		for _, n := range c.Notes {
-			fmt.Fprintf(w, "  note: %s\n", n)
+			_, _ = fmt.Fprintf(w, "  note: %s\n", n)
 		}
 	}
 }

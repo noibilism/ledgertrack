@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/formancehq/go-libs/v3/query"
 	libtime "github.com/formancehq/go-libs/v3/time"
-	"github.com/stretchr/testify/require"
 
 	ledgerinternal "github.com/formancehq/ledger/internal"
 	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"

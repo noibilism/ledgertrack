@@ -299,13 +299,13 @@ func runBench(t *testing.T, args ...string) (code int, rep *Report, out string) 
 	var stdout, stderr bytes.Buffer
 	full := append([]string{"-quiet", "-json-out", jsonPath, "-csv-out", csvPath}, args...)
 	code = realMain(full, &stdout, &stderr)
-	data, err := os.ReadFile(jsonPath)
+	data, err := os.ReadFile(jsonPath) //nolint:gosec // path comes from the operator/CLI, not from request input
 	if err == nil {
 		rep = &Report{}
 		if err := json.Unmarshal(data, rep); err != nil {
 			t.Fatalf("bad JSON report: %v", err)
 		}
-		csvData, err := os.ReadFile(csvPath)
+		csvData, err := os.ReadFile(csvPath) //nolint:gosec // path comes from the operator/CLI, not from request input
 		if err != nil || !strings.HasPrefix(string(csvData), "label,mode,") || !strings.Contains(string(csvData), ",ALL,") {
 			t.Fatalf("bad CSV report: %v %q", err, csvData)
 		}

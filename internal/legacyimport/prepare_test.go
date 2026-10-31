@@ -63,7 +63,7 @@ func copySamples(t *testing.T) string {
 func replaceInFile(t *testing.T, dir, name, old, new string) {
 	t.Helper()
 	p := filepath.Join(dir, name)
-	b, err := os.ReadFile(p)
+	b, err := os.ReadFile(p) //nolint:gosec // path comes from the operator/CLI, not from request input
 	if err != nil {
 		t.Fatal(err)
 	}

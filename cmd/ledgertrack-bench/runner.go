@@ -177,7 +177,7 @@ func (r *runner) progress(start, winStart, winEnd time.Time, stop <-chan struct{
 			} else if now.After(winEnd) {
 				phase = "drain"
 			}
-			fmt.Fprintf(logOut, "[%6.0fs %-6s] ok %7.0f/s  err %6.1f/s  lien-pool=%d\n",
+			_, _ = fmt.Fprintf(logOut, "[%6.0fs %-6s] ok %7.0f/s  err %6.1f/s  lien-pool=%d\n",
 				now.Sub(start).Seconds(), phase, float64(ok-lastOK)/dt, float64(er-lastErr)/dt, r.pool.size())
 			lastOK, lastErr, last = ok, er, now
 		}

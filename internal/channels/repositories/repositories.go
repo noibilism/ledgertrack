@@ -34,12 +34,12 @@ type ChannelFeeConfigFilter struct {
 }
 
 type ChannelFeeRecordFilter struct {
-	ChannelID  *string
-	Currency   *string
-	StartTime  *time.Time
-	EndTime    *time.Time
-	Limit      int
-	Offset     int
+	ChannelID *string
+	Currency  *string
+	StartTime *time.Time
+	EndTime   *time.Time
+	Limit     int
+	Offset    int
 }
 
 type BunChannelFeeConfigRepository struct {
@@ -172,4 +172,3 @@ func (r *BunChannelFeeRecordRepository) List(ctx context.Context, filter Channel
 	err := q.Scan(ctx)
 	return out, postgres.ResolveError(err)
 }
-

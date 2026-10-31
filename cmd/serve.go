@@ -296,14 +296,14 @@ func assembleFinalRouter(
 					r.Body = io.NopCloser(bytes.NewBuffer(reqBody))
 				}
 
-				f, err := os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				f, err := os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 				if err == nil {
-					fmt.Fprintf(f, "\n=== Request [%s] ===\n", time.Now().Format(time.RFC3339))
-					fmt.Fprintf(f, "%s %s\n", r.Method, r.URL.String())
+					_, _ = fmt.Fprintf(f, "\n=== Request [%s] ===\n", time.Now().Format(time.RFC3339))
+					_, _ = fmt.Fprintf(f, "%s %s\n", r.Method, r.URL.String())
 					if len(reqBody) > 0 {
-						fmt.Fprintf(f, "Body: %s\n", string(reqBody))
+						_, _ = fmt.Fprintf(f, "Body: %s\n", string(reqBody))
 					}
-					f.Close()
+					_ = f.Close()
 				}
 
 				rec := &responseRecorder{
@@ -313,15 +313,15 @@ func assembleFinalRouter(
 
 				handler.ServeHTTP(rec, r)
 
-				f, err = os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				f, err = os.OpenFile("requests.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 				if err == nil {
-					fmt.Fprintf(f, "\n=== Response [%s] ===\n", time.Now().Format(time.RFC3339))
-					fmt.Fprintf(f, "Status: %d\n", rec.StatusCode)
+					_, _ = fmt.Fprintf(f, "\n=== Response [%s] ===\n", time.Now().Format(time.RFC3339))
+					_, _ = fmt.Fprintf(f, "Status: %d\n", rec.StatusCode)
 					if rec.Body.Len() > 0 {
-						fmt.Fprintf(f, "Body: %s\n", rec.Body.String())
+						_, _ = fmt.Fprintf(f, "Body: %s\n", rec.Body.String())
 					}
-					fmt.Fprintf(f, "=====================\n")
-					f.Close()
+					_, _ = fmt.Fprintf(f, "=====================\n")
+					_ = f.Close()
 				}
 			})
 		})
