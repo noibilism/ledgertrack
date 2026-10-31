@@ -1033,10 +1033,6 @@ func systemControlAddress(seed, currency string) string {
 	return hotrows.SystemControlAddress(seed, currency)
 }
 
-func systemControlShards() uint32 {
-	return hotrows.SystemControlShards()
-}
-
 func ledgertrackOnly(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if chi.URLParam(r, "ledger") != "ledgertrack" {

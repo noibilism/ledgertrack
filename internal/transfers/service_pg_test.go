@@ -48,7 +48,7 @@ func TestServiceOnPostgresCrashThenConcurrentRecoveryAndRetries(t *testing.T) {
 
 		// Alternate where the "process" dies.
 		legs := []string{"user", "channel", "revenue"}
-		exec.crashAfter[legs[i%3]] = true
+		exec.crashAfter[legs[i%3]] = true //nolint:gosec // G602: index is bounded by construction (modulo / shard count)
 		require.True(t, runCrashing(t, func() { _, _ = svc.Execute(ctx, in) }))
 
 		time.Sleep(cfg.Lease + cfg.Grace + 100*time.Millisecond)

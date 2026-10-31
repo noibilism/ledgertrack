@@ -170,7 +170,7 @@ func TestZipfIsSkewedAndUniformIsFlat(t *testing.T) {
 		kp := newKeyPicker(cfg, rand.New(rand.NewSource(7)))
 		c := make([]int, n)
 		for i := 0; i < draws; i++ {
-			c[kp.pick()]++
+			c[kp.pick()]++ //nolint:gosec // G602: index is bounded by construction (modulo / shard count)
 		}
 		return c
 	}

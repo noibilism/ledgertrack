@@ -244,7 +244,6 @@ func TestDebitWallet(t *testing.T) {
 		walletID             string
 		payload              WalletTransactionRequest
 		expectedStatusCode   int
-		expectedErrorCode    string
 		expectControllerCall bool
 		expectedScript       string
 	}
@@ -317,7 +316,6 @@ func TestLienWallet(t *testing.T) {
 		walletID             string
 		payload              WalletTransactionRequest
 		expectedStatusCode   int
-		expectedErrorCode    string
 		expectControllerCall bool
 		expectedScript       string
 	}
