@@ -762,6 +762,34 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add reserve draws",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						alter table _system.reserve_holds drop constraint if exists reserve_holds_amount_minor_check;
+						alter table _system.reserve_holds drop constraint if exists reserve_holds_amount_nonneg;
+						alter table _system.reserve_holds add constraint reserve_holds_amount_nonneg check (amount_minor >= 0);
+						create table if not exists _system.reserve_draws (
+							id uuid primary key default gen_random_uuid(),
+							hold_id uuid not null references _system.reserve_holds(id),
+							ledger varchar(255) not null,
+							wallet_id varchar(255) not null,
+							reference varchar(255) not null,
+							amount_minor bigint not null check (amount_minor > 0),
+							status varchar(16) not null default 'pending'
+								check (status in ('pending', 'applied', 'reverted')),
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create unique index if not exists idx_reserve_draws_live on _system.reserve_draws(hold_id, reference) where status <> 'reverted';
+						create index if not exists idx_reserve_draws_ref on _system.reserve_draws(ledger, wallet_id, reference);
+						create index if not exists idx_reserve_draws_pending on _system.reserve_draws(created_at) where status = 'pending';
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator

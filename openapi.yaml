@@ -4292,6 +4292,8 @@ paths:
       tags:
         - ledger.v2
       summary: Debit a wallet
+      description: |
+        With `draw_from_reserve` set, on the `ledgertrack` ledger, the debit spends the wallet's held reserve shares before the available balance, oldest release first. This is for chargebacks. The held shares are the wallet lien, so the debit takes the drawn part from the lien and the rest from available in one transaction, and the holds shrink by the same amount (a hold used up entirely shows `released` with reason `drawn`). The response carries `reserve` with `drawn_minor` and `available_minor`. A retry of the same `reference` draws once. If the debit is refused for lack of funds the holds are restored. It cannot be combined with `channelID`.
       operationId: v2DebitWallet
       x-speakeasy-name-override: DebitWallet
       parameters:
@@ -7621,6 +7623,26 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/V2ReserveRule"
+    V2DebitWalletRequest:
+      type: object
+      required: [amount, reference]
+      properties:
+        amount:
+          type: number
+          description: Amount in minor units.
+        reference:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        channelID:
+          type: string
+        channelAmount:
+          type: number
+        draw_from_reserve:
+          type: boolean
+          description: Spend the wallet's held reserve shares first (chargebacks). Not allowed with a channel.
     V2CreditWalletRequest:
       type: object
       required: [amount, reference]
@@ -7684,7 +7706,7 @@ components:
           format: date-time
         release_reason:
           type: string
-          enum: [sla, manual]
+          enum: [sla, manual, drawn]
         release_reference:
           type: string
         attempts:

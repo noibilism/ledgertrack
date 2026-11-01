@@ -5370,10 +5370,22 @@ Idempotency-Key: string
 
 `POST /v2/{ledger}/wallets/{walletID}/debit`
 
+With `draw_from_reserve` set, on the `ledgertrack` ledger, the debit spends the wallet's held reserve shares before the available balance, oldest release first. This is for chargebacks. The held shares are the wallet lien, so the debit takes the drawn part from the lien and the rest from available in one transaction, and the holds shrink by the same amount (a hold used up entirely shows `released` with reason `drawn`). The response carries `reserve` with `drawn_minor` and `available_minor`. A retry of the same `reference` draws once. If the debit is refused for lack of funds the holds are restored. It cannot be combined with `channelID`.
+
 > Body parameter
 
 ```json
-false
+{
+  "amount": 0,
+  "reference": "string",
+  "metadata": {
+    "property1": "string",
+    "property2": "string"
+  },
+  "channelID": "string",
+  "channelAmount": 0,
+  "draw_from_reserve": true
+}
 ```
 
 <h3 id="debit-a-wallet-parameters">Parameters</h3>
@@ -5383,6 +5395,7 @@ false
 |ledger|path|string|true|Name of the ledger.|
 |walletID|path|string|true|Wallet ID|
 |Idempotency-Key|header|string|false|Use an idempotency key|
+|body|body|[V2DebitWalletRequest](#schemav2debitwalletrequest)|true|none|
 
 > Example responses
 
@@ -10774,6 +10787,40 @@ and
 |data|object|true|none|none|
 |» rules|[[V2ReserveRule](#schemav2reserverule)]|true|none|none|
 
+<h2 id="tocS_V2DebitWalletRequest">V2DebitWalletRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemav2debitwalletrequest"></a>
+<a id="schema_V2DebitWalletRequest"></a>
+<a id="tocSv2debitwalletrequest"></a>
+<a id="tocsv2debitwalletrequest"></a>
+
+```json
+{
+  "amount": 0,
+  "reference": "string",
+  "metadata": {
+    "property1": "string",
+    "property2": "string"
+  },
+  "channelID": "string",
+  "channelAmount": 0,
+  "draw_from_reserve": true
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|amount|number|true|none|Amount in minor units.|
+|reference|string|true|none|none|
+|metadata|object|false|none|none|
+|» **additionalProperties**|string|false|none|none|
+|channelID|string|false|none|none|
+|channelAmount|number|false|none|none|
+|draw_from_reserve|boolean|false|none|Spend the wallet's held reserve shares first (chargebacks). Not allowed with a channel.|
+
 <h2 id="tocS_V2CreditWalletRequest">V2CreditWalletRequest</h2>
 <!-- backwards compatibility -->
 <a id="schemav2creditwalletrequest"></a>
@@ -10875,6 +10922,7 @@ and
 |status|needs_review|
 |release_reason|sla|
 |release_reason|manual|
+|release_reason|drawn|
 
 <h2 id="tocS_V2ReserveHoldResponse">V2ReserveHoldResponse</h2>
 <!-- backwards compatibility -->

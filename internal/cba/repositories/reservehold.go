@@ -53,6 +53,18 @@ type ReserveHoldRepository interface {
 	ClaimByID(ctx context.Context, id uuid.UUID, owner string, now time.Time, lease time.Duration) (*models.ReserveHold, bool, error)
 
 	MarkReleased(ctx context.Context, id uuid.UUID, owner, reason, reference string, at time.Time) error
+
+	// Draw takes up to amount from the wallet's held holds, oldest release first, and records the
+	// draws as pending. It is idempotent on (ledger, wallet, reference): a second call returns the
+	// draws of the first. Holds being released, or that already have a pending draw elsewhere, are
+	// handled by row locks; the result may cover less than amount.
+	Draw(ctx context.Context, ledger, walletID, reference string, amount int64, now time.Time) ([]models.ReserveDraw, error)
+	// ConfirmDraws marks the pending draws of a debit as applied once the debit is in the ledger.
+	ConfirmDraws(ctx context.Context, ledger, walletID, reference string) error
+	// RevertDraws gives the amounts of the pending draws back to their holds.
+	RevertDraws(ctx context.Context, ledger, walletID, reference string) error
+	// StaleDraws lists debits whose draws are still pending and older than olderThan.
+	StaleDraws(ctx context.Context, olderThan time.Time, limit int) ([]models.DrawRef, error)
 	// Fail gives the lease back and records why. When needsReview is set the hold leaves the queue.
 	Fail(ctx context.Context, id uuid.UUID, owner, lastError string, needsReview bool) error
 }
@@ -202,6 +214,7 @@ func (r *BunReserveHoldRepository) ClaimDue(ctx context.Context, owner string, n
 	return r.claim(ctx,
 		`select id from _system.reserve_holds
 		 where status = 'held' and release_at <= ? and (lease_until is null or lease_until < ?)
+		   and not exists (select 1 from _system.reserve_draws d where d.hold_id = reserve_holds.id and d.status = 'pending')
 		 order by release_at limit ? for update skip locked`,
 		owner, now, lease, now, now, limit)
 }
@@ -217,7 +230,9 @@ func (r *BunReserveHoldRepository) ClaimStalePending(ctx context.Context, owner 
 func (r *BunReserveHoldRepository) ClaimByID(ctx context.Context, id uuid.UUID, owner string, now time.Time, lease time.Duration) (*models.ReserveHold, bool, error) {
 	rows, err := r.claim(ctx,
 		`select id from _system.reserve_holds
-		 where id = ? and status = 'held' and (lease_until is null or lease_until < ?) for update skip locked`,
+		 where id = ? and status = 'held' and (lease_until is null or lease_until < ?)
+		   and not exists (select 1 from _system.reserve_draws d where d.hold_id = reserve_holds.id and d.status = 'pending')
+		 for update skip locked`,
 		owner, now, lease, id, now)
 	if err != nil || len(rows) == 0 {
 		return nil, false, err
@@ -249,4 +264,109 @@ func (r *BunReserveHoldRepository) Fail(ctx context.Context, id uuid.UUID, owner
 	}
 	_, err := q.Exec(ctx)
 	return postgres.ResolveError(err)
+}
+
+func walletLockKey(ledger, walletID string) string { return "reserve:" + ledger + ":" + walletID }
+
+func (r *BunReserveHoldRepository) Draw(ctx context.Context, ledger, walletID, reference string, amount int64, now time.Time) ([]models.ReserveDraw, error) {
+	out := make([]models.ReserveDraw, 0)
+	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		// One draw at a time per wallet, so the same reference cannot draw twice under a race.
+		if _, err := tx.ExecContext(ctx, "select pg_advisory_xact_lock(hashtext(?))", walletLockKey(ledger, walletID)); err != nil {
+			return err
+		}
+		existing := make([]models.ReserveDraw, 0)
+		if err := tx.NewSelect().Model(&existing).
+			Where("ledger = ? and wallet_id = ? and reference = ? and status <> 'reverted'", ledger, walletID, reference).
+			Order("created_at").Scan(ctx); err != nil {
+			return err
+		}
+		if len(existing) > 0 {
+			out = existing
+			return nil
+		}
+		holds := make([]models.ReserveHold, 0)
+		if err := tx.NewSelect().Model(&holds).
+			Where("ledger = ? and wallet_id = ? and status = 'held' and amount_minor > 0", ledger, walletID).
+			Where("(lease_until is null or lease_until < ?)", now).
+			Order("release_at", "created_at").For("UPDATE").Scan(ctx); err != nil {
+			return err
+		}
+		remaining := amount
+		for _, h := range holds {
+			if remaining <= 0 {
+				break
+			}
+			take := h.AmountMinor
+			if take > remaining {
+				take = remaining
+			}
+			if _, err := tx.ExecContext(ctx, `update _system.reserve_holds set
+					amount_minor = amount_minor - ?0,
+					status = case when amount_minor - ?0 = 0 then 'released' else status end,
+					release_reason = case when amount_minor - ?0 = 0 then 'drawn' else release_reason end,
+					released_at = case when amount_minor - ?0 = 0 then ?1 else released_at end,
+					updated_at = ?1
+				where id = ?2`, take, now, h.ID); err != nil {
+				return err
+			}
+			d := models.ReserveDraw{ID: uuid.New(), HoldID: h.ID, Ledger: ledger, WalletID: walletID, Reference: reference,
+				AmountMinor: take, Status: models.DrawStatusPending, CreatedAt: now, UpdatedAt: now}
+			if _, err := tx.NewInsert().Model(&d).Exec(ctx); err != nil {
+				return err
+			}
+			out = append(out, d)
+			remaining -= take
+		}
+		return nil
+	})
+	return out, postgres.ResolveError(err)
+}
+
+func (r *BunReserveHoldRepository) ConfirmDraws(ctx context.Context, ledger, walletID, reference string) error {
+	_, err := r.db.NewUpdate().Model((*models.ReserveDraw)(nil)).
+		Set("status = ?", models.DrawStatusApplied).Set("updated_at = ?", time.Now().UTC()).
+		Where("ledger = ? and wallet_id = ? and reference = ? and status = 'pending'", ledger, walletID, reference).
+		Exec(ctx)
+	return postgres.ResolveError(err)
+}
+
+func (r *BunReserveHoldRepository) RevertDraws(ctx context.Context, ledger, walletID, reference string) error {
+	err := r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.ExecContext(ctx, "select pg_advisory_xact_lock(hashtext(?))", walletLockKey(ledger, walletID)); err != nil {
+			return err
+		}
+		draws := make([]models.ReserveDraw, 0)
+		if err := tx.NewSelect().Model(&draws).
+			Where("ledger = ? and wallet_id = ? and reference = ? and status = 'pending'", ledger, walletID, reference).
+			For("UPDATE").Scan(ctx); err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		for _, d := range draws {
+			// A hold the draw used up goes back to held with its original release time. Draws on a hold
+			// block its release while pending, so it cannot have been released in between.
+			if _, err := tx.ExecContext(ctx, `update _system.reserve_holds set
+					amount_minor = amount_minor + ?0,
+					status = case when status = 'released' and release_reason = 'drawn' then 'held' else status end,
+					release_reason = case when status = 'released' and release_reason = 'drawn' then '' else release_reason end,
+					released_at = case when status = 'released' and release_reason = 'drawn' then null else released_at end,
+					updated_at = ?1
+				where id = ?2`, d.AmountMinor, now, d.HoldID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, "update _system.reserve_draws set status = 'reverted', updated_at = ? where id = ?", now, d.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return postgres.ResolveError(err)
+}
+
+func (r *BunReserveHoldRepository) StaleDraws(ctx context.Context, olderThan time.Time, limit int) ([]models.DrawRef, error) {
+	out := make([]models.DrawRef, 0)
+	err := r.db.NewRaw(`select distinct ledger, wallet_id, reference from _system.reserve_draws
+		where status = 'pending' and created_at < ? limit ?`, olderThan, limit).Scan(ctx, &out)
+	return out, postgres.ResolveError(err)
 }

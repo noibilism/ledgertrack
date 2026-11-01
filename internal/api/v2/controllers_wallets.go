@@ -51,6 +51,9 @@ type WalletTransactionRequest struct {
 	ChannelAmount json.Number       `json:"channelAmount"`
 	// CreditType classifies a credit for reserve rules that apply to certain credit types only.
 	CreditType string `json:"credit_type,omitempty"`
+	// DrawFromReserve makes a debit (a chargeback, say) spend the wallet's held reserve shares before the
+	// available balance. Not allowed with a channel.
+	DrawFromReserve bool `json:"draw_from_reserve,omitempty"`
 }
 
 type ReleaseLienRequest struct {
@@ -254,7 +257,7 @@ func creditWallet(sys systemcontroller.Controller, holds services.ReserveHoldSer
 			}
 		}
 		if plan != nil {
-			script = reserveCreditScript(asset, accountSystem, accountUser, walletaddr.Lien(walletID, currency), plan)
+			script = reserveCreditScript(asset, accountSystem, accountUser, walletaddr.Lien(walletID, currency), true, plan)
 		}
 
 		params := ledger.Parameters[ledger.CreateTransaction]{
@@ -326,7 +329,7 @@ func creditWallet(sys systemcontroller.Controller, holds services.ReserveHoldSer
 	}
 }
 
-func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService, transferService *transfers.Service) http.HandlerFunc {
+func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channelservices.ChannelFeeConfigService, transferService *transfers.Service, holds services.ReserveHoldService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
 		walletID := chi.URLParam(r, "walletID")
@@ -427,6 +430,28 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 		)
 	`, asset, amount, accountUser, accountSystem)
 
+		// A chargeback asks to spend the held reserve first. The held shares are the wallet lien, so
+		// the debit takes the drawn part from the lien and the rest from available, in one transaction.
+		var drawPlan *services.DrawPlan
+		if req.DrawFromReserve {
+			if req.ChannelID != "" {
+				api.BadRequest(w, common.ErrValidation, fmt.Errorf("draw_from_reserve cannot be combined with a channel"))
+				return
+			}
+			if holds != nil && chi.URLParam(r, "ledger") == reserveLedgerName {
+				drawPlan, err = holds.DrawReserve(r.Context(), services.DrawRequest{
+					Ledger: reserveLedgerName, WalletID: walletID, Reference: req.Reference, AmountMinor: amount,
+				})
+				if err != nil {
+					handleReserveError(w, r, err)
+					return
+				}
+			}
+		}
+		if drawPlan != nil {
+			script = reserveDebitScript(asset, accountUser, walletaddr.Lien(walletID, currency), accountSystem, drawPlan)
+		}
+
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
 			Input: ledger.CreateTransaction{
@@ -471,7 +496,14 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 		// Store multi-ledger transaction links
 		respMetadata := map[string]string{}
 
+		if drawPlan != nil {
+			params.Input.RunScript.Metadata = withDrawMetadata(params.Input.RunScript.Metadata, drawPlan)
+		}
+
 		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
+		if drawPlan != nil {
+			settleReserveDraw(r.Context(), holds, reserveLedgerName, walletID, req.Reference, err)
+		}
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "insufficient fund") {
 				api.WriteErrorResponse(w, http.StatusPaymentRequired, common.ErrInsufficientFund, err)
@@ -643,6 +675,9 @@ func debitWallet(sys systemcontroller.Controller, channelFeeConfigService channe
 
 		if warningMsg != "" {
 			response["warning"] = warningMsg
+		}
+		if drawPlan != nil {
+			response["reserve"] = drawResponse(drawPlan)
 		}
 
 		api.Created(w, response)
