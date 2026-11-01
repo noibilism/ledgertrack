@@ -19,8 +19,11 @@ and running the importer (`tools/bankman-migration`, `docs/import`) so the legac
 | `POST /transactions/liens/{lien_id}/release-and-withdraw` | `.../lien/release`, mode `release_and_debit` |
 | `POST /transactions/reversal` and `POST /transactions/{id}/reversals` | `POST /v2/ledgertrack/transactions/{id}/revert` |
 
-Not in this version (next PRs): reads (accounts by `external_id`/`client_id`, account, transaction, history,
-products, client), `internal/wallet-operations`, R2 settlement and wallet-role endpoints.
+| `GET /accounts?external_id=` or `?client_id=` | account list for the client, with balances |
+| `GET /accounts/{id}` | one account with balances |
+
+Not in this version (next PRs): transaction read and status, history, products, client, `internal/wallet-operations`,
+R2 settlement and wallet-role endpoints.
 
 ## Behaviour callers should know
 
@@ -43,8 +46,14 @@ products, client), `internal/wallet-operations`, R2 settlement and wallet-role e
 
 ## Assumptions to confirm against the PHP callers
 
-- Envelope `{"status":"success"|"error","message","data"}` (the status words are assumed).
+- Envelope `{"status":"success"|"error","message","data"}` is confirmed against Bankman's `ResponseUtils`.
 - Withdrawal `account_balance` keys: `previous_available_balance`, `current_available_balance`,
   `previous_ledger_balance`, `current_ledger_balance`. Ledger balance equals available here (lien not added).
+- Account reads: `id` is the Bankman id for imported accounts (so callers keep their stored ids) and the
+  LedgerTrack id for new ones. `available_balance`, `actual_balance` (available plus held) and `locked_amount`
+  are strings with four decimals, like Bankman's `decimal:4` casts. `account_name`, `account_type`,
+  `country_code` are null: LedgerTrack accounts do not carry them. `client_id` is the Bankman client id.
+  Bankman's `allwallets` flag and its R2 sub-account filter are not applied, since wallet roles are not
+  imported yet. An unfiltered list answers 422 instead of dumping every account.
 - Bankman's release webhook to sendman is not replicated.
 - Transaction ids are UUID strings; confirm the column types in snowman.

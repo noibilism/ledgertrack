@@ -16,6 +16,8 @@ import (
 type LegacyLookupRepository interface {
 	AccountByLegacySourceID(ctx context.Context, legacyID string) (*models.Account, error)
 	ClientByLegacyExternalID(ctx context.Context, externalID string) (*models.Client, error)
+	// ClientByLegacySourceID finds a client by the id it had in the legacy system (not its external_id).
+	ClientByLegacySourceID(ctx context.Context, legacyID string) (*models.Client, error)
 }
 
 type BunLegacyLookupRepository struct {
@@ -39,6 +41,15 @@ func (r *BunLegacyLookupRepository) ClientByLegacyExternalID(ctx context.Context
 	client := &models.Client{}
 	err := r.db.NewSelect().Model(client).
 		Where("(kyc_data ->> 'legacy_external_id') = ?", externalID).
+		Limit(1).
+		Scan(ctx)
+	return client, postgres.ResolveError(err)
+}
+
+func (r *BunLegacyLookupRepository) ClientByLegacySourceID(ctx context.Context, legacyID string) (*models.Client, error) {
+	client := &models.Client{}
+	err := r.db.NewSelect().Model(client).
+		Where("(kyc_data ->> 'legacy_source_id') = ?", legacyID).
 		Limit(1).
 		Scan(ctx)
 	return client, postgres.ResolveError(err)

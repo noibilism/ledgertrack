@@ -58,6 +58,8 @@ type Handler struct {
 func New(lookup services.LegacyLookupService, serve http.Handler, ledger string) http.Handler {
 	h := &Handler{lookup: lookup, serve: serve, ledger: ledger}
 	r := chi.NewRouter()
+	r.Get("/accounts", h.listAccounts)
+	r.Get("/accounts/{id}", h.showAccount)
 	r.Route("/transactions", func(r chi.Router) {
 		r.Post("/deposits/{accountID}", h.deposit)
 		r.Post("/withdrawals/{accountID}", h.withdraw)

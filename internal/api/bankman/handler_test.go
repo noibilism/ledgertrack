@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +27,13 @@ type fakeLookup struct {
 func (f fakeLookup) Account(_ context.Context, id string) (*models.Account, error) {
 	if f.account != nil && (id == "bankman-acct-1" || id == f.account.ID.String()) {
 		return f.account, nil
+	}
+	return nil, services.ErrLegacyNotFound
+}
+
+func (f fakeLookup) ClientByID(_ context.Context, id string) (*models.Client, error) {
+	if f.client != nil && id == "bm-client-1" {
+		return f.client, nil
 	}
 	return nil, services.ErrLegacyNotFound
 }
@@ -51,6 +59,10 @@ type backend struct {
 	// per route behaviour
 	post   func(path string, body map[string]any) (int, string)
 	listed string // JSON for GET /transactions
+
+	accounts string // JSON for GET /accounts?client_id=
+	lienBal  string // balance of the lien address, "" = the address was never touched (404)
+	avail    int64
 }
 
 func (b *backend) handler() http.Handler {
@@ -84,6 +96,22 @@ func (b *backend) handler() http.Handler {
 		record(req)
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"data":{"id":99}}`))
+	})
+	r.Get("/ledgertrack/accounts", func(w http.ResponseWriter, req *http.Request) {
+		record(req)
+		_, _ = w.Write([]byte(b.accounts))
+	})
+	r.Get("/ledgertrack/accounts/{id}", func(w http.ResponseWriter, req *http.Request) {
+		record(req)
+		if strings.HasPrefix(chi.URLParam(req, "id"), "users:") {
+			if b.lienBal == "" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":{"volumes":{"NGN/2":{"balance":` + b.lienBal + `}}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"wallet_info":{"available_balance":` + strconv.FormatInt(b.avail, 10) + `,"lien_address":"users:w1:wallets:NGN:lien"}}}`))
 	})
 	r.Get("/ledgertrack/transactions", func(w http.ResponseWriter, req *http.Request) {
 		record(req)
@@ -396,5 +424,82 @@ func TestTransactionIDIsStable(t *testing.T) {
 	}
 	if _, err := uuid.Parse(TransactionID("A")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAccountReadHasBankmanShapeAndBalances(t *testing.T) {
+	b := &backend{avail: 150000, lienBal: "25000"}
+	h, lookup := setup(t, b)
+	lookup.account.AccountNumber = "LT-1"
+	lookup.account.Status = "active"
+	lookup.account.Metadata = map[string]any{"legacy_source_id": "bankman-acct-1", "legacy_account_number": "1234567890"}
+
+	rec, out := do(h, http.MethodGet, "/bankman/api/v1/accounts/bankman-acct-1", "")
+	if rec.Code != http.StatusOK || out["status"] != "success" {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	d := out["data"].(map[string]any)
+	// 1500.00 available, 250.00 held, so the ledger balance is 1750.00; all rendered like decimal:4 casts
+	if d["available_balance"] != "1500.0000" || d["locked_amount"] != "250.0000" || d["actual_balance"] != "1750.0000" {
+		t.Fatalf("balances %v", d)
+	}
+	if d["id"] != "bankman-acct-1" || d["account_number"] != "1234567890" || d["currency"] != "NGN" || d["status"] != "active" {
+		t.Fatalf("fields %v", d)
+	}
+	for _, hidden := range []string{"client_id", "product_id", "wallet_role", "created_at"} {
+		if _, ok := d[hidden]; ok {
+			t.Errorf("%s must stay hidden", hidden)
+		}
+	}
+}
+
+func TestAccountWithoutLienActivityHoldsNothing(t *testing.T) {
+	b := &backend{avail: 5000}
+	h, _ := setup(t, b)
+	_, out := do(h, http.MethodGet, "/bankman/api/v1/accounts/bankman-acct-1", "")
+	d := out["data"].(map[string]any)
+	if d["locked_amount"] != "0.0000" || d["actual_balance"] != "50.0000" {
+		t.Fatalf("%v", d)
+	}
+}
+
+func TestAccountListByExternalAndClientID(t *testing.T) {
+	for name, query := range map[string]string{"external_id": "external_id=ext-1", "client_id": "client_id=bm-client-1"} {
+		t.Run(name, func(t *testing.T) {
+			b := &backend{avail: 100, accounts: `{"data":{"accounts":[{"id":"` + uuid.NewString() + `","currency":"NGN","status":"active"}]}}`}
+			h, lookup := setup(t, b)
+			rec, out := do(h, http.MethodGet, "/bankman/api/v1/accounts?"+query, "")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+			}
+			if n := len(out["data"].([]any)); n != 1 {
+				t.Fatalf("accounts %d", n)
+			}
+			if !strings.Contains(b.calls[0].RawQuery, "client_id="+lookup.client.ID.String()) {
+				t.Fatalf("list was not scoped to the client: %q", b.calls[0].RawQuery)
+			}
+		})
+	}
+}
+
+func TestAccountListEdgeCases(t *testing.T) {
+	b := &backend{}
+	h, _ := setup(t, b)
+
+	rec, _ := do(h, http.MethodGet, "/bankman/api/v1/accounts?external_id=unknown", "")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown external_id: %d, want 404 (as Bankman)", rec.Code)
+	}
+	rec, out := do(h, http.MethodGet, "/bankman/api/v1/accounts?client_id=unknown", "")
+	if rec.Code != http.StatusOK || len(out["data"].([]any)) != 0 {
+		t.Errorf("unknown client_id: %d %s, want 200 and an empty list", rec.Code, rec.Body.String())
+	}
+	rec, _ = do(h, http.MethodGet, "/bankman/api/v1/accounts", "")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("unfiltered list: %d, want 422", rec.Code)
+	}
+	rec, _ = do(h, http.MethodGet, "/bankman/api/v1/accounts/nope", "")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown account: %d, want 404", rec.Code)
 	}
 }
