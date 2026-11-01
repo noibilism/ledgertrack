@@ -71,14 +71,15 @@ with open(f'{out}/accounts.jsonl','w') as f:
         f.write(json.dumps(dict(source_id=a['id'], client_source_id=a['client_id'], product_code=pcode[a['product_id']], legacy_account_number=a['account_number'], status=st, opened_at=a['created_at'].replace(' ','T')+'Z'))+'\n')
         acc_ok[a['id']] = a
 # Open liens, one per lien transaction, so a release by lien transaction id (what snowman and the middleware send) can be
-# resolved after cutover. A lien is open when it completed and no release points at it through original_transaction_id.
+# resolved after cutover. Same rule as Bankman's Transaction::canReleaseLien(): a lien is open when it completed and no
+# transaction of any type or status points at it through original_transaction_id (reversalTransaction() is a hasOne on
+# original_transaction_id, and soft-deleted rows do not count).
 # The detail is used for an account only when it adds up to accounts.locked_amount (after rounding half-even to cents);
 # otherwise the account falls back to one aggregate lien and the account is logged as lien_detail_mismatch.
 open_liens = {}
 for t in j('transactions', ['id','internal_reference','source_account_id','amount','description','created_at'],
            "transaction_type='lien' AND status='completed' AND deleted_at IS NULL AND id NOT IN "
-           "(SELECT original_transaction_id FROM transactions WHERE transaction_type='lien_release' "
-           "AND original_transaction_id IS NOT NULL AND deleted_at IS NULL AND status IN ('completed','pending','processing'))"):
+           "(SELECT original_transaction_id FROM transactions WHERE original_transaction_id IS NOT NULL AND deleted_at IS NULL)"):
     open_liens.setdefault(t['source_account_id'], []).append(t)
 nb = nl = 0
 with open(f'{out}/balances.jsonl','w') as fb, open(f'{out}/liens.jsonl','w') as fl:
