@@ -18,6 +18,7 @@ const (
 	metaLegacyAccountNum = "legacy_account_number"
 	metaLegacyClientSrc  = "legacy_client_source_id"
 	metaLegacyAcctSrc    = "legacy_account_source_id"
+	metaLegacyExternalID = "legacy_external_id"
 	metaLegacyReference  = "legacy_reference"
 	metaLegacyCreatedAt  = "legacy_created_at"
 	metaLegacyOpenedAt   = "legacy_opened_at"

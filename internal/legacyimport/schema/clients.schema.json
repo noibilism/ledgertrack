@@ -31,6 +31,7 @@
     "kyc_level": { "type": "integer", "minimum": 0, "maximum": 3, "description": "KYC level asserted by the legacy system." },
     "kyc_source": { "type": "string", "minLength": 1, "maxLength": 255, "description": "Free-text note describing where the KYC level comes from (for example 'bankman merchant_kyc.tier=2 approved 2024-03-01'). Stored in the KYC payload." },
     "kyc_identifier": { "type": "string", "maxLength": 128, "description": "Identifier sent as national_id_number in the KYC payload (required by LedgerTrack for level 1 and above). Defaults to registration_number, then tax_id." },
-    "legacy_created_at": { "type": "string", "format": "date-time" }
+    "legacy_created_at": { "type": "string", "format": "date-time" },
+    "external_id": { "type": "string", "maxLength": 64, "description": "Identifier callers use for this client in the legacy system (Bankman clients.external_id). Stored in the KYC payload as legacy_external_id and used by the Bankman compatibility API to find the client." }
   }
 }

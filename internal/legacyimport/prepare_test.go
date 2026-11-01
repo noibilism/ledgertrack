@@ -173,3 +173,16 @@ func TestIndistinguishableClientsRejected(t *testing.T) {
 		t.Fatalf("got %v", issues)
 	}
 }
+
+func TestKYCBodyCarriesLegacyExternalID(t *testing.T) {
+	c := &ClientRec{SourceID: "c1", LegalName: "Acme", KYCLevel: 1, KYCSource: "bankman", RegistrationNumber: "RC1", ExternalID: " 3F2504E0-4F89-11D3-9A0C-0305E82C3301 "}
+	payload := kycBody(c)["payload"].(map[string]any)
+	if got := payload["legacy_external_id"]; got != "3f2504e0-4f89-11d3-9a0c-0305e82c3301" {
+		t.Fatalf("legacy_external_id = %v, want trimmed and lower-cased so lookups are exact", got)
+	}
+
+	c.ExternalID = ""
+	if _, present := kycBody(c)["payload"].(map[string]any)["legacy_external_id"]; present {
+		t.Fatal("legacy_external_id must be absent when the client has no external id")
+	}
+}
