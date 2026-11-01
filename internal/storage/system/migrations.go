@@ -808,6 +808,21 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add legacy client source id lookup index",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					// Callers of the Bankman account list hold the Bankman client id (client_id), which the importer
+					// keeps in the KYC data as legacy_source_id.
+					_, err := tx.ExecContext(ctx, `
+						create index if not exists idx_clients_legacy_source_id
+							on _system.clients ((kyc_data ->> 'legacy_source_id'))
+							where (kyc_data ->> 'legacy_source_id') is not null;
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator

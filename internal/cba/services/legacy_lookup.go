@@ -22,6 +22,8 @@ type LegacyLookupService interface {
 	Account(ctx context.Context, id string) (*models.Account, error)
 	// Client finds a client by the Bankman external_id it was imported with, or by its LedgerTrack id.
 	Client(ctx context.Context, externalID string) (*models.Client, error)
+	// ClientByID finds a client by the Bankman client id it was imported with, or by its LedgerTrack id.
+	ClientByID(ctx context.Context, id string) (*models.Client, error)
 }
 
 type DefaultLegacyLookupService struct {
@@ -75,6 +77,30 @@ func (s *DefaultLegacyLookupService) Client(ctx context.Context, externalID stri
 		return nil, err
 	}
 	if parsed, perr := uuid.Parse(externalID); perr == nil {
+		client, err := s.clients.Get(ctx, parsed)
+		if err == nil {
+			return client, nil
+		}
+		if !isNotFound(err) {
+			return nil, err
+		}
+	}
+	return nil, ErrLegacyNotFound
+}
+
+func (s *DefaultLegacyLookupService) ClientByID(ctx context.Context, id string) (*models.Client, error) {
+	id = strings.ToLower(strings.TrimSpace(id))
+	if id == "" {
+		return nil, ErrLegacyNotFound
+	}
+	client, err := s.legacy.ClientByLegacySourceID(ctx, id)
+	if err == nil {
+		return client, nil
+	}
+	if !isNotFound(err) {
+		return nil, err
+	}
+	if parsed, perr := uuid.Parse(id); perr == nil {
 		client, err := s.clients.Get(ctx, parsed)
 		if err == nil {
 			return client, nil
