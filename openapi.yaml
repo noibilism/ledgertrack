@@ -4123,11 +4123,127 @@ paths:
       security:
         - Authorization:
             - ledger:read
+  /v2/{ledger}/reserve-holds:
+    get:
+      tags:
+        - ledger.v2
+      summary: List reserve holds
+      description: |
+        Lists the shares of credits held in wallet liens under a reserve rule, oldest release first. A hold is `pending` while its credit is being posted, `held` until `release_at`, then `released`. `voided` means the credit never reached the ledger; `needs_review` means the release failed repeatedly (for example the lien was spent) and needs an operator. `due_before` keeps holds whose release time is at or before it. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListReserveHolds
+      x-speakeasy-name-override: ListReserveHolds
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: account_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: client_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: wallet_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, held, released, voided, needs_review]
+        - name: due_before
+          in: query
+          description: RFC 3339 time.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: 1 to 500.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveHoldListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reserve-holds/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a reserve hold
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetReserveHold
+      x-speakeasy-name-override: GetReserveHold
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveHoldResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reserve-holds/{id}/release:
+    post:
+      tags:
+        - ledger.v2
+      summary: Release a reserve hold now
+      description: |
+        Moves the held share from the wallet lien to the available balance ahead of its SLA. Releasing a hold that is already released returns it unchanged and moves nothing. A hold that is `pending`, `voided`, or leased by the release job answers 409. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ReleaseReserveHold
+      x-speakeasy-name-override: ReleaseReserveHold
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveHoldResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
   /v2/{ledger}/wallets/{walletID}/credit:
     post:
       tags:
         - ledger.v2
       summary: Credit a wallet
+      description: |
+        On the `ledgertrack` ledger, when a reserve rule applies to the wallet's account, the credit is posted as one transaction that puts the reserve share in the wallet lien and the rest in the available balance. The response then carries `reserve` with `hold_id`, `reserve_minor`, `available_minor` and `release_at`. `credit_type` selects rules that list credit types. A retry of the same `reference` keeps the original split. Without a matching rule the credit is posted as before.
       operationId: v2CreditWallet
       x-speakeasy-name-override: CreditWallet
       parameters:
@@ -7505,6 +7621,100 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/V2ReserveRule"
+    V2CreditWalletRequest:
+      type: object
+      required: [amount, reference]
+      properties:
+        amount:
+          type: number
+          description: Amount in minor units.
+        reference:
+          type: string
+        credit_type:
+          type: string
+          description: Kind of credit (for example `card`), matched against the `credit_types` of reserve rules.
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    V2ReserveHold:
+      type: object
+      required: [id, account_id, client_id, ledger, wallet_id, currency, credit_reference, credit_amount_minor, amount_minor, release_at, status, attempts, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        rule_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        ledger:
+          type: string
+        wallet_id:
+          type: string
+        currency:
+          type: string
+        credit_reference:
+          type: string
+        credit_tx_id:
+          type: integer
+          format: int64
+        credit_type:
+          type: string
+        credit_amount_minor:
+          type: integer
+          format: int64
+        amount_minor:
+          type: integer
+          format: int64
+          description: The held share, in minor units.
+        release_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, held, released, voided, needs_review]
+        released_at:
+          type: string
+          format: date-time
+        release_reason:
+          type: string
+          enum: [sla, manual]
+        release_reference:
+          type: string
+        attempts:
+          type: integer
+        last_error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2ReserveHoldResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2ReserveHold"
+    V2ReserveHoldListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [holds]
+          properties:
+            holds:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2ReserveHold"
     V2ReservePreviewRequest:
       type: object
       required: [account_id, amount_minor]

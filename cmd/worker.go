@@ -54,6 +54,11 @@ const (
 	WorkerCBATransferRecoveryGraceFlag       = "worker-cba-transfer-recovery-grace"
 	WorkerCBATransferRecoveryLeaseFlag       = "worker-cba-transfer-recovery-lease"
 	WorkerCBATransferRecoveryMaxBackoffFlag  = "worker-cba-transfer-recovery-max-backoff"
+	WorkerCBAReserveReleaseScheduleFlag      = "worker-cba-reserve-release-schedule"
+	WorkerCBAReserveReleaseBatchSizeFlag     = "worker-cba-reserve-release-batch-size"
+	WorkerCBAReserveReleaseLeaseFlag         = "worker-cba-reserve-release-lease"
+	WorkerCBAReserveReleasePendingGraceFlag  = "worker-cba-reserve-release-pending-grace"
+	WorkerCBAReserveReleaseMaxAttemptsFlag   = "worker-cba-reserve-release-max-attempts"
 	WorkerCBALedgerNameFlag                  = "worker-cba-ledger-name"
 	WorkerCBAFeeIncomeAccountFlag            = "worker-cba-fee-income-account"
 	WorkerCBAInterestExpenseAccountFlag      = "worker-cba-interest-expense-account"
@@ -94,6 +99,11 @@ type WorkerConfiguration struct {
 	CBATransferRecoveryGrace       time.Duration `mapstructure:"worker-cba-transfer-recovery-grace"`
 	CBATransferRecoveryLease       time.Duration `mapstructure:"worker-cba-transfer-recovery-lease"`
 	CBATransferRecoveryMaxBackoff  time.Duration `mapstructure:"worker-cba-transfer-recovery-max-backoff"`
+	CBAReserveReleaseCRONSpec      cron.Schedule `mapstructure:"worker-cba-reserve-release-schedule"`
+	CBAReserveReleaseBatchSize     int           `mapstructure:"worker-cba-reserve-release-batch-size"`
+	CBAReserveReleaseLease         time.Duration `mapstructure:"worker-cba-reserve-release-lease"`
+	CBAReserveReleasePendingGrace  time.Duration `mapstructure:"worker-cba-reserve-release-pending-grace"`
+	CBAReserveReleaseMaxAttempts   int           `mapstructure:"worker-cba-reserve-release-max-attempts"`
 	CBALedgerName                  string        `mapstructure:"worker-cba-ledger-name"`
 	CBAFeeIncomeAccount            string        `mapstructure:"worker-cba-fee-income-account"`
 	CBAInterestExpenseAccount      string        `mapstructure:"worker-cba-interest-expense-account"`
@@ -129,6 +139,15 @@ func (cfg WorkerConfiguration) Validate() error {
 	}
 	if cfg.CBATransferRecoveryGrace <= 0 || cfg.CBATransferRecoveryLease <= 0 || cfg.CBATransferRecoveryMaxBackoff <= 0 {
 		return fmt.Errorf("cba transfer recovery grace, lease and max backoff must be greater than zero")
+	}
+	if cfg.CBAReserveReleaseCRONSpec == nil {
+		return fmt.Errorf("cba reserve release schedule must be set")
+	}
+	if cfg.CBAReserveReleaseBatchSize <= 0 || cfg.CBAReserveReleaseMaxAttempts <= 0 {
+		return fmt.Errorf("cba reserve release batch size and max attempts must be greater than zero")
+	}
+	if cfg.CBAReserveReleaseLease <= 0 || cfg.CBAReserveReleasePendingGrace <= 0 {
+		return fmt.Errorf("cba reserve release lease and pending grace must be greater than zero")
 	}
 	if cfg.CBALedgerName == "" {
 		return fmt.Errorf("cba ledger name must be set")
@@ -175,6 +194,11 @@ func addWorkerFlags(cmd *cobra.Command) {
 	cmd.Flags().Duration(WorkerCBATransferRecoveryGraceFlag, 2*time.Minute, "Minimum age of an unfinished transfer before recovery picks it up (also the base of the retry backoff)")
 	cmd.Flags().Duration(WorkerCBATransferRecoveryLeaseFlag, 2*time.Minute, "How long a driver owns a transfer before another may take it over")
 	cmd.Flags().Duration(WorkerCBATransferRecoveryMaxBackoffFlag, 30*time.Minute, "Upper bound of the exponential retry backoff of one transfer")
+	cmd.Flags().String(WorkerCBAReserveReleaseScheduleFlag, "0 * * * * *", "Schedule for releasing held reserve shares whose SLA has passed (cron format)")
+	cmd.Flags().Int(WorkerCBAReserveReleaseBatchSizeFlag, 200, "Reserve holds claimed per release pass")
+	cmd.Flags().Duration(WorkerCBAReserveReleaseLeaseFlag, 2*time.Minute, "How long a worker owns a reserve hold before another may take it over")
+	cmd.Flags().Duration(WorkerCBAReserveReleasePendingGraceFlag, 10*time.Minute, "Age after which a reserve hold whose credit was interrupted is settled against the ledger")
+	cmd.Flags().Int(WorkerCBAReserveReleaseMaxAttemptsFlag, 10, "Failed releases before a reserve hold is moved to needs_review")
 	cmd.Flags().String(WorkerCBALedgerNameFlag, "ledgertrack", "Ledger name used for CBA account wallet postings")
 	cmd.Flags().String(WorkerCBAFeeIncomeAccountFlag, "revenue:fee_income", "Revenue account used for CBA fee income postings")
 	cmd.Flags().String(WorkerCBAInterestExpenseAccountFlag, "revenue:interest_expense", "Revenue account used for CBA interest expense postings")
@@ -303,6 +327,13 @@ func newWorkerModule(configuration WorkerConfiguration) fx.Option {
 			TransferRecoveryRunnerConfig: scheduler.TransferRecoveryRunnerConfig{
 				Schedule:  configuration.CBATransferRecoveryCRONSpec,
 				BatchSize: configuration.CBATransferRecoveryBatchSize,
+			},
+			ReserveReleaseRunnerConfig: scheduler.ReserveReleaseRunnerConfig{
+				Schedule:     configuration.CBAReserveReleaseCRONSpec,
+				BatchSize:    configuration.CBAReserveReleaseBatchSize,
+				Lease:        configuration.CBAReserveReleaseLease,
+				PendingGrace: configuration.CBAReserveReleasePendingGrace,
+				MaxAttempts:  configuration.CBAReserveReleaseMaxAttempts,
 			},
 		},
 	})

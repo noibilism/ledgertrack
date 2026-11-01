@@ -21,6 +21,7 @@ import (
 
 	ledgerinternal "github.com/formancehq/ledger/internal"
 	"github.com/formancehq/ledger/internal/api/common"
+	"github.com/formancehq/ledger/internal/cba/services"
 	channelmodels "github.com/formancehq/ledger/internal/channels/models"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	"github.com/formancehq/ledger/internal/controller/ledger"
@@ -31,6 +32,7 @@ import (
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
 	"github.com/formancehq/ledger/internal/transfers"
+	"github.com/formancehq/ledger/internal/walletaddr"
 )
 
 // WalletController handles wallet operations
@@ -47,6 +49,8 @@ type WalletTransactionRequest struct {
 	Metadata      map[string]string `json:"metadata"`
 	ChannelID     string            `json:"channelID"`
 	ChannelAmount json.Number       `json:"channelAmount"`
+	// CreditType classifies a credit for reserve rules that apply to certain credit types only.
+	CreditType string `json:"credit_type,omitempty"`
 }
 
 type ReleaseLienRequest struct {
@@ -181,7 +185,7 @@ func parseAmount(amount json.Number, currency string) (int64, error) {
 	return currencyregistry.ParseAmount(amount.String(), currency)
 }
 
-func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
+func creditWallet(sys systemcontroller.Controller, holds services.ReserveHoldService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		l := common.LedgerFromContext(r.Context())
 		walletID := chi.URLParam(r, "walletID")
@@ -236,6 +240,23 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 		)
 	`, asset, amount, accountSystem, accountUser)
 
+		// A reserve rule holds a share of the credit in the wallet lien, which stays in the ledger
+		// balance until the SLA has passed. Without a rule the credit is posted exactly as before.
+		var plan *services.CreditPlan
+		if holds != nil && chi.URLParam(r, "ledger") == reserveLedgerName {
+			plan, err = holds.PlanCredit(r.Context(), services.PlanCreditRequest{
+				Ledger: reserveLedgerName, WalletID: walletID, Currency: currency,
+				Reference: req.Reference, AmountMinor: amount, CreditType: req.CreditType,
+			})
+			if err != nil {
+				handleReserveError(w, r, err)
+				return
+			}
+		}
+		if plan != nil {
+			script = reserveCreditScript(asset, accountSystem, accountUser, walletaddr.Lien(walletID, currency), plan)
+		}
+
 		params := ledger.Parameters[ledger.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
 			Input: ledger.CreateTransaction{
@@ -254,6 +275,9 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			for k, v := range req.Metadata {
 				params.Input.RunScript.Metadata[k] = v
 			}
+		}
+		if plan != nil {
+			params.Input.RunScript.Metadata = withReserveMetadata(params.Input.RunScript.Metadata, plan)
 		}
 
 		_, tx, _, err := createWalletTransaction(r, l, walletID, params)
@@ -286,14 +310,19 @@ func creditWallet(sys systemcontroller.Controller) http.HandlerFunc {
 			}
 		}
 
-		api.Created(w, map[string]interface{}{
+		response := map[string]interface{}{
 			"txid":           tx.Transaction.ID,
 			"timestamp":      tx.Transaction.Timestamp,
 			"postings":       tx.Transaction.Postings,
 			"metadata":       tx.Transaction.Metadata,
 			"balance_before": balanceBefore,
 			"balance_after":  balanceAfter,
-		})
+		}
+		if plan != nil {
+			confirmReserveHold(r.Context(), holds, plan, tx)
+			response["reserve"] = reserveResponse(plan)
+		}
+		api.Created(w, response)
 	}
 }
 

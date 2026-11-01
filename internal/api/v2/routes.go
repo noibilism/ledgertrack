@@ -125,7 +125,7 @@ func NewRouter(
 							router.Get("/balance", ledgertrackOnly(getAccountBalance(routerOptions.accountService)))
 							router.Get("/history", ledgertrackOnly(getAccountHistory(routerOptions.accountService)))
 							router.Get("/statement", ledgertrackOnly(getAccountStatement(routerOptions.accountService)))
-							router.Post("/credit", ledgertrackOnly(creditAccount(routerOptions.accountService)))
+							router.Post("/credit", ledgertrackOnly(creditAccount(routerOptions.accountService, routerOptions.reserveHoldService)))
 							router.Post("/debit", ledgertrackOnly(debitAccount(routerOptions.accountService, systemController)))
 							router.Post("/transfer", ledgertrackOnly(transferAccount(routerOptions.accountService)))
 							router.Post("/lien", ledgertrackOnly(lienAccount(routerOptions.accountService)))
@@ -163,7 +163,7 @@ func NewRouter(
 					router.Post("/", createWallet(systemController))
 					router.Get("/balances", getWalletBalances(systemController))
 					router.Route("/{walletID}", func(router chi.Router) {
-						router.Post("/credit", creditWallet(systemController))
+						router.Post("/credit", creditWallet(systemController, routerOptions.reserveHoldService))
 						router.Post("/debit", debitWallet(systemController, routerOptions.channelFeeConfigService, routerOptions.transferService))
 						router.Post("/lien", lienWallet(systemController))
 						router.Post("/lien/release", releaseLien(systemController, routerOptions.channelFeeConfigService, routerOptions.transferService))
@@ -231,6 +231,16 @@ func NewRouter(
 						router.Route("/{id}", func(router chi.Router) {
 							router.Get("/", ledgertrackOnly(readBusinessCalendar(routerOptions.calendarService)))
 							router.Put("/", ledgertrackOnly(updateBusinessCalendar(routerOptions.calendarService)))
+						})
+					})
+				}
+
+				if routerOptions.reserveHoldService != nil {
+					router.Route("/reserve-holds", func(router chi.Router) {
+						router.Get("/", ledgertrackOnly(listReserveHolds(routerOptions.reserveHoldService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readReserveHold(routerOptions.reserveHoldService)))
+							router.Post("/release", ledgertrackOnly(releaseReserveHold(routerOptions.reserveHoldService)))
 						})
 					})
 				}
@@ -342,6 +352,7 @@ type routerOptions struct {
 	feeConfigService               services.FeeConfigService
 	reserveRuleService             services.ReserveRuleService
 	calendarService                services.BusinessCalendarService
+	reserveHoldService             services.ReserveHoldService
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
@@ -413,6 +424,12 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithReserveHoldService(reserveHoldService services.ReserveHoldService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.reserveHoldService = reserveHoldService
 	}
 }
 

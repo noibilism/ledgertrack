@@ -720,6 +720,48 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add reserve holds table",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.reserve_holds (
+							id uuid primary key default gen_random_uuid(),
+							rule_id uuid references _system.reserve_rules(id),
+							account_id uuid not null,
+							client_id uuid not null,
+							ledger varchar(255) not null,
+							wallet_id varchar(255) not null,
+							currency varchar(16) not null,
+							credit_reference varchar(255) not null,
+							credit_tx_id bigint,
+							credit_type varchar(32) not null default '',
+							credit_amount_minor bigint not null check (credit_amount_minor > 0),
+							amount_minor bigint not null check (amount_minor > 0),
+							release_at timestamp without time zone not null,
+							status varchar(16) not null default 'pending'
+								check (status in ('pending', 'held', 'released', 'voided', 'needs_review')),
+							released_at timestamp without time zone,
+							release_reason varchar(16) not null default '',
+							release_reference varchar(255) not null default '',
+							lease_owner varchar(128) not null default '',
+							lease_until timestamp without time zone,
+							attempts integer not null default 0,
+							last_error text not null default '',
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint reserve_holds_amount check (amount_minor <= credit_amount_minor),
+							constraint reserve_holds_credit unique (ledger, wallet_id, credit_reference)
+						);
+						create index if not exists idx_reserve_holds_due on _system.reserve_holds(release_at) where status = 'held';
+						create index if not exists idx_reserve_holds_pending on _system.reserve_holds(created_at) where status = 'pending';
+						create index if not exists idx_reserve_holds_account on _system.reserve_holds(account_id);
+						create index if not exists idx_reserve_holds_client on _system.reserve_holds(client_id);
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator
