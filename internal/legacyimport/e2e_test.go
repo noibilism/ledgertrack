@@ -163,10 +163,10 @@ func TestEndToEndPlanApplyVerify(t *testing.T) {
 	if !strings.HasPrefix(w1, "client-CL-2026-") || !strings.HasSuffix(w1, "-MERCH-NGN") {
 		t.Errorf("unexpected wallet id %q", w1)
 	}
-	if got := f.balance("users:"+w1+":wallets:NGN:available", "NGN/2"); got.String() != "100000050" {
+	if got := f.balance(availableAddress(w1, "NGN"), "NGN/2"); got.String() != "100000050" {
 		t.Errorf("a-1 available = %s", got)
 	}
-	if got := f.balance("users:"+w1+":wallets:NGN:lien", "NGN/2"); got.String() != "25000000" {
+	if got := f.balance(lienAddress(w1, "NGN"), "NGN/2"); got.String() != "25000000" {
 		t.Errorf("a-1 lien = %s", got)
 	}
 	// Lien transactions carry the original legacy reference.
@@ -255,7 +255,7 @@ func TestVerifyIsZeroTolerance(t *testing.T) {
 	}
 
 	// One minor unit too many on a lien account.
-	addr := "users:" + walletOf(f, "a-1") + ":wallets:NGN:lien"
+	addr := lienAddress(walletOf(f, "a-1"), "NGN")
 	f.mu.Lock()
 	v := f.vol(addr, "NGN/2")
 	v[0].Add(v[0], big.NewInt(1))

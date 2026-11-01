@@ -409,7 +409,7 @@ func (f *fakeLT) openAccount(b map[string]any) (any, *fakeErr) {
 }
 
 func (f *fakeLT) availableBalance(a map[string]any) *big.Int {
-	addr := fmt.Sprintf("users:%s:wallets:%s:available", a["wallet_id"], a["currency"])
+	addr := availableAddress(fmt.Sprint(a["wallet_id"]), fmt.Sprint(a["currency"]))
 	v := f.volumes[addr][f.assetFor(fmt.Sprint(a["currency"]))]
 	if v[0] == nil {
 		return new(big.Int)

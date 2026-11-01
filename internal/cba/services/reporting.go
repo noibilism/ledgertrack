@@ -21,6 +21,7 @@ import (
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
+	"github.com/formancehq/ledger/internal/walletaddr"
 )
 
 var (
@@ -585,11 +586,11 @@ func reportingAvailableBalance(ctx context.Context, ledger ledgercontroller.Cont
 }
 
 func reportingAvailableAddress(walletID, currency string) string {
-	return fmt.Sprintf("users:%s:wallets:%s:available", walletID, currency)
+	return walletaddr.Available(walletID, currency)
 }
 
 func reportingLienAddress(walletID, currency string) string {
-	return fmt.Sprintf("users:%s:wallets:%s:lien", walletID, currency)
+	return walletaddr.Lien(walletID, currency)
 }
 
 func withinDateRange(value time.Time, startTime, endTime *time.Time) bool {

@@ -18,6 +18,7 @@ import (
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
+	"github.com/formancehq/ledger/internal/walletaddr"
 )
 
 type PostingEngine interface {
@@ -161,7 +162,7 @@ func (e *ledgerPostingEngine) createTransaction(ctx context.Context, ledgerName,
 }
 
 func walletAvailableAddress(walletID, currency string) string {
-	return fmt.Sprintf("users:%s:wallets:%s:available", walletID, currency)
+	return walletaddr.Available(walletID, currency)
 }
 
 func isDuplicateReferenceError(err error) bool {

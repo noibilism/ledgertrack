@@ -25,11 +25,11 @@ The account credit endpoint is hard-wired to `system:control:{ccy}`. Using it wo
 ```
 send [NGN/2 125000050] (
   source = @gl:migration:opening:NGN allowing unbounded overdraft
-  destination = @users:client-CL-2026-123456-MERCH-NGN:wallets:NGN:available
+  destination = @users:client-CL-2026-123456-MERCH:wallets:NGN:available
 )
 ```
 
-The source account ends up with a debit equal to the sum of all imported balances of the currency. `verify` checks exactly that. The address follows the `gl:` convention and can be changed with `--source-template`. The tool does not depend on a GL registry; if the registry later requires `gl:migration:opening:{ccy}` to be registered, register it before `apply`.
+The address is the wallet id without its `-{CCY}` suffix, the same one the wallet API and the account API use, so a migrated balance and a live operation are one account. The source account ends up with a debit equal to the sum of all imported balances of the currency. `verify` checks exactly that. The address follows the `gl:` convention and can be changed with `--source-template`. The tool does not depend on a GL registry; if the registry later requires `gl:migration:opening:{ccy}` to be registered, register it before `apply`.
 
 Each lien is a second transaction `available -> lien` whose `reference` is the original legacy reference (so `GET .../transactions?reference=` finds it) and whose metadata carries `legacy_source_id`, `legacy_reference` and `legacy_created_at`. Liens are posted through the native endpoint rather than `/accounts/{id}/lien` on purpose: the account lien endpoint runs product validation (minimum balance, daily limits) and records the amount as daily debit usage, which would consume the merchants' daily limits on cutover day.
 
@@ -76,7 +76,7 @@ Amounts are decimal strings in major units: `"1250000.50"`. No numbers, no sign,
 | Field | Required | Notes |
 |---|---|---|
 | `source_id` | yes | Legacy currency id |
-| `code` | yes | Product code, `[A-Za-z0-9_-]{1,64}`. Part of wallet ids and ledger addresses |
+| `code` | yes | Product code, `[A-Za-z0-9_-]{1,64}`. Part of wallet ids and ledger addresses. To work with the wallet API (`/wallets/{walletID}/...`) the code must equal the currency (`NGN`) or end with `-{CCY}` (`RESERVE-USD`): the wallet API reads the currency from the end of the wallet id. `validate` warns otherwise |
 | `name`, `category` | yes | |
 | `currency` | yes | Must be enabled in the currency registry |
 | `description` | no | The tool appends `[legacy_source_id=...]` because products have no metadata field |

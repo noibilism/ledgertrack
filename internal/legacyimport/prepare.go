@@ -119,6 +119,9 @@ func Prepare(ds *Dataset, opt PrepareOptions) (*Prepared, []Issue) {
 		if !codeRe.MatchString(pr.Code) {
 			add(errIssue(f, pr.Line, "code %q must match %s", pr.Code, codeRe))
 		}
+		if pr.Currency != "" && pr.Code != pr.Currency && !strings.HasSuffix(pr.Code, "-"+pr.Currency) {
+			add(warnIssue(f, pr.Line, "code %q does not end with its currency %q: the wallet API reads the currency from the end of the wallet id, so /wallets/* cannot operate on these accounts (name the code %q or end it with -%s)", pr.Code, pr.Currency, pr.Currency, pr.Currency))
+		}
 		key := strings.ToUpper(pr.Code)
 		if prev, dup := p.ProductByCode[key]; dup {
 			add(errIssue(f, pr.Line, "duplicate product code %q (first seen on line %d)", pr.Code, prev.Line))

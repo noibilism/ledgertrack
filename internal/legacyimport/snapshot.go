@@ -82,13 +82,23 @@ func (o Options) source(ccy string) string {
 	return strings.NewReplacer("{CCY}", ccy).Replace(o.SourceTemplate)
 }
 
-// Wallet addresses, identical to the ones used by the CBA / wallet layer.
+// Wallet addresses, identical to the ones used by the CBA / wallet layer
+// (internal/walletaddr, mirrored here so the tool has no dependency on server
+// internals; a test keeps the two in step). The wallet id loses its "-{CCY}"
+// suffix, which is how the wallet API derives the owner of a wallet.
+func walletUser(walletID, ccy string) string {
+	if trimmed, ok := strings.CutSuffix(walletID, "-"+ccy); ok && trimmed != "" && ccy != "" {
+		return trimmed
+	}
+	return walletID
+}
+
 func availableAddress(walletID, ccy string) string {
-	return fmt.Sprintf("users:%s:wallets:%s:available", walletID, ccy)
+	return fmt.Sprintf("users:%s:wallets:%s:available", walletUser(walletID, ccy), ccy)
 }
 
 func lienAddress(walletID, ccy string) string {
-	return fmt.Sprintf("users:%s:wallets:%s:lien", walletID, ccy)
+	return fmt.Sprintf("users:%s:wallets:%s:lien", walletUser(walletID, ccy), ccy)
 }
 
 func moveScript(asset string, amount *big.Int, source, destination string, overdraft bool) string {
