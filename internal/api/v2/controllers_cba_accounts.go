@@ -293,7 +293,7 @@ func creditAccount(accountService services.AccountService) http.HandlerFunc {
 			return
 		}
 		usageAt := time.Now().UTC()
-		if _, err := accountService.ValidateCredit(r.Context(), accountID, amount, currentBalance, usageAt); err != nil {
+		if _, err := accountService.ValidateCredit(r.Context(), accountID, amount, currentBalance, usageAt); err != nil && !isIdempotentRetry(r.Context(), l, r.Header.Get("Idempotency-Key")) {
 			handleAccountError(w, r, err)
 			return
 		}
@@ -397,7 +397,7 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			return
 		}
 		usageAt := time.Now().UTC()
-		if _, err := accountService.ValidateDebit(r.Context(), accountID, amount, currentBalance, usageAt); err != nil {
+		if _, err := accountService.ValidateDebit(r.Context(), accountID, amount, currentBalance, usageAt); err != nil && !isIdempotentRetry(r.Context(), l, r.Header.Get("Idempotency-Key")) {
 			handleAccountError(w, r, err)
 			return
 		}
@@ -570,7 +570,7 @@ func lienAccount(accountService services.AccountService) http.HandlerFunc {
 			return
 		}
 		usageAt := time.Now().UTC()
-		if _, err := accountService.ValidateLien(r.Context(), accountID, amount, currentBalance, usageAt); err != nil {
+		if _, err := accountService.ValidateLien(r.Context(), accountID, amount, currentBalance, usageAt); err != nil && !isIdempotentRetry(r.Context(), l, r.Header.Get("Idempotency-Key")) {
 			handleAccountError(w, r, err)
 			return
 		}
@@ -670,12 +670,13 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 			}
 		}
 
-		if _, err := accountService.ValidateRelease(r.Context(), accountID, req.Mode); err != nil {
+		req.Mode = normalizeReleaseMode(req.Mode)
+		l := common.LedgerFromContext(r.Context())
+		if _, err := accountService.ValidateRelease(r.Context(), accountID, req.Mode); err != nil && !isIdempotentRetry(r.Context(), l, r.Header.Get("Idempotency-Key")) {
 			handleAccountError(w, r, err)
 			return
 		}
 
-		l := common.LedgerFromContext(r.Context())
 		asset, err := currencyregistry.AssetFor(account.Currency)
 		if err != nil {
 			common.HandleCommonErrors(w, r, err)
@@ -1074,5 +1075,36 @@ func handleAccountError(w http.ResponseWriter, r *http.Request, err error) {
 		api.NotFound(w, err)
 	default:
 		common.InternalServerError(w, r, err)
+	}
+}
+
+// isIdempotentRetry reports whether a request with this Idempotency-Key was already
+// recorded in the ledger. Balance and limit checks must not reject such a retry: the
+// ledger replays the original result, and a check against the post-request balance
+// would turn a completed debit into a false "would overdraw" error.
+func isIdempotentRetry(ctx context.Context, l ledgercontroller.Controller, key string) bool {
+	if key == "" {
+		return false
+	}
+	order := bunpaginate.Order(bunpaginate.OrderDesc)
+	cursor, err := l.ListLogs(ctx, storagecommon.InitialPaginatedQuery[any]{
+		Column:   "id",
+		Order:    &order,
+		PageSize: 1,
+		Options:  storagecommon.ResourceQuery[any]{Builder: query.Match("idempotency_key", key)},
+	})
+	return err == nil && cursor != nil && len(cursor.Data) > 0
+}
+
+// normalizeReleaseMode accepts the wallet API spellings (release_only, release_and_debit)
+// next to the account API ones (RELEASE, PAY), so one client works against both.
+func normalizeReleaseMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "release_only":
+		return "RELEASE"
+	case "release_and_debit":
+		return "PAY"
+	default:
+		return strings.TrimSpace(mode)
 	}
 }
