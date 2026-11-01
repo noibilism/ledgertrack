@@ -3049,6 +3049,168 @@ paths:
       security:
         - Authorization:
             - ledger:write
+  /v2/{ledger}/reserve-rules:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a reserve rule
+      description: Holds back a share of every credit into the customer's wallet. The held share stays in the ledger balance (the wallet lien) for `hold_hours`, the agreed SLA, and is then released to the available balance. A `client` rule covers the client's accounts in `currency`, optionally only those of `product_id`. An `account` rule covers one account and takes its currency from the account. Resolution order is account rule, then client and product rule, then client-wide rule. `percentage` is above 0 and at most 100 with up to 4 decimals. `hold_hours` is 1 to 8760. Overlapping rules for the same target are rejected with 409. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateReserveRule
+      x-speakeasy-name-override: CreateReserveRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreateReserveRuleRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List reserve rules
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListReserveRules
+      x-speakeasy-name-override: ListReserveRules
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: client_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: account_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, revoked]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveRuleListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reserve-rules/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a reserve rule
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetReserveRule
+      x-speakeasy-name-override: GetReserveRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reserve-rules/{id}/revoke:
+    post:
+      tags:
+        - ledger.v2
+      summary: Revoke a reserve rule
+      description: Ends the rule now. Holds already made keep their release time. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2RevokeReserveRule
+      x-speakeasy-name-override: RevokeReserveRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/reserve-rules/preview:
+    post:
+      tags:
+        - ledger.v2
+      summary: Preview the reserve on a credit
+      description: |
+        Shows how a credit of `amount_minor` into an account would be split at `at` (default now): `reserve_minor` is held in the ledger balance until `release_at`, `available_minor` is available at once. The held share is the percentage of the amount rounded half-even to a whole minor unit. `rule_source` is `account`, `client` or `none`. Nothing is posted. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2PreviewReserve
+      x-speakeasy-name-override: PreviewReserve
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2ReservePreviewRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReservePreviewResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
   /v2/{ledger}/fees/quote:
     post:
       tags:
@@ -7024,6 +7186,152 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/V2FeeQuoteTaxLine"
+    V2CreateReserveRuleRequest:
+      type: object
+      required: [scope, percentage, hold_hours]
+      properties:
+        scope:
+          type: string
+          enum: [client, account]
+        client_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+          description: Required for a client rule. An account rule takes the account currency.
+        percentage:
+          type: string
+          description: Share of each credit that is held, as a decimal string. "10" is 10%.
+        hold_hours:
+          type: integer
+          minimum: 1
+          maximum: 8760
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    V2ReserveRule:
+      type: object
+      required: [id, scope, currency, percentage, hold_hours, effective_from, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          enum: [client, account]
+        client_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        percentage:
+          type: string
+        hold_hours:
+          type: integer
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, revoked]
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2ReserveRuleResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2ReserveRule"
+    V2ReserveRuleListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [rules]
+          properties:
+            rules:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2ReserveRule"
+    V2ReservePreviewRequest:
+      type: object
+      required: [account_id, amount_minor]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        amount_minor:
+          type: integer
+          format: int64
+        at:
+          type: string
+          format: date-time
+    V2ReservePreview:
+      type: object
+      required: [account_id, currency, amount_minor, reserve_minor, available_minor, rule_source]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        reserve_minor:
+          type: integer
+          format: int64
+        available_minor:
+          type: integer
+          format: int64
+        percentage:
+          type: string
+        hold_hours:
+          type: integer
+        release_at:
+          type: string
+          format: date-time
+        rule_source:
+          type: string
+          enum: [account, client, none]
+        rule_id:
+          type: string
+          format: uuid
+    V2ReservePreviewResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2ReservePreview"
     V2FeeQuoteResponse:
       type: object
       required: [data]

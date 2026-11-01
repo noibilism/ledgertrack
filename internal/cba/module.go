@@ -98,6 +98,17 @@ func NewFXModule() fx.Option {
 			) services.FeeConfigService {
 				return services.NewFeeConfigService(feeConfigRepository, accountRepository, productRepository, clientRepository, glAccountRepository)
 			},
+			func(db *bun.DB) repositories.ReserveRepository {
+				return repositories.NewReserveRepository(db)
+			},
+			func(
+				reserveRepository repositories.ReserveRepository,
+				accountRepository repositories.AccountRepository,
+				productRepository repositories.ProductRepository,
+				clientRepository repositories.ClientRepository,
+			) services.ReserveRuleService {
+				return services.NewReserveRuleService(reserveRepository, accountRepository, productRepository, clientRepository)
+			},
 			func(glAccountRepository repositories.GLAccountRepository) services.GLReportingService {
 				return services.NewGLReportingService(glAccountRepository)
 			},

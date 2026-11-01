@@ -224,6 +224,18 @@ func NewRouter(
 					router.Post("/fees/quote", ledgertrackOnly(quoteFees(routerOptions.feeConfigService)))
 				}
 
+				if routerOptions.reserveRuleService != nil {
+					router.Route("/reserve-rules", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createReserveRule(routerOptions.reserveRuleService)))
+						router.Get("/", ledgertrackOnly(listReserveRules(routerOptions.reserveRuleService)))
+						router.Post("/preview", ledgertrackOnly(previewReserve(routerOptions.reserveRuleService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readReserveRule(routerOptions.reserveRuleService)))
+							router.Post("/revoke", ledgertrackOnly(revokeReserveRule(routerOptions.reserveRuleService)))
+						})
+					})
+				}
+
 				if routerOptions.glAccountService != nil {
 					router.Route("/gl/accounts", func(router chi.Router) {
 						router.Post("/", ledgertrackOnly(createGLAccount(routerOptions.glAccountService)))
@@ -317,6 +329,7 @@ type routerOptions struct {
 	financeReportingService        services.FinanceReportingService
 	glAccountService               services.GLAccountService
 	feeConfigService               services.FeeConfigService
+	reserveRuleService             services.ReserveRuleService
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
@@ -388,6 +401,12 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithReserveRuleService(reserveRuleService services.ReserveRuleService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.reserveRuleService = reserveRuleService
 	}
 }
 
