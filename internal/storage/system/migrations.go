@@ -581,6 +581,27 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add currencies used by Bankman products",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					// Precision 2 for every code, including XOF and XAF, to match the
+					// decimal(19,4) values Bankman holds. do nothing on conflict so a
+					// precision an operator already set is never overwritten.
+					_, err := tx.ExecContext(ctx, `
+						insert into _system.currencies (code, precision, enabled)
+						values
+							('XOF', 2, true),
+							('XAF', 2, true),
+							('TZS', 2, true),
+							('MZN', 2, true),
+							('ZAR', 2, true)
+						on conflict (code) do nothing;
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator
