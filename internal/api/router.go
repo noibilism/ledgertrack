@@ -108,6 +108,7 @@ func NewRouter(
 		v2.WithReportingService(routerOptions.reportingService),
 		v2.WithFinanceReportingService(routerOptions.financeReportingService),
 		v2.WithGLAccountService(routerOptions.glAccountService),
+		v2.WithFeeConfigService(routerOptions.feeConfigService),
 		v2.WithGLReportingService(routerOptions.glReportingService),
 		v2.WithChannelFeeConfigService(routerOptions.channelFeeConfigService),
 		v2.WithChannelRevenueReportingService(routerOptions.channelRevenueReportingService),
@@ -144,6 +145,7 @@ type routerOptions struct {
 	reportingService               services.ReportingService
 	financeReportingService        services.FinanceReportingService
 	glAccountService               services.GLAccountService
+	feeConfigService               services.FeeConfigService
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
@@ -223,6 +225,12 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithFeeConfigService(feeConfigService services.FeeConfigService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.feeConfigService = feeConfigService
 	}
 }
 

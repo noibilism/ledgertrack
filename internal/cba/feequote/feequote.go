@@ -37,12 +37,15 @@ type Tax struct {
 	Max  *string
 }
 
-// Input describes one quote. Amount is in major units. Fee and Tax may be nil.
+// Input describes one quote. Amount is in major units. Fees are the rules that apply to
+// the event (a product can combine a flat and a percentage fee); each is rounded on its own
+// and the fee is their sum. Taxes are the tax rules that apply; each is rounded on its own and
+// the tax is their sum.
 type Input struct {
 	Amount    decimal.Decimal
 	Precision int32
-	Fee       *models.TransactionFee
-	Tax       *Tax
+	Fees      []models.TransactionFee
+	Taxes     []Tax
 }
 
 // Result holds the amounts of one quote, all rounded to the currency precision.
@@ -50,10 +53,14 @@ type Input struct {
 // what leaves the customer's wallet.
 type Result struct {
 	Amount decimal.Decimal
-	Fee    decimal.Decimal
-	Tax    decimal.Decimal
-	Gross  decimal.Decimal
-	Total  decimal.Decimal
+	// FeeLines holds the rounded fee of each input rule, in input order. Fee is their sum.
+	FeeLines []decimal.Decimal
+	Fee      decimal.Decimal
+	// TaxLines holds the rounded tax of each input rule, in input order. Tax is their sum.
+	TaxLines []decimal.Decimal
+	Tax      decimal.Decimal
+	Gross    decimal.Decimal
+	Total    decimal.Decimal
 }
 
 // Quote computes the fee, then the tax on the fee or on the amount, rounding each line
@@ -66,23 +73,27 @@ func Quote(in Input) (Result, error) {
 		return Result{}, fmt.Errorf("%w: precision %d", ErrInvalidInput, in.Precision)
 	}
 	out := Result{Amount: in.Amount.RoundBank(in.Precision)}
-	if in.Fee != nil {
-		fee, err := FeeAmount(*in.Fee, in.Amount)
+	for _, rule := range in.Fees {
+		fee, err := FeeAmount(rule, in.Amount)
 		if err != nil {
 			return Result{}, err
 		}
-		out.Fee = fee.RoundBank(in.Precision)
+		line := fee.RoundBank(in.Precision)
+		out.FeeLines = append(out.FeeLines, line)
+		out.Fee = out.Fee.Add(line)
 	}
-	if in.Tax != nil {
+	for _, rule := range in.Taxes {
 		base := in.Amount
-		if in.Tax.Base == TaxBaseFee {
+		if rule.Base == TaxBaseFee {
 			base = out.Fee
 		}
-		tax, err := TaxAmount(*in.Tax, base)
+		tax, err := TaxAmount(rule, base)
 		if err != nil {
 			return Result{}, err
 		}
-		out.Tax = tax.RoundBank(in.Precision)
+		line := tax.RoundBank(in.Precision)
+		out.TaxLines = append(out.TaxLines, line)
+		out.Tax = out.Tax.Add(line)
 	}
 	out.Gross = out.Fee.Add(out.Tax)
 	out.Total = out.Amount.Add(out.Gross)

@@ -17,8 +17,8 @@ func TestQuoteWorkedExamples(t *testing.T) {
 		r, err := Quote(Input{
 			Amount:    d("100000"),
 			Precision: 2,
-			Fee:       &models.TransactionFee{Type: FeeTypeFlat, Value: "1400"},
-			Tax:       &Tax{Base: TaxBaseFee, Rate: "7.5"},
+			Fees:      []models.TransactionFee{{Type: FeeTypeFlat, Value: "1400"}},
+			Taxes:     []Tax{{Base: TaxBaseFee, Rate: "7.5"}},
 		})
 		require.NoError(t, err)
 		require.Equal(t, "1400", r.Fee.String())
@@ -30,8 +30,8 @@ func TestQuoteWorkedExamples(t *testing.T) {
 		r, err := Quote(Input{
 			Amount:    d("100000"),
 			Precision: 2,
-			Fee:       &models.TransactionFee{Type: FeeTypePercentage, Value: "1"},
-			Tax:       &Tax{Base: TaxBaseAmount, Rate: "0.5"},
+			Fees:      []models.TransactionFee{{Type: FeeTypePercentage, Value: "1"}},
+			Taxes:     []Tax{{Base: TaxBaseAmount, Rate: "0.5"}},
 		})
 		require.NoError(t, err)
 		require.Equal(t, "1000", r.Fee.String())
@@ -42,15 +42,15 @@ func TestQuoteWorkedExamples(t *testing.T) {
 
 func TestQuoteRoundsEachLineHalfEven(t *testing.T) {
 	// 0.125% of 100.00 is 0.125, which rounds half-even to 0.12 (not 0.13).
-	r, err := Quote(Input{Amount: d("100"), Precision: 2, Fee: &models.TransactionFee{Type: FeeTypePercentage, Value: "0.125"}})
+	r, err := Quote(Input{Amount: d("100"), Precision: 2, Fees: []models.TransactionFee{{Type: FeeTypePercentage, Value: "0.125"}}})
 	require.NoError(t, err)
 	require.Equal(t, "0.12", r.Fee.String())
 
 	// Tax is computed on the rounded fee, never on the unrounded one: 0.12 * 10% = 0.012 -> 0.01.
 	r, err = Quote(Input{
 		Amount: d("100"), Precision: 2,
-		Fee: &models.TransactionFee{Type: FeeTypePercentage, Value: "0.125"},
-		Tax: &Tax{Base: TaxBaseFee, Rate: "10"},
+		Fees:  []models.TransactionFee{{Type: FeeTypePercentage, Value: "0.125"}},
+		Taxes: []Tax{{Base: TaxBaseFee, Rate: "10"}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "0.01", r.Tax.String())
@@ -59,9 +59,36 @@ func TestQuoteRoundsEachLineHalfEven(t *testing.T) {
 }
 
 func TestQuoteZeroDecimalPrecision(t *testing.T) {
-	r, err := Quote(Input{Amount: d("1000"), Precision: 0, Fee: &models.TransactionFee{Type: FeeTypePercentage, Value: "0.25"}})
+	r, err := Quote(Input{Amount: d("1000"), Precision: 0, Fees: []models.TransactionFee{{Type: FeeTypePercentage, Value: "0.25"}}})
 	require.NoError(t, err)
 	require.Equal(t, "2", r.Fee.String()) // 2.5 rounds half-even to 2
+}
+
+func TestQuoteCombinedRulesRoundEachLine(t *testing.T) {
+	// Flat 10 plus 0.125% of 100.00 (0.125 -> 0.12): lines 10 and 0.12, fee 10.12.
+	r, err := Quote(Input{Amount: d("100"), Precision: 2, Fees: []models.TransactionFee{
+		{Type: FeeTypeFlat, Value: "10"},
+		{Type: FeeTypePercentage, Value: "0.125"},
+	}, Taxes: []Tax{{Base: TaxBaseFee, Rate: "10"}}})
+	require.NoError(t, err)
+	require.Len(t, r.FeeLines, 2)
+	require.Equal(t, "10", r.FeeLines[0].String())
+	require.Equal(t, "0.12", r.FeeLines[1].String())
+	require.Equal(t, "10.12", r.Fee.String())
+	require.Equal(t, "1.01", r.Tax.String()) // 10% of 10.12 = 1.012
+	require.Equal(t, "111.13", r.Total.String())
+}
+
+func TestQuoteSeveralTaxesAreSummedAfterRoundingEach(t *testing.T) {
+	r, err := Quote(Input{
+		Amount: d("100"), Precision: 2,
+		Fees:  []models.TransactionFee{{Type: FeeTypeFlat, Value: "10.05"}},
+		Taxes: []Tax{{Base: TaxBaseFee, Rate: "7.5"}, {Base: TaxBaseAmount, Rate: "0.125"}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"0.75", "0.12"}, []string{r.TaxLines[0].String(), r.TaxLines[1].String()}) // 0.75375 and 0.125
+	require.Equal(t, "0.87", r.Tax.String())
+	require.Equal(t, "10.92", r.Gross.String())
 }
 
 func TestQuoteNoFeeNoTax(t *testing.T) {
@@ -73,14 +100,14 @@ func TestQuoteNoFeeNoTax(t *testing.T) {
 }
 
 func TestQuoteTaxOnAmountWithoutFee(t *testing.T) {
-	r, err := Quote(Input{Amount: d("200"), Precision: 2, Tax: &Tax{Base: TaxBaseAmount, Rate: "1.5"}})
+	r, err := Quote(Input{Amount: d("200"), Precision: 2, Taxes: []Tax{{Base: TaxBaseAmount, Rate: "1.5"}}})
 	require.NoError(t, err)
 	require.Equal(t, "3", r.Tax.String())
 	require.Equal(t, "203", r.Total.String())
 }
 
 func TestQuoteTaxOnFeeIsZeroWhenThereIsNoFee(t *testing.T) {
-	r, err := Quote(Input{Amount: d("200"), Precision: 2, Tax: &Tax{Base: TaxBaseFee, Rate: "7.5", Min: sp("5")}})
+	r, err := Quote(Input{Amount: d("200"), Precision: 2, Taxes: []Tax{{Base: TaxBaseFee, Rate: "7.5", Min: sp("5")}}})
 	require.NoError(t, err)
 	require.True(t, r.Tax.IsZero(), "a minimum must not create tax on a zero fee")
 }
@@ -122,7 +149,7 @@ func TestQuoteRejectsBadInput(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidInput)
 	_, err = Quote(Input{Amount: d("1"), Precision: 40})
 	require.ErrorIs(t, err, ErrInvalidInput)
-	_, err = Quote(Input{Amount: d("1"), Precision: 2, Tax: &Tax{Base: "gross", Rate: "5"}})
+	_, err = Quote(Input{Amount: d("1"), Precision: 2, Taxes: []Tax{{Base: "gross", Rate: "5"}}})
 	require.ErrorIs(t, err, ErrInvalidRule)
 }
 

@@ -2340,6 +2340,755 @@ To perform this operation, you must be authenticated by means of one of the foll
 Authorization ( Scopes: ledger:read )
 </aside>
 
+## Create a fee override
+
+<a id="opIdv2CreateFeeOverride"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/fee-overrides HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/fee-overrides`
+
+Replaces the product's transaction fees for one event, for one client (optionally one product) or one account. `rules` are all the fee rules for the event, so a combined fee (flat plus percentage) is one override. Resolution order is account override, then client and product override, then client-wide override in the same currency, then the product default. Overlapping overrides for the same target are rejected with 409. This endpoint is supported on the `ledgertrack` ledger.
+
+> Body parameter
+
+```json
+{
+  "scope": "client",
+  "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+  "currency": "NGN",
+  "event": "debit",
+  "rules": [
+    {
+      "event": "debit",
+      "type": "flat",
+      "value": "string",
+      "tiers": [
+        {
+          "from": "0",
+          "to": "string",
+          "type": "flat",
+          "value": "string"
+        }
+      ],
+      "min": "string",
+      "max": "string",
+      "currency": "string"
+    }
+  ],
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "metadata": {}
+}
+```
+
+<h3 id="create-a-fee-override-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|body|body|[V2CreateFeeOverrideRequest](#schemav2createfeeoverriderequest)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "scope": "string",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+    "currency": "string",
+    "event": "string",
+    "rules": [
+      {
+        "event": "debit",
+        "type": "flat",
+        "value": "string",
+        "tiers": [
+          {
+            "from": "0",
+            "to": "string",
+            "type": "flat",
+            "value": "string"
+          }
+        ],
+        "min": "string",
+        "max": "string",
+        "currency": "string"
+      }
+    ],
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="create-a-fee-override-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Fee override created|[V2FeeOverrideResponse](#schemav2feeoverrideresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
+## List fee overrides
+
+<a id="opIdv2ListFeeOverrides"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/fee-overrides HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/fee-overrides`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="list-fee-overrides-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|client_id|query|string(uuid)|false|none|
+|account_id|query|string(uuid)|false|none|
+|event|query|string|false|none|
+|status|query|string|false|none|
+
+#### Enumerated Values
+
+|Parameter|Value|
+|---|---|
+|status|active|
+|status|revoked|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "overrides": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "scope": "string",
+        "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+        "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+        "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+        "currency": "string",
+        "event": "string",
+        "rules": [
+          {
+            "event": "debit",
+            "type": "flat",
+            "value": "string",
+            "tiers": [
+              {
+                "from": "0",
+                "to": "string",
+                "type": "flat",
+                "value": "string"
+              }
+            ],
+            "min": "string",
+            "max": "string",
+            "currency": "string"
+          }
+        ],
+        "effective_from": "2019-08-24T14:15:22Z",
+        "effective_to": "2019-08-24T14:15:22Z",
+        "status": "active",
+        "metadata": {},
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+```
+
+<h3 id="list-fee-overrides-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2FeeOverrideListResponse](#schemav2feeoverridelistresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Get a fee override
+
+<a id="opIdv2GetFeeOverride"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/fee-overrides/{id} HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/fee-overrides/{id}`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="get-a-fee-override-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "scope": "string",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+    "currency": "string",
+    "event": "string",
+    "rules": [
+      {
+        "event": "debit",
+        "type": "flat",
+        "value": "string",
+        "tiers": [
+          {
+            "from": "0",
+            "to": "string",
+            "type": "flat",
+            "value": "string"
+          }
+        ],
+        "min": "string",
+        "max": "string",
+        "currency": "string"
+      }
+    ],
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="get-a-fee-override-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2FeeOverrideResponse](#schemav2feeoverrideresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Revoke a fee override
+
+<a id="opIdv2RevokeFeeOverride"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/fee-overrides/{id}/revoke HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/fee-overrides/{id}/revoke`
+
+Ends the override now. The product default (or the next override in the resolution order) applies from then on. This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="revoke-a-fee-override-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "scope": "string",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+    "currency": "string",
+    "event": "string",
+    "rules": [
+      {
+        "event": "debit",
+        "type": "flat",
+        "value": "string",
+        "tiers": [
+          {
+            "from": "0",
+            "to": "string",
+            "type": "flat",
+            "value": "string"
+          }
+        ],
+        "min": "string",
+        "max": "string",
+        "currency": "string"
+      }
+    ],
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="revoke-a-fee-override-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2FeeOverrideResponse](#schemav2feeoverrideresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
+## Create a tax rule
+
+<a id="opIdv2CreateTaxRule"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/tax-rules HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/tax-rules`
+
+A tax rule applies to a client country (ISO 3166-1 alpha-2) and an event. `base` is `fee` (tax on the rounded fee) or `amount` (tax on the transaction amount). `payable_accounts` maps each currency to the liability GL account code that receives the tax. The country comes from the client's incorporation country, then the contact address country. This endpoint is supported on the `ledgertrack` ledger.
+
+> Body parameter
+
+```json
+{
+  "country": "NG",
+  "code": "VAT",
+  "name": "Value added tax",
+  "event": "debit",
+  "base": "fee",
+  "rate": "7.5",
+  "min": "string",
+  "max": "string",
+  "payable_accounts": {
+    "NGN": "202100.NGN"
+  },
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "metadata": {}
+}
+```
+
+<h3 id="create-a-tax-rule-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|body|body|[V2CreateTaxRuleRequest](#schemav2createtaxrulerequest)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "country": "string",
+    "code": "string",
+    "name": "string",
+    "event": "string",
+    "base": "string",
+    "rate": "string",
+    "min": "string",
+    "max": "string",
+    "payable_accounts": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="create-a-tax-rule-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Tax rule created|[V2TaxRuleResponse](#schemav2taxruleresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
+## List tax rules
+
+<a id="opIdv2ListTaxRules"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/tax-rules HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/tax-rules`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="list-tax-rules-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|country|query|string|false|none|
+|event|query|string|false|none|
+|status|query|string|false|none|
+
+#### Enumerated Values
+
+|Parameter|Value|
+|---|---|
+|status|active|
+|status|revoked|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "rules": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "country": "string",
+        "code": "string",
+        "name": "string",
+        "event": "string",
+        "base": "string",
+        "rate": "string",
+        "min": "string",
+        "max": "string",
+        "payable_accounts": {
+          "property1": "string",
+          "property2": "string"
+        },
+        "effective_from": "2019-08-24T14:15:22Z",
+        "effective_to": "2019-08-24T14:15:22Z",
+        "status": "active",
+        "metadata": {},
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+```
+
+<h3 id="list-tax-rules-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2TaxRuleListResponse](#schemav2taxrulelistresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Get a tax rule
+
+<a id="opIdv2GetTaxRule"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/tax-rules/{id} HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/tax-rules/{id}`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="get-a-tax-rule-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "country": "string",
+    "code": "string",
+    "name": "string",
+    "event": "string",
+    "base": "string",
+    "rate": "string",
+    "min": "string",
+    "max": "string",
+    "payable_accounts": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="get-a-tax-rule-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2TaxRuleResponse](#schemav2taxruleresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Revoke a tax rule
+
+<a id="opIdv2RevokeTaxRule"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/tax-rules/{id}/revoke HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/tax-rules/{id}/revoke`
+
+Ends the rule now. This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="revoke-a-tax-rule-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "country": "string",
+    "code": "string",
+    "name": "string",
+    "event": "string",
+    "base": "string",
+    "rate": "string",
+    "min": "string",
+    "max": "string",
+    "payable_accounts": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="revoke-a-tax-rule-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2TaxRuleResponse](#schemav2taxruleresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
+## Quote the fee and tax for a transaction
+
+<a id="opIdv2QuoteFees"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/fees/quote HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/fees/quote`
+
+Previews the fee and tax for an amount on an account, using the configuration in force at `at` (default now). Nothing is posted. Fee and tax lines are rounded half-even to the currency precision, tax on the fee uses the rounded fee, and `total` is amount plus fee plus tax. Returns 400 when tax rules exist for the event and the client's country is unknown. This endpoint is supported on the `ledgertrack` ledger.
+
+> Body parameter
+
+```json
+{
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "event": "debit",
+  "amount_minor": 0,
+  "at": "2019-08-24T14:15:22Z"
+}
+```
+
+<h3 id="quote-the-fee-and-tax-for-a-transaction-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|body|body|[V2FeeQuoteRequest](#schemav2feequoterequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "event": "string",
+    "currency": "string",
+    "amount": "string",
+    "fee": "string",
+    "tax": "string",
+    "gross": "string",
+    "total": "string",
+    "amount_minor": 0,
+    "fee_minor": 0,
+    "tax_minor": 0,
+    "total_minor": 0,
+    "fee_source": "account",
+    "fee_override_id": "77f4042c-f990-41c0-9a3f-ccbfd4e7b296",
+    "fee_lines": [
+      {
+        "type": "string",
+        "amount": "string"
+      }
+    ],
+    "tax_lines": [
+      {
+        "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+        "code": "string",
+        "base": "string",
+        "rate": "string",
+        "amount": "string",
+        "payable_account_code": "string"
+      }
+    ]
+  }
+}
+```
+
+<h3 id="quote-the-fee-and-tax-for-a-transaction-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2FeeQuoteResponse](#schemav2feequoteresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
 ## Create a GL account
 
 <a id="opIdv2CreateGLAccount"></a>
@@ -8087,6 +8836,744 @@ and
 |metadata|object|false|none|none|
 |created_at|string(date-time)|false|none|none|
 |updated_at|string(date-time)|false|none|none|
+
+<h2 id="tocS_V2FeeTier">V2FeeTier</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feetier"></a>
+<a id="schema_V2FeeTier"></a>
+<a id="tocSv2feetier"></a>
+<a id="tocsv2feetier"></a>
+
+```json
+{
+  "from": "0",
+  "to": "string",
+  "type": "flat",
+  "value": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|from|string|true|none|none|
+|to|string|false|none|Exclusive upper bound. Omitted on the last tier.|
+|type|string|true|none|none|
+|value|string|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|flat|
+|type|percentage|
+
+<h2 id="tocS_V2TransactionFee">V2TransactionFee</h2>
+<!-- backwards compatibility -->
+<a id="schemav2transactionfee"></a>
+<a id="schema_V2TransactionFee"></a>
+<a id="tocSv2transactionfee"></a>
+<a id="tocsv2transactionfee"></a>
+
+```json
+{
+  "event": "debit",
+  "type": "flat",
+  "value": "string",
+  "tiers": [
+    {
+      "from": "0",
+      "to": "string",
+      "type": "flat",
+      "value": "string"
+    }
+  ],
+  "min": "string",
+  "max": "string",
+  "currency": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|event|string|true|none|none|
+|type|string|true|none|none|
+|value|string|false|none|Amount for `flat`, percent for `percentage`. Not used for `tiered`.|
+|tiers|[[V2FeeTier](#schemav2feetier)]|false|none|Bands for `tiered`. They start at 0, touch each other and the last one is open ended.|
+|min|string|false|none|none|
+|max|string|false|none|none|
+|currency|string|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|event|debit|
+|event|credit|
+|event|transfer|
+|type|flat|
+|type|percentage|
+|type|tiered|
+
+<h2 id="tocS_V2CreateFeeOverrideRequest">V2CreateFeeOverrideRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemav2createfeeoverriderequest"></a>
+<a id="schema_V2CreateFeeOverrideRequest"></a>
+<a id="tocSv2createfeeoverriderequest"></a>
+<a id="tocsv2createfeeoverriderequest"></a>
+
+```json
+{
+  "scope": "client",
+  "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+  "currency": "NGN",
+  "event": "debit",
+  "rules": [
+    {
+      "event": "debit",
+      "type": "flat",
+      "value": "string",
+      "tiers": [
+        {
+          "from": "0",
+          "to": "string",
+          "type": "flat",
+          "value": "string"
+        }
+      ],
+      "min": "string",
+      "max": "string",
+      "currency": "string"
+    }
+  ],
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "metadata": {}
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|scope|string|true|none|none|
+|client_id|string(uuid)|false|none|none|
+|account_id|string(uuid)|false|none|none|
+|product_id|string(uuid)|false|none|Client scope only. Limits the override to accounts of this product.|
+|currency|string|true|none|none|
+|event|string|true|none|none|
+|rules|[[V2TransactionFee](#schemav2transactionfee)]|true|none|none|
+|effective_from|string(date-time)|false|none|none|
+|effective_to|string(date-time)|false|none|none|
+|metadata|object|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|scope|client|
+|scope|account|
+|event|debit|
+|event|credit|
+|event|transfer|
+
+<h2 id="tocS_V2FeeOverride">V2FeeOverride</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feeoverride"></a>
+<a id="schema_V2FeeOverride"></a>
+<a id="tocSv2feeoverride"></a>
+<a id="tocsv2feeoverride"></a>
+
+```json
+{
+  "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+  "scope": "string",
+  "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+  "currency": "string",
+  "event": "string",
+  "rules": [
+    {
+      "event": "debit",
+      "type": "flat",
+      "value": "string",
+      "tiers": [
+        {
+          "from": "0",
+          "to": "string",
+          "type": "flat",
+          "value": "string"
+        }
+      ],
+      "min": "string",
+      "max": "string",
+      "currency": "string"
+    }
+  ],
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "status": "active",
+  "metadata": {},
+  "created_at": "2019-08-24T14:15:22Z",
+  "updated_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|id|string(uuid)|true|none|none|
+|scope|string|true|none|none|
+|client_id|string(uuid)|false|none|none|
+|account_id|string(uuid)|false|none|none|
+|product_id|string(uuid)|false|none|none|
+|currency|string|true|none|none|
+|event|string|true|none|none|
+|rules|[[V2TransactionFee](#schemav2transactionfee)]|true|none|none|
+|effective_from|string(date-time)|true|none|none|
+|effective_to|string(date-time)|false|none|none|
+|status|string|true|none|none|
+|metadata|object|false|none|none|
+|created_at|string(date-time)|true|none|none|
+|updated_at|string(date-time)|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|status|active|
+|status|revoked|
+
+<h2 id="tocS_V2FeeOverrideResponse">V2FeeOverrideResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feeoverrideresponse"></a>
+<a id="schema_V2FeeOverrideResponse"></a>
+<a id="tocSv2feeoverrideresponse"></a>
+<a id="tocsv2feeoverrideresponse"></a>
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "scope": "string",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+    "currency": "string",
+    "event": "string",
+    "rules": [
+      {
+        "event": "debit",
+        "type": "flat",
+        "value": "string",
+        "tiers": [
+          {
+            "from": "0",
+            "to": "string",
+            "type": "flat",
+            "value": "string"
+          }
+        ],
+        "min": "string",
+        "max": "string",
+        "currency": "string"
+      }
+    ],
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|[V2FeeOverride](#schemav2feeoverride)|true|none|none|
+
+<h2 id="tocS_V2FeeOverrideListResponse">V2FeeOverrideListResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feeoverridelistresponse"></a>
+<a id="schema_V2FeeOverrideListResponse"></a>
+<a id="tocSv2feeoverridelistresponse"></a>
+<a id="tocsv2feeoverridelistresponse"></a>
+
+```json
+{
+  "data": {
+    "overrides": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "scope": "string",
+        "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+        "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+        "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+        "currency": "string",
+        "event": "string",
+        "rules": [
+          {
+            "event": "debit",
+            "type": "flat",
+            "value": "string",
+            "tiers": [
+              {
+                "from": "0",
+                "to": "string",
+                "type": "flat",
+                "value": "string"
+              }
+            ],
+            "min": "string",
+            "max": "string",
+            "currency": "string"
+          }
+        ],
+        "effective_from": "2019-08-24T14:15:22Z",
+        "effective_to": "2019-08-24T14:15:22Z",
+        "status": "active",
+        "metadata": {},
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|object|true|none|none|
+|» overrides|[[V2FeeOverride](#schemav2feeoverride)]|true|none|none|
+
+<h2 id="tocS_V2CreateTaxRuleRequest">V2CreateTaxRuleRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemav2createtaxrulerequest"></a>
+<a id="schema_V2CreateTaxRuleRequest"></a>
+<a id="tocSv2createtaxrulerequest"></a>
+<a id="tocsv2createtaxrulerequest"></a>
+
+```json
+{
+  "country": "NG",
+  "code": "VAT",
+  "name": "Value added tax",
+  "event": "debit",
+  "base": "fee",
+  "rate": "7.5",
+  "min": "string",
+  "max": "string",
+  "payable_accounts": {
+    "NGN": "202100.NGN"
+  },
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "metadata": {}
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|country|string|true|none|ISO 3166-1 alpha-2.|
+|code|string|true|none|none|
+|name|string|true|none|none|
+|event|string|true|none|none|
+|base|string|true|none|none|
+|rate|string|true|none|Percent, so "7.5" is 7.5%.|
+|min|string|false|none|none|
+|max|string|false|none|none|
+|payable_accounts|object|true|none|Liability GL account code per currency.|
+|» **additionalProperties**|string|false|none|none|
+|effective_from|string(date-time)|false|none|none|
+|effective_to|string(date-time)|false|none|none|
+|metadata|object|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|event|debit|
+|event|credit|
+|event|transfer|
+|base|fee|
+|base|amount|
+
+<h2 id="tocS_V2TaxRule">V2TaxRule</h2>
+<!-- backwards compatibility -->
+<a id="schemav2taxrule"></a>
+<a id="schema_V2TaxRule"></a>
+<a id="tocSv2taxrule"></a>
+<a id="tocsv2taxrule"></a>
+
+```json
+{
+  "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+  "country": "string",
+  "code": "string",
+  "name": "string",
+  "event": "string",
+  "base": "string",
+  "rate": "string",
+  "min": "string",
+  "max": "string",
+  "payable_accounts": {
+    "property1": "string",
+    "property2": "string"
+  },
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "status": "active",
+  "metadata": {},
+  "created_at": "2019-08-24T14:15:22Z",
+  "updated_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|id|string(uuid)|true|none|none|
+|country|string|true|none|none|
+|code|string|true|none|none|
+|name|string|true|none|none|
+|event|string|true|none|none|
+|base|string|true|none|none|
+|rate|string|true|none|none|
+|min|string|false|none|none|
+|max|string|false|none|none|
+|payable_accounts|object|true|none|none|
+|» **additionalProperties**|string|false|none|none|
+|effective_from|string(date-time)|true|none|none|
+|effective_to|string(date-time)|false|none|none|
+|status|string|true|none|none|
+|metadata|object|false|none|none|
+|created_at|string(date-time)|true|none|none|
+|updated_at|string(date-time)|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|status|active|
+|status|revoked|
+
+<h2 id="tocS_V2TaxRuleResponse">V2TaxRuleResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2taxruleresponse"></a>
+<a id="schema_V2TaxRuleResponse"></a>
+<a id="tocSv2taxruleresponse"></a>
+<a id="tocsv2taxruleresponse"></a>
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "country": "string",
+    "code": "string",
+    "name": "string",
+    "event": "string",
+    "base": "string",
+    "rate": "string",
+    "min": "string",
+    "max": "string",
+    "payable_accounts": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|[V2TaxRule](#schemav2taxrule)|true|none|none|
+
+<h2 id="tocS_V2TaxRuleListResponse">V2TaxRuleListResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2taxrulelistresponse"></a>
+<a id="schema_V2TaxRuleListResponse"></a>
+<a id="tocSv2taxrulelistresponse"></a>
+<a id="tocsv2taxrulelistresponse"></a>
+
+```json
+{
+  "data": {
+    "rules": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "country": "string",
+        "code": "string",
+        "name": "string",
+        "event": "string",
+        "base": "string",
+        "rate": "string",
+        "min": "string",
+        "max": "string",
+        "payable_accounts": {
+          "property1": "string",
+          "property2": "string"
+        },
+        "effective_from": "2019-08-24T14:15:22Z",
+        "effective_to": "2019-08-24T14:15:22Z",
+        "status": "active",
+        "metadata": {},
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|object|true|none|none|
+|» rules|[[V2TaxRule](#schemav2taxrule)]|true|none|none|
+
+<h2 id="tocS_V2FeeQuoteRequest">V2FeeQuoteRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feequoterequest"></a>
+<a id="schema_V2FeeQuoteRequest"></a>
+<a id="tocSv2feequoterequest"></a>
+<a id="tocsv2feequoterequest"></a>
+
+```json
+{
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "event": "debit",
+  "amount_minor": 0,
+  "at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|account_id|string(uuid)|true|none|none|
+|event|string|true|none|none|
+|amount_minor|integer(int64)|true|none|Transaction amount in minor units.|
+|at|string(date-time)|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|event|debit|
+|event|credit|
+|event|transfer|
+
+<h2 id="tocS_V2FeeQuoteFeeLine">V2FeeQuoteFeeLine</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feequotefeeline"></a>
+<a id="schema_V2FeeQuoteFeeLine"></a>
+<a id="tocSv2feequotefeeline"></a>
+<a id="tocsv2feequotefeeline"></a>
+
+```json
+{
+  "type": "string",
+  "amount": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|type|string|true|none|none|
+|amount|string|true|none|none|
+
+<h2 id="tocS_V2FeeQuoteTaxLine">V2FeeQuoteTaxLine</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feequotetaxline"></a>
+<a id="schema_V2FeeQuoteTaxLine"></a>
+<a id="tocSv2feequotetaxline"></a>
+<a id="tocsv2feequotetaxline"></a>
+
+```json
+{
+  "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+  "code": "string",
+  "base": "string",
+  "rate": "string",
+  "amount": "string",
+  "payable_account_code": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|rule_id|string(uuid)|true|none|none|
+|code|string|true|none|none|
+|base|string|true|none|none|
+|rate|string|true|none|none|
+|amount|string|true|none|none|
+|payable_account_code|string|true|none|none|
+
+<h2 id="tocS_V2FeeQuote">V2FeeQuote</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feequote"></a>
+<a id="schema_V2FeeQuote"></a>
+<a id="tocSv2feequote"></a>
+<a id="tocsv2feequote"></a>
+
+```json
+{
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "event": "string",
+  "currency": "string",
+  "amount": "string",
+  "fee": "string",
+  "tax": "string",
+  "gross": "string",
+  "total": "string",
+  "amount_minor": 0,
+  "fee_minor": 0,
+  "tax_minor": 0,
+  "total_minor": 0,
+  "fee_source": "account",
+  "fee_override_id": "77f4042c-f990-41c0-9a3f-ccbfd4e7b296",
+  "fee_lines": [
+    {
+      "type": "string",
+      "amount": "string"
+    }
+  ],
+  "tax_lines": [
+    {
+      "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+      "code": "string",
+      "base": "string",
+      "rate": "string",
+      "amount": "string",
+      "payable_account_code": "string"
+    }
+  ]
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|account_id|string(uuid)|true|none|none|
+|event|string|true|none|none|
+|currency|string|true|none|none|
+|amount|string|true|none|none|
+|fee|string|true|none|none|
+|tax|string|true|none|none|
+|gross|string|true|none|Fee plus tax.|
+|total|string|true|none|Amount plus fee plus tax, what leaves the customer's wallet.|
+|amount_minor|integer(int64)|true|none|none|
+|fee_minor|integer(int64)|true|none|none|
+|tax_minor|integer(int64)|true|none|none|
+|total_minor|integer(int64)|true|none|none|
+|fee_source|string|true|none|none|
+|fee_override_id|string(uuid)|false|none|none|
+|fee_lines|[[V2FeeQuoteFeeLine](#schemav2feequotefeeline)]|true|none|none|
+|tax_lines|[[V2FeeQuoteTaxLine](#schemav2feequotetaxline)]|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|fee_source|account|
+|fee_source|client|
+|fee_source|product|
+|fee_source|none|
+
+<h2 id="tocS_V2FeeQuoteResponse">V2FeeQuoteResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2feequoteresponse"></a>
+<a id="schema_V2FeeQuoteResponse"></a>
+<a id="tocSv2feequoteresponse"></a>
+<a id="tocsv2feequoteresponse"></a>
+
+```json
+{
+  "data": {
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "event": "string",
+    "currency": "string",
+    "amount": "string",
+    "fee": "string",
+    "tax": "string",
+    "gross": "string",
+    "total": "string",
+    "amount_minor": 0,
+    "fee_minor": 0,
+    "tax_minor": 0,
+    "total_minor": 0,
+    "fee_source": "account",
+    "fee_override_id": "77f4042c-f990-41c0-9a3f-ccbfd4e7b296",
+    "fee_lines": [
+      {
+        "type": "string",
+        "amount": "string"
+      }
+    ],
+    "tax_lines": [
+      {
+        "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+        "code": "string",
+        "base": "string",
+        "rate": "string",
+        "amount": "string",
+        "payable_account_code": "string"
+      }
+    ]
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|[V2FeeQuote](#schemav2feequote)|true|none|none|
 
 <h2 id="tocS_V2GLAccountResponse">V2GLAccountResponse</h2>
 <!-- backwards compatibility -->
