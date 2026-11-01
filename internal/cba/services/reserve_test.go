@@ -72,20 +72,59 @@ func (s *reserveRepositoryStub) ActiveRulesFor(_ context.Context, accountID, cli
 	return out, nil
 }
 
+type calendarRepositoryStub struct {
+	calendars map[uuid.UUID]*models.BusinessCalendar
+}
+
+func newCalendarRepositoryStub() *calendarRepositoryStub {
+	return &calendarRepositoryStub{calendars: map[uuid.UUID]*models.BusinessCalendar{}}
+}
+
+func (s *calendarRepositoryStub) CreateCalendar(_ context.Context, c *models.BusinessCalendar) error {
+	if c.ID == uuid.Nil {
+		c.ID = uuid.New()
+	}
+	cp := *c
+	s.calendars[c.ID] = &cp
+	return nil
+}
+func (s *calendarRepositoryStub) GetCalendar(_ context.Context, id uuid.UUID) (*models.BusinessCalendar, error) {
+	if c, ok := s.calendars[id]; ok {
+		cp := *c
+		return &cp, nil
+	}
+	return nil, postgres.ErrNotFound
+}
+func (s *calendarRepositoryStub) ListCalendars(context.Context) ([]models.BusinessCalendar, error) {
+	out := []models.BusinessCalendar{}
+	for _, c := range s.calendars {
+		out = append(out, *c)
+	}
+	return out, nil
+}
+func (s *calendarRepositoryStub) UpdateCalendar(_ context.Context, c *models.BusinessCalendar) error {
+	cp := *c
+	s.calendars[c.ID] = &cp
+	return nil
+}
+
 type reserveFixture struct {
-	svc     *DefaultReserveRuleService
-	ctx     context.Context
-	now     time.Time
-	client  *models.Client
-	product *models.Product
-	account *models.Account
+	calendars *DefaultBusinessCalendarService
+	svc       *DefaultReserveRuleService
+	ctx       context.Context
+	now       time.Time
+	client    *models.Client
+	product   *models.Product
+	account   *models.Account
 }
 
 func newReserveFixture(t *testing.T) *reserveFixture {
 	t.Helper()
 	f := &reserveFixture{ctx: context.Background(), now: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}
 	clients, accounts, products := newClientRepositoryStub(), newAccountRepositoryStub(), newProductRepositoryStub()
-	f.svc = NewReserveRuleService(newReserveRepositoryStub(), accounts, products, clients)
+	calendarRepo := newCalendarRepositoryStub()
+	f.calendars = NewBusinessCalendarService(calendarRepo)
+	f.svc = NewReserveRuleService(newReserveRepositoryStub(), accounts, products, clients, calendarRepo)
 	f.svc.now = func() time.Time { return f.now }
 
 	f.client = &models.Client{ID: uuid.New(), ClientNumber: "CL-1", Type: "corporate", Status: "active"}
@@ -251,5 +290,210 @@ func TestPreviewRejectsNonPositiveAmount(t *testing.T) {
 	_, err := f.svc.Preview(f.ctx, ReservePreviewRequest{AccountID: f.account.ID, AmountMinor: 0})
 	require.ErrorIs(t, err, ErrReserveValidation)
 	_, err = f.svc.Preview(f.ctx, ReservePreviewRequest{AccountID: uuid.New(), AmountMinor: 100})
+	require.ErrorIs(t, err, ErrReserveNotFound)
+}
+
+func lagosCalendar(t *testing.T, f *reserveFixture, holidays ...string) *models.BusinessCalendar {
+	t.Helper()
+	cal, err := f.calendars.CreateCalendar(f.ctx, CalendarInput{
+		Code: "NG-BANKING", Name: "Nigeria banking hours", Timezone: "Africa/Lagos",
+		WorkingDays: []int{1, 2, 3, 4, 5}, OpenTime: "08:00", CloseTime: "17:00", Holidays: holidays,
+	})
+	require.NoError(t, err)
+	return cal
+}
+
+func utc(day, hour, minute int) time.Time {
+	return time.Date(2026, 11, day, hour, minute, 0, 0, time.UTC)
+}
+
+func TestAddBusinessHours(t *testing.T) {
+	f := newReserveFixture(t)
+	cal := lagosCalendar(t, f, "2026-11-10") // Tuesday holiday
+	for name, tc := range map[string]struct {
+		start time.Time
+		hours int
+		want  time.Time
+	}{
+		// Fri 15:00 Lagos (14:00 UTC): 2h Friday, 9h Monday, Tuesday holiday, 9h Wednesday, 4h Thursday from 08:00
+		"skips weekend and holiday": {utc(6, 14, 0), 24, utc(12, 11, 0)},
+		// Saturday: counting starts Monday 08:00 Lagos, 9 hours fills the day
+		"starts on next opening": {utc(7, 10, 0), 9, utc(9, 16, 0)},
+		// Fri 16:30 Lagos: 30 minutes Friday, 30 minutes Monday
+		"splits across close": {utc(6, 15, 30), 1, utc(9, 7, 30)},
+		// Monday 06:00 Lagos, before opening
+		"before opening": {utc(9, 5, 0), 1, utc(9, 8, 0)},
+		// inside the day, no wrap
+		"same day": {utc(9, 8, 0), 3, utc(9, 11, 0)},
+	} {
+		got, err := AddBusinessHours(tc.start, tc.hours, cal)
+		require.NoError(t, err, name)
+		require.Equal(t, tc.want, got, name)
+	}
+}
+
+func TestBusinessModeRulePreview(t *testing.T) {
+	f := newReserveFixture(t)
+	cal := lagosCalendar(t, f)
+	rule, err := f.svc.CreateRule(f.ctx, CreateReserveRuleInput{
+		Scope: "client", ClientID: &f.client.ID, Currency: "NGN", Percentage: "10", HoldHours: 18,
+		HoldMode: "business", CalendarID: &cal.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, models.HoldModeBusiness, rule.HoldMode)
+
+	// Sunday 1 Nov 12:00 UTC: counting starts Monday 2 Nov 08:00 Lagos; 18h = Monday 9h + Tuesday 9h -> Tuesday 17:00 Lagos
+	p, err := f.svc.Preview(f.ctx, ReservePreviewRequest{AccountID: f.account.ID, AmountMinor: 1_000_000, At: utc(1, 12, 0)})
+	require.NoError(t, err)
+	require.Equal(t, models.HoldModeBusiness, p.HoldMode)
+	require.Equal(t, utc(3, 16, 0), *p.ReleaseAt)
+}
+
+func TestCalendarModeKeepsClockHours(t *testing.T) {
+	f := newReserveFixture(t)
+	f.clientRule(t, "10", 72)
+	p := f.preview(t, 1_000_000)
+	require.Equal(t, models.HoldModeCalendar, p.HoldMode)
+	require.Equal(t, f.now.Add(72*time.Hour), *p.ReleaseAt)
+}
+
+func TestBusinessModeNeedsExistingCalendar(t *testing.T) {
+	f := newReserveFixture(t)
+	missing := uuid.New()
+	base := CreateReserveRuleInput{Scope: "client", ClientID: &f.client.ID, Currency: "NGN", Percentage: "10", HoldHours: 24}
+
+	in := base
+	in.HoldMode = "business"
+	_, err := f.svc.CreateRule(f.ctx, in)
+	require.ErrorIs(t, err, ErrReserveValidation)
+
+	in.CalendarID = &missing
+	_, err = f.svc.CreateRule(f.ctx, in)
+	require.ErrorIs(t, err, ErrReserveNotFound)
+
+	in = base
+	in.CalendarID = &missing // calendar id without business mode
+	_, err = f.svc.CreateRule(f.ctx, in)
+	require.ErrorIs(t, err, ErrReserveValidation)
+
+	in = base
+	in.HoldMode = "weekly"
+	_, err = f.svc.CreateRule(f.ctx, in)
+	require.ErrorIs(t, err, ErrReserveValidation)
+}
+
+func TestCreditTypeRulesAndFallback(t *testing.T) {
+	f := newReserveFixture(t)
+	f.clientRule(t, "10", 72) // every credit
+	card, err := f.svc.CreateRule(f.ctx, CreateReserveRuleInput{
+		Scope: "client", ClientID: &f.client.ID, Currency: "NGN", Percentage: "20", HoldHours: 24,
+		CreditTypes: []string{" Card ", "pos", "card"},
+	})
+	require.NoError(t, err, "a typed rule sits beside a general one")
+	require.Equal(t, []string{"card", "pos"}, card.CreditTypes, "lowercased, de-duplicated, sorted")
+
+	typed, err := f.svc.Preview(f.ctx, ReservePreviewRequest{AccountID: f.account.ID, AmountMinor: 1_000_000, CreditType: "POS"})
+	require.NoError(t, err)
+	require.Equal(t, int64(200_000), typed.ReserveMinor)
+	require.Equal(t, 24, typed.HoldHours)
+	require.Equal(t, "pos", typed.CreditType)
+
+	other, err := f.svc.Preview(f.ctx, ReservePreviewRequest{AccountID: f.account.ID, AmountMinor: 1_000_000, CreditType: "bank_transfer"})
+	require.NoError(t, err)
+	require.Equal(t, int64(100_000), other.ReserveMinor, "falls back to the general rule")
+
+	none, err := f.svc.Preview(f.ctx, ReservePreviewRequest{AccountID: f.account.ID, AmountMinor: 1_000_000})
+	require.NoError(t, err)
+	require.Equal(t, int64(100_000), none.ReserveMinor, "no credit type matches only general rules")
+}
+
+func TestCreditTypeOnlyRuleLeavesOtherCreditsFree(t *testing.T) {
+	f := newReserveFixture(t)
+	_, err := f.svc.CreateRule(f.ctx, CreateReserveRuleInput{
+		Scope: "client", ClientID: &f.client.ID, Currency: "NGN", Percentage: "20", HoldHours: 24, CreditTypes: []string{"card"},
+	})
+	require.NoError(t, err)
+	p, err := f.svc.Preview(f.ctx, ReservePreviewRequest{AccountID: f.account.ID, AmountMinor: 1_000_000, CreditType: "payout_return"})
+	require.NoError(t, err)
+	require.Equal(t, ReserveSourceNone, p.RuleSource)
+	require.Zero(t, p.ReserveMinor)
+}
+
+func TestCreditTypeOverlapAndValidation(t *testing.T) {
+	f := newReserveFixture(t)
+	mk := func(types ...string) error {
+		_, err := f.svc.CreateRule(f.ctx, CreateReserveRuleInput{
+			Scope: "client", ClientID: &f.client.ID, Currency: "NGN", Percentage: "10", HoldHours: 24, CreditTypes: types,
+		})
+		return err
+	}
+	require.NoError(t, mk("card", "pos"))
+	require.ErrorIs(t, mk("pos", "wallet"), ErrReserveConflict, "shares pos")
+	require.NoError(t, mk("wallet"))
+	require.NoError(t, mk(), "a general rule beside typed ones")
+	require.ErrorIs(t, mk(), ErrReserveConflict, "two general rules")
+
+	for _, bad := range []string{"", "Card Payment", "9lives", "a-b", "thisisaverylongcredittypenamethatexceedsthelimit"} {
+		require.ErrorIs(t, mk(bad), ErrReserveValidation, bad)
+	}
+}
+
+func TestAccountRuleIgnoresClientTypedRule(t *testing.T) {
+	f := newReserveFixture(t)
+	_, err := f.svc.CreateRule(f.ctx, CreateReserveRuleInput{Scope: "client", ClientID: &f.client.ID, Currency: "NGN", Percentage: "20", HoldHours: 24, CreditTypes: []string{"card"}})
+	require.NoError(t, err)
+	_, err = f.svc.CreateRule(f.ctx, CreateReserveRuleInput{Scope: "account", AccountID: &f.account.ID, Percentage: "5", HoldHours: 12})
+	require.NoError(t, err)
+	p, err := f.svc.Preview(f.ctx, ReservePreviewRequest{AccountID: f.account.ID, AmountMinor: 1_000_000, CreditType: "card"})
+	require.NoError(t, err)
+	require.Equal(t, ReserveSourceAccount, p.RuleSource, "the account's own rule is the most specific")
+	require.Equal(t, int64(50_000), p.ReserveMinor)
+}
+
+func TestCalendarValidationAndUpdate(t *testing.T) {
+	f := newReserveFixture(t)
+	good := CalendarInput{Code: "GH", Name: "Ghana", Timezone: "Africa/Accra", WorkingDays: []int{5, 1, 1, 2}, OpenTime: "08:30", CloseTime: "16:30", Holidays: []string{"2026-12-25", "2026-03-06", "2026-12-25"}}
+	cal, err := f.calendars.CreateCalendar(f.ctx, good)
+	require.NoError(t, err)
+	require.Equal(t, []int{1, 2, 5}, cal.WorkingDays)
+	require.Equal(t, []string{"2026-03-06", "2026-12-25"}, cal.Holidays)
+
+	_, err = f.calendars.CreateCalendar(f.ctx, good)
+	require.ErrorIs(t, err, ErrReserveConflict, "duplicate code")
+
+	for name, mutate := range map[string]func(*CalendarInput){
+		"bad code":      func(c *CalendarInput) { c.Code = "bad code" },
+		"no name":       func(c *CalendarInput) { c.Name = " " },
+		"bad zone":      func(c *CalendarInput) { c.Timezone = "Lagos" },
+		"no days":       func(c *CalendarInput) { c.WorkingDays = nil },
+		"day 0":         func(c *CalendarInput) { c.WorkingDays = []int{0} },
+		"day 8":         func(c *CalendarInput) { c.WorkingDays = []int{8} },
+		"bad open":      func(c *CalendarInput) { c.OpenTime = "8am" },
+		"bad close":     func(c *CalendarInput) { c.CloseTime = "25:00" },
+		"under an hour": func(c *CalendarInput) { c.OpenTime, c.CloseTime = "09:00", "09:30" },
+		"closes first":  func(c *CalendarInput) { c.OpenTime, c.CloseTime = "17:00", "08:00" },
+		"bad holiday":   func(c *CalendarInput) { c.Holidays = []string{"25/12/2026"} },
+	} {
+		in := good
+		in.Code = "X-" + name[:1]
+		mutate(&in)
+		_, err := f.calendars.CreateCalendar(f.ctx, in)
+		require.ErrorIs(t, err, ErrReserveValidation, name)
+	}
+
+	upd := good
+	upd.Code = ""
+	upd.Name = "Ghana banking"
+	upd.Holidays = []string{"2026-12-26"}
+	updated, err := f.calendars.UpdateCalendar(f.ctx, cal.ID, upd)
+	require.NoError(t, err)
+	require.Equal(t, "GH", updated.Code)
+	require.Equal(t, "Ghana banking", updated.Name)
+	require.Equal(t, []string{"2026-12-26"}, updated.Holidays)
+
+	upd.Code = "OTHER"
+	_, err = f.calendars.UpdateCalendar(f.ctx, cal.ID, upd)
+	require.ErrorIs(t, err, ErrReserveValidation, "code is fixed")
+	_, err = f.calendars.UpdateCalendar(f.ctx, uuid.New(), good)
 	require.ErrorIs(t, err, ErrReserveNotFound)
 }

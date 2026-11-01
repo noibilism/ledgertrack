@@ -140,3 +140,103 @@ func TestReserveErrorMapping(t *testing.T) {
 	rec := doGL(t, router, http.MethodGet, "/ledgertrack/reserve-rules/"+uuid.NewString(), nil)
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+type calendarServiceForHTTPTests struct {
+	err        error
+	lastCreate services.CalendarInput
+	lastUpdate services.CalendarInput
+	lastID     uuid.UUID
+	ret        *models.BusinessCalendar
+}
+
+func (s *calendarServiceForHTTPTests) CreateCalendar(_ context.Context, in services.CalendarInput) (*models.BusinessCalendar, error) {
+	s.lastCreate = in
+	return s.ret, s.err
+}
+func (s *calendarServiceForHTTPTests) GetCalendar(_ context.Context, id uuid.UUID) (*models.BusinessCalendar, error) {
+	s.lastID = id
+	return s.ret, s.err
+}
+func (s *calendarServiceForHTTPTests) ListCalendars(context.Context) ([]models.BusinessCalendar, error) {
+	return []models.BusinessCalendar{}, s.err
+}
+func (s *calendarServiceForHTTPTests) UpdateCalendar(_ context.Context, id uuid.UUID, in services.CalendarInput) (*models.BusinessCalendar, error) {
+	s.lastID, s.lastUpdate = id, in
+	return s.ret, s.err
+}
+
+func newCalendarRouterForTests(t *testing.T, svc services.BusinessCalendarService) http.Handler {
+	t.Helper()
+	systemController, mockLedger := newTestingSystemController(t, false)
+	mockLedger.EXPECT().IsDatabaseUpToDate(gomock.Any()).Return(true, nil).AnyTimes()
+	return NewRouter(systemController, auth.NewNoAuth(), "develop", WithBusinessCalendarService(svc))
+}
+
+func TestBusinessCalendarEndpoints(t *testing.T) {
+	t.Parallel()
+	id := uuid.New()
+	svc := &calendarServiceForHTTPTests{ret: &models.BusinessCalendar{ID: id, Code: "NG"}}
+	router := newCalendarRouterForTests(t, svc)
+
+	body := `{"code":"NG","name":"Nigeria","timezone":"Africa/Lagos","working_days":[1,2,3,4,5],"open_time":"08:00","close_time":"17:00","holidays":["2026-12-25"]}`
+	rec := doGL(t, router, http.MethodPost, "/ledgertrack/business-calendars", body)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Equal(t, "Africa/Lagos", svc.lastCreate.Timezone)
+	require.Equal(t, []int{1, 2, 3, 4, 5}, svc.lastCreate.WorkingDays)
+
+	rec = doGL(t, router, http.MethodPost, "/ledgertrack/business-calendars", `{"code":"NG","surprise":1}`)
+	assertErrorCode(t, rec, http.StatusBadRequest, common.ErrValidation)
+
+	rec = doGL(t, router, http.MethodGet, "/ledgertrack/business-calendars", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	rec = doGL(t, router, http.MethodGet, "/ledgertrack/business-calendars/"+id.String(), nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	rec = doGL(t, router, http.MethodGet, "/ledgertrack/business-calendars/nope", nil)
+	assertErrorCode(t, rec, http.StatusBadRequest, common.ErrValidation)
+
+	rec = doGL(t, router, http.MethodPut, "/ledgertrack/business-calendars/"+id.String(), body)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, id, svc.lastID)
+	require.Equal(t, "17:00", svc.lastUpdate.CloseTime)
+
+	rec = doGL(t, router, http.MethodGet, "/other/business-calendars", nil)
+	require.Equal(t, http.StatusNotFound, rec.Code, "ledgertrack only")
+
+	for name, tc := range map[string]struct {
+		err    error
+		status int
+		code   string
+	}{
+		"validation": {services.ErrReserveValidation, http.StatusBadRequest, common.ErrValidation},
+		"duplicate":  {services.ErrReserveConflict, http.StatusConflict, common.ErrConflict},
+	} {
+		r := newCalendarRouterForTests(t, &calendarServiceForHTTPTests{err: tc.err})
+		assertErrorCode(t, doGL(t, r, http.MethodPost, "/ledgertrack/business-calendars", body), tc.status, tc.code)
+		_ = name
+	}
+	r := newCalendarRouterForTests(t, &calendarServiceForHTTPTests{err: services.ErrReserveNotFound})
+	rec = doGL(t, r, http.MethodGet, "/ledgertrack/business-calendars/"+id.String(), nil)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestReserveRuleAndPreviewCarryBusinessHoursAndCreditType(t *testing.T) {
+	t.Parallel()
+	calendarID, clientID, accountID := uuid.New(), uuid.New(), uuid.New()
+	svc := &reserveServiceForHTTPTests{
+		ruleReturn:    &models.ReserveRule{ID: uuid.New(), Scope: "client", Status: "active"},
+		previewReturn: &services.ReservePreview{AccountID: accountID, RuleSource: "client"},
+	}
+	router := newReserveRouterForTests(t, svc)
+
+	rec := doGL(t, router, http.MethodPost, "/ledgertrack/reserve-rules",
+		`{"scope":"client","client_id":"`+clientID.String()+`","currency":"NGN","percentage":"10","hold_hours":48,"hold_mode":"business","calendar_id":"`+calendarID.String()+`","credit_types":["card","pos"]}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Equal(t, "business", svc.lastCreate.HoldMode)
+	require.Equal(t, calendarID, *svc.lastCreate.CalendarID)
+	require.Equal(t, []string{"card", "pos"}, svc.lastCreate.CreditTypes)
+
+	rec = doGL(t, router, http.MethodPost, "/ledgertrack/reserve-rules/preview",
+		`{"account_id":"`+accountID.String()+`","amount_minor":1000,"credit_type":"card"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, "card", svc.lastPreview.CreditType)
+}

@@ -224,6 +224,17 @@ func NewRouter(
 					router.Post("/fees/quote", ledgertrackOnly(quoteFees(routerOptions.feeConfigService)))
 				}
 
+				if routerOptions.calendarService != nil {
+					router.Route("/business-calendars", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createBusinessCalendar(routerOptions.calendarService)))
+						router.Get("/", ledgertrackOnly(listBusinessCalendars(routerOptions.calendarService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readBusinessCalendar(routerOptions.calendarService)))
+							router.Put("/", ledgertrackOnly(updateBusinessCalendar(routerOptions.calendarService)))
+						})
+					})
+				}
+
 				if routerOptions.reserveRuleService != nil {
 					router.Route("/reserve-rules", func(router chi.Router) {
 						router.Post("/", ledgertrackOnly(createReserveRule(routerOptions.reserveRuleService)))
@@ -330,6 +341,7 @@ type routerOptions struct {
 	glAccountService               services.GLAccountService
 	feeConfigService               services.FeeConfigService
 	reserveRuleService             services.ReserveRuleService
+	calendarService                services.BusinessCalendarService
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
@@ -401,6 +413,12 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithBusinessCalendarService(calendarService services.BusinessCalendarService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.calendarService = calendarService
 	}
 }
 

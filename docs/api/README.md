@@ -3000,6 +3000,292 @@ To perform this operation, you must be authenticated by means of one of the foll
 Authorization ( Scopes: ledger:write )
 </aside>
 
+## Create a business calendar
+
+<a id="opIdv2CreateBusinessCalendar"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/business-calendars HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/business-calendars`
+
+Defines business hours for reserve holds: an IANA `timezone`, ISO `working_days` (1 Monday to 7 Sunday), the opening window `open_time` to `close_time` (HH:MM, at least one hour) and `holidays` (YYYY-MM-DD) on which nothing counts. The code is unique. This endpoint is supported on the `ledgertrack` ledger.
+
+> Body parameter
+
+```json
+{
+  "code": "string",
+  "name": "string",
+  "timezone": "Africa/Lagos",
+  "working_days": [
+    1
+  ],
+  "open_time": "08:00",
+  "close_time": "17:00",
+  "holidays": [
+    "2019-08-24"
+  ]
+}
+```
+
+<h3 id="create-a-business-calendar-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|body|body|[V2BusinessCalendarRequest](#schemav2businesscalendarrequest)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "code": "string",
+    "name": "string",
+    "timezone": "string",
+    "working_days": [
+      0
+    ],
+    "open_time": "string",
+    "close_time": "string",
+    "holidays": [
+      "2019-08-24"
+    ],
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="create-a-business-calendar-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[V2BusinessCalendarResponse](#schemav2businesscalendarresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
+## List business calendars
+
+<a id="opIdv2ListBusinessCalendars"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/business-calendars HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/business-calendars`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="list-business-calendars-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "calendars": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "code": "string",
+        "name": "string",
+        "timezone": "string",
+        "working_days": [
+          0
+        ],
+        "open_time": "string",
+        "close_time": "string",
+        "holidays": [
+          "2019-08-24"
+        ],
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+```
+
+<h3 id="list-business-calendars-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2BusinessCalendarListResponse](#schemav2businesscalendarlistresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Get a business calendar
+
+<a id="opIdv2GetBusinessCalendar"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/business-calendars/{id} HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/business-calendars/{id}`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="get-a-business-calendar-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "code": "string",
+    "name": "string",
+    "timezone": "string",
+    "working_days": [
+      0
+    ],
+    "open_time": "string",
+    "close_time": "string",
+    "holidays": [
+      "2019-08-24"
+    ],
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="get-a-business-calendar-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2BusinessCalendarResponse](#schemav2businesscalendarresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Replace a business calendar
+
+<a id="opIdv2UpdateBusinessCalendar"></a>
+
+> Code samples
+
+```http
+PUT http://localhost:8080/v2/{ledger}/business-calendars/{id} HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+Accept: application/json
+
+```
+
+`PUT /v2/{ledger}/business-calendars/{id}`
+
+Replaces the name, timezone, working days, hours and holidays. The code cannot change. Holds already scheduled keep their release time. This endpoint is supported on the `ledgertrack` ledger.
+
+> Body parameter
+
+```json
+{
+  "code": "string",
+  "name": "string",
+  "timezone": "Africa/Lagos",
+  "working_days": [
+    1
+  ],
+  "open_time": "08:00",
+  "close_time": "17:00",
+  "holidays": [
+    "2019-08-24"
+  ]
+}
+```
+
+<h3 id="replace-a-business-calendar-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+|body|body|[V2BusinessCalendarRequest](#schemav2businesscalendarrequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "code": "string",
+    "name": "string",
+    "timezone": "string",
+    "working_days": [
+      0
+    ],
+    "open_time": "string",
+    "close_time": "string",
+    "holidays": [
+      "2019-08-24"
+    ],
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="replace-a-business-calendar-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2BusinessCalendarResponse](#schemav2businesscalendarresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
 ## Create a reserve rule
 
 <a id="opIdv2CreateReserveRule"></a>
@@ -3016,7 +3302,7 @@ Accept: application/json
 
 `POST /v2/{ledger}/reserve-rules`
 
-Holds back a share of every credit into the customer's wallet. The held share stays in the ledger balance (the wallet lien) for `hold_hours`, the agreed SLA, and is then released to the available balance. A `client` rule covers the client's accounts in `currency`, optionally only those of `product_id`. An `account` rule covers one account and takes its currency from the account. Resolution order is account rule, then client and product rule, then client-wide rule. `percentage` is above 0 and at most 100 with up to 4 decimals. `hold_hours` is 1 to 8760. Overlapping rules for the same target are rejected with 409. This endpoint is supported on the `ledgertrack` ledger.
+Holds back a share of every credit into the customer's wallet. The held share stays in the ledger balance (the wallet lien) for `hold_hours`, the agreed SLA, and is then released to the available balance. A `client` rule covers the client's accounts in `currency`, optionally only those of `product_id`. An `account` rule covers one account and takes its currency from the account. Resolution order is account rule, then client and product rule, then client-wide rule. `percentage` is above 0 and at most 100 with up to 4 decimals. `hold_hours` is 1 to 8760. `hold_mode` is `calendar` (clock hours, default) or `business`, which counts only the hours inside the business calendar named by `calendar_id`. `credit_types` limits the rule to those credit types; a rule that names the credit type beats a general rule at the same level. Overlapping rules are rejected with 409: two general rules, or two rules sharing a credit type, for the same target and period. This endpoint is supported on the `ledgertrack` ledger.
 
 > Body parameter
 
@@ -3029,6 +3315,11 @@ Holds back a share of every credit into the customer's wallet. The held share st
   "currency": "string",
   "percentage": "string",
   "hold_hours": 1,
+  "hold_mode": "calendar",
+  "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+  "credit_types": [
+    "string"
+  ],
   "effective_from": "2019-08-24T14:15:22Z",
   "effective_to": "2019-08-24T14:15:22Z",
   "metadata": {}
@@ -3057,6 +3348,11 @@ Holds back a share of every credit into the customer's wallet. The held share st
     "currency": "string",
     "percentage": "string",
     "hold_hours": 0,
+    "hold_mode": "calendar",
+    "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+    "credit_types": [
+      "string"
+    ],
     "effective_from": "2019-08-24T14:15:22Z",
     "effective_to": "2019-08-24T14:15:22Z",
     "status": "active",
@@ -3129,6 +3425,11 @@ This endpoint is supported on the `ledgertrack` ledger.
         "currency": "string",
         "percentage": "string",
         "hold_hours": 0,
+        "hold_mode": "calendar",
+        "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+        "credit_types": [
+          "string"
+        ],
         "effective_from": "2019-08-24T14:15:22Z",
         "effective_to": "2019-08-24T14:15:22Z",
         "status": "active",
@@ -3192,6 +3493,11 @@ This endpoint is supported on the `ledgertrack` ledger.
     "currency": "string",
     "percentage": "string",
     "hold_hours": 0,
+    "hold_mode": "calendar",
+    "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+    "credit_types": [
+      "string"
+    ],
     "effective_from": "2019-08-24T14:15:22Z",
     "effective_to": "2019-08-24T14:15:22Z",
     "status": "active",
@@ -3253,6 +3559,11 @@ Ends the rule now. Holds already made keep their release time. This endpoint is 
     "currency": "string",
     "percentage": "string",
     "hold_hours": 0,
+    "hold_mode": "calendar",
+    "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+    "credit_types": [
+      "string"
+    ],
     "effective_from": "2019-08-24T14:15:22Z",
     "effective_to": "2019-08-24T14:15:22Z",
     "status": "active",
@@ -3291,7 +3602,7 @@ Accept: application/json
 
 `POST /v2/{ledger}/reserve-rules/preview`
 
-Shows how a credit of `amount_minor` into an account would be split at `at` (default now): `reserve_minor` is held in the ledger balance until `release_at`, `available_minor` is available at once. The held share is the percentage of the amount rounded half-even to a whole minor unit. `rule_source` is `account`, `client` or `none`. Nothing is posted. This endpoint is supported on the `ledgertrack` ledger.
+Shows how a credit of `amount_minor` into an account would be split at `at` (default now): `reserve_minor` is held in the ledger balance until `release_at`, `available_minor` is available at once. The held share is the percentage of the amount rounded half-even to a whole minor unit. `credit_type` selects rules that list credit types. For business-hours rules, `release_at` counts only open hours on working days outside holidays. `rule_source` is `account`, `client` or `none`. Nothing is posted. This endpoint is supported on the `ledgertrack` ledger.
 
 > Body parameter
 
@@ -3299,6 +3610,7 @@ Shows how a credit of `amount_minor` into an account would be split at `at` (def
 {
   "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
   "amount_minor": 0,
+  "credit_type": "string",
   "at": "2019-08-24T14:15:22Z"
 }
 ```
@@ -3324,6 +3636,9 @@ Shows how a credit of `amount_minor` into an account would be split at `at` (def
     "available_minor": 0,
     "percentage": "string",
     "hold_hours": 0,
+    "hold_mode": "calendar",
+    "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+    "credit_type": "string",
     "release_at": "2019-08-24T14:15:22Z",
     "rule_source": "account",
     "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60"
@@ -9867,6 +10182,159 @@ and
 |fee_source|product|
 |fee_source|none|
 
+<h2 id="tocS_V2BusinessCalendarRequest">V2BusinessCalendarRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemav2businesscalendarrequest"></a>
+<a id="schema_V2BusinessCalendarRequest"></a>
+<a id="tocSv2businesscalendarrequest"></a>
+<a id="tocsv2businesscalendarrequest"></a>
+
+```json
+{
+  "code": "string",
+  "name": "string",
+  "timezone": "Africa/Lagos",
+  "working_days": [
+    1
+  ],
+  "open_time": "08:00",
+  "close_time": "17:00",
+  "holidays": [
+    "2019-08-24"
+  ]
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|code|string|false|none|Required on create. Cannot change on update.|
+|name|string|true|none|none|
+|timezone|string|true|none|none|
+|working_days|[integer]|true|none|none|
+|open_time|string|true|none|none|
+|close_time|string|true|none|none|
+|holidays|[string]|false|none|none|
+
+<h2 id="tocS_V2BusinessCalendar">V2BusinessCalendar</h2>
+<!-- backwards compatibility -->
+<a id="schemav2businesscalendar"></a>
+<a id="schema_V2BusinessCalendar"></a>
+<a id="tocSv2businesscalendar"></a>
+<a id="tocsv2businesscalendar"></a>
+
+```json
+{
+  "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+  "code": "string",
+  "name": "string",
+  "timezone": "string",
+  "working_days": [
+    0
+  ],
+  "open_time": "string",
+  "close_time": "string",
+  "holidays": [
+    "2019-08-24"
+  ],
+  "created_at": "2019-08-24T14:15:22Z",
+  "updated_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|id|string(uuid)|true|none|none|
+|code|string|true|none|none|
+|name|string|true|none|none|
+|timezone|string|true|none|none|
+|working_days|[integer]|true|none|none|
+|open_time|string|true|none|none|
+|close_time|string|true|none|none|
+|holidays|[string]|true|none|none|
+|created_at|string(date-time)|true|none|none|
+|updated_at|string(date-time)|true|none|none|
+
+<h2 id="tocS_V2BusinessCalendarResponse">V2BusinessCalendarResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2businesscalendarresponse"></a>
+<a id="schema_V2BusinessCalendarResponse"></a>
+<a id="tocSv2businesscalendarresponse"></a>
+<a id="tocsv2businesscalendarresponse"></a>
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "code": "string",
+    "name": "string",
+    "timezone": "string",
+    "working_days": [
+      0
+    ],
+    "open_time": "string",
+    "close_time": "string",
+    "holidays": [
+      "2019-08-24"
+    ],
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|[V2BusinessCalendar](#schemav2businesscalendar)|true|none|none|
+
+<h2 id="tocS_V2BusinessCalendarListResponse">V2BusinessCalendarListResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2businesscalendarlistresponse"></a>
+<a id="schema_V2BusinessCalendarListResponse"></a>
+<a id="tocSv2businesscalendarlistresponse"></a>
+<a id="tocsv2businesscalendarlistresponse"></a>
+
+```json
+{
+  "data": {
+    "calendars": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "code": "string",
+        "name": "string",
+        "timezone": "string",
+        "working_days": [
+          0
+        ],
+        "open_time": "string",
+        "close_time": "string",
+        "holidays": [
+          "2019-08-24"
+        ],
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|object|true|none|none|
+|» calendars|[[V2BusinessCalendar](#schemav2businesscalendar)]|true|none|none|
+
 <h2 id="tocS_V2CreateReserveRuleRequest">V2CreateReserveRuleRequest</h2>
 <!-- backwards compatibility -->
 <a id="schemav2createreserverulerequest"></a>
@@ -9883,6 +10351,11 @@ and
   "currency": "string",
   "percentage": "string",
   "hold_hours": 1,
+  "hold_mode": "calendar",
+  "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+  "credit_types": [
+    "string"
+  ],
   "effective_from": "2019-08-24T14:15:22Z",
   "effective_to": "2019-08-24T14:15:22Z",
   "metadata": {}
@@ -9901,6 +10374,9 @@ and
 |currency|string|false|none|Required for a client rule. An account rule takes the account currency.|
 |percentage|string|true|none|Share of each credit that is held, as a decimal string. "10" is 10%.|
 |hold_hours|integer|true|none|none|
+|hold_mode|string|false|none|calendar counts hold_hours as clock hours. business counts only the hours inside the business calendar.|
+|calendar_id|string(uuid)|false|none|Required for hold_mode business.|
+|credit_types|[string]|false|none|Limits the rule to these credit types (lowercase, digits and underscores). Empty covers every credit.|
 |effective_from|string(date-time)|false|none|none|
 |effective_to|string(date-time)|false|none|none|
 |metadata|object|false|none|none|
@@ -9911,6 +10387,8 @@ and
 |---|---|
 |scope|client|
 |scope|account|
+|hold_mode|calendar|
+|hold_mode|business|
 
 <h2 id="tocS_V2ReserveRule">V2ReserveRule</h2>
 <!-- backwards compatibility -->
@@ -9929,6 +10407,11 @@ and
   "currency": "string",
   "percentage": "string",
   "hold_hours": 0,
+  "hold_mode": "calendar",
+  "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+  "credit_types": [
+    "string"
+  ],
   "effective_from": "2019-08-24T14:15:22Z",
   "effective_to": "2019-08-24T14:15:22Z",
   "status": "active",
@@ -9951,6 +10434,9 @@ and
 |currency|string|true|none|none|
 |percentage|string|true|none|none|
 |hold_hours|integer|true|none|none|
+|hold_mode|string|false|none|none|
+|calendar_id|string(uuid)|false|none|none|
+|credit_types|[string]|false|none|none|
 |effective_from|string(date-time)|true|none|none|
 |effective_to|string(date-time)|false|none|none|
 |status|string|true|none|none|
@@ -9964,6 +10450,8 @@ and
 |---|---|
 |scope|client|
 |scope|account|
+|hold_mode|calendar|
+|hold_mode|business|
 |status|active|
 |status|revoked|
 
@@ -9985,6 +10473,11 @@ and
     "currency": "string",
     "percentage": "string",
     "hold_hours": 0,
+    "hold_mode": "calendar",
+    "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+    "credit_types": [
+      "string"
+    ],
     "effective_from": "2019-08-24T14:15:22Z",
     "effective_to": "2019-08-24T14:15:22Z",
     "status": "active",
@@ -10022,6 +10515,11 @@ and
         "currency": "string",
         "percentage": "string",
         "hold_hours": 0,
+        "hold_mode": "calendar",
+        "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+        "credit_types": [
+          "string"
+        ],
         "effective_from": "2019-08-24T14:15:22Z",
         "effective_to": "2019-08-24T14:15:22Z",
         "status": "active",
@@ -10053,6 +10551,7 @@ and
 {
   "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
   "amount_minor": 0,
+  "credit_type": "string",
   "at": "2019-08-24T14:15:22Z"
 }
 
@@ -10064,6 +10563,7 @@ and
 |---|---|---|---|---|
 |account_id|string(uuid)|true|none|none|
 |amount_minor|integer(int64)|true|none|none|
+|credit_type|string|false|none|Matched against rules that list credit types. Omit to match only rules that cover every credit.|
 |at|string(date-time)|false|none|none|
 
 <h2 id="tocS_V2ReservePreview">V2ReservePreview</h2>
@@ -10082,6 +10582,9 @@ and
   "available_minor": 0,
   "percentage": "string",
   "hold_hours": 0,
+  "hold_mode": "calendar",
+  "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+  "credit_type": "string",
   "release_at": "2019-08-24T14:15:22Z",
   "rule_source": "account",
   "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60"
@@ -10100,6 +10603,9 @@ and
 |available_minor|integer(int64)|true|none|none|
 |percentage|string|false|none|none|
 |hold_hours|integer|false|none|none|
+|hold_mode|string|false|none|none|
+|calendar_id|string(uuid)|false|none|none|
+|credit_type|string|false|none|none|
 |release_at|string(date-time)|false|none|none|
 |rule_source|string|true|none|none|
 |rule_id|string(uuid)|false|none|none|
@@ -10108,6 +10614,8 @@ and
 
 |Property|Value|
 |---|---|
+|hold_mode|calendar|
+|hold_mode|business|
 |rule_source|account|
 |rule_source|client|
 |rule_source|none|
@@ -10129,6 +10637,9 @@ and
     "available_minor": 0,
     "percentage": "string",
     "hold_hours": 0,
+    "hold_mode": "calendar",
+    "calendar_id": "c828ce68-4c5a-4491-b76a-af3d888d3f97",
+    "credit_type": "string",
     "release_at": "2019-08-24T14:15:22Z",
     "rule_source": "account",
     "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60"

@@ -96,6 +96,7 @@ func revokeReserveRule(s services.ReserveRuleService) http.HandlerFunc {
 type reservePreviewBody struct {
 	AccountID   string     `json:"account_id"`
 	AmountMinor int64      `json:"amount_minor"`
+	CreditType  string     `json:"credit_type,omitempty"`
 	At          *time.Time `json:"at,omitempty"`
 }
 
@@ -111,7 +112,7 @@ func previewReserve(s services.ReserveRuleService) http.HandlerFunc {
 			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid account_id: %w", err))
 			return
 		}
-		req := services.ReservePreviewRequest{AccountID: accountID, AmountMinor: body.AmountMinor}
+		req := services.ReservePreviewRequest{AccountID: accountID, AmountMinor: body.AmountMinor, CreditType: body.CreditType}
 		if body.At != nil {
 			req.At = *body.At
 		}

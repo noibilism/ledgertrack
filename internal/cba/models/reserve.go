@@ -13,6 +13,11 @@ const (
 
 	ReserveStatusActive  = "active"
 	ReserveStatusRevoked = "revoked"
+
+	// HoldModeCalendar counts HoldHours as elapsed clock hours. HoldModeBusiness counts only the hours
+	// inside the rule's business calendar.
+	HoldModeCalendar = "calendar"
+	HoldModeBusiness = "business"
 )
 
 // ReserveRule holds back a share of every credit into a wallet. The held share stays in the
@@ -31,7 +36,12 @@ type ReserveRule struct {
 	// Percentage of each credit that is held, as a decimal string: "10" is 10%.
 	Percentage string `json:"percentage" bun:"percentage,type:varchar(32),notnull"`
 	// HoldHours is how long the held share stays in the ledger balance before it becomes available.
-	HoldHours     int            `json:"hold_hours" bun:"hold_hours,type:integer,notnull"`
+	HoldHours int `json:"hold_hours" bun:"hold_hours,type:integer,notnull"`
+	// HoldMode is "calendar" or "business". Business needs CalendarID.
+	HoldMode   string     `json:"hold_mode" bun:"hold_mode,type:varchar(16),notnull"`
+	CalendarID *uuid.UUID `json:"calendar_id,omitempty" bun:"calendar_id,type:uuid,nullzero"`
+	// CreditTypes limits the rule to these credit types. Empty means every credit.
+	CreditTypes   []string       `json:"credit_types" bun:"credit_types,type:jsonb,notnull,default:'[]'::jsonb"`
 	EffectiveFrom time.Time      `json:"effective_from" bun:"effective_from,type:timestamp without time zone,notnull"`
 	EffectiveTo   *time.Time     `json:"effective_to,omitempty" bun:"effective_to,type:timestamp without time zone,nullzero"`
 	Status        string         `json:"status" bun:"status,type:varchar(16),notnull"`
