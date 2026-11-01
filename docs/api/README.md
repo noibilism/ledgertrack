@@ -4149,7 +4149,7 @@ Accept: application/json
 
 `GET /v2/{ledger}/gl/accounts/{code}/balance`
 
-Reads the balance (input - output) at the account's ledger address, optionally at a point in time. A positive balance is a debit, a negative balance a credit. This endpoint is supported on the `ledgertrack` ledger.
+Reads the balance (input - output) at the account's ledger address, optionally at a point in time. A positive balance is a credit, a negative balance a debit. For Customer Wallets (201100) the balance is read at the account's own address only; the trial balance adds the wallets under it. This endpoint is supported on the `ledgertrack` ledger.
 
 <h3 id="get-the-ledger-balance-of-a-gl-account-parameters">Parameters</h3>
 
@@ -4181,7 +4181,10 @@ Reads the balance (input - output) at the account's ledger address, optionally a
     "debit": 0,
     "credit": 0,
     "natural_balance": 0,
-    "abnormal": true
+    "abnormal": true,
+    "posted_balance": 0,
+    "wallet_balance": 0,
+    "synthetic": true
   }
 }
 ```
@@ -4720,7 +4723,8 @@ Accept: application/json
 `GET /v2/{ledger}/reports/finance/gl-trial-balance`
 
 Lists every active GL account of a currency with its debit or credit balance, per-type subtotals and a `balanced` flag (total debits equal total credits). Unlike `/reports/finance/trial-balance` it is driven by the GL registry, not by a fixed set of lines.
-Sign convention: ledger balance is input - output; a positive balance is a debit and a negative balance a credit. A ledger that does not exist yet counts as zero. This endpoint is supported on the `ledgertrack` ledger.
+Sign convention: ledger balance is input - output; a positive balance is a credit and a negative balance a debit. This is the orientation Cray's postings follow: a wallet holds a positive balance (liability), `system:control` is the source of every wallet credit and goes negative, and a fee or tax paid from a wallet lands positive on its income or payable account. A ledger that does not exist yet counts as zero.
+Customer wallets are not registered GL accounts. Their available and lien balances roll up into GL 201100 Customer Wallets (`posted_balance` is what was posted to the account itself, `wallet_balance` what the wallets hold), and `system:control` appears as a synthetic asset line (`synthetic: true`) for the unallocated funding side. `wallets` shows the same figures and `balanced` covers all of it, so a posting that touches an address outside the registry, the wallets and the control account shows as a difference. This endpoint is supported on the `ledgertrack` ledger.
 
 <h3 id="get-the-gl-registry-trial-balance-parameters">Parameters</h3>
 
@@ -4739,6 +4743,14 @@ Sign convention: ledger balance is input - output; a positive balance is a debit
   "data": {
     "currency": "string",
     "asset": "string",
+    "wallets": {
+      "ledger": "string",
+      "account_code": "201100",
+      "available": 0,
+      "lien": 0,
+      "total": 0,
+      "control": 0
+    },
     "as_of": "2019-08-24T14:15:22Z",
     "accounts": [
       {
@@ -4757,7 +4769,10 @@ Sign convention: ledger balance is input - output; a positive balance is a debit
         "debit": 0,
         "credit": 0,
         "natural_balance": 0,
-        "abnormal": true
+        "abnormal": true,
+        "posted_balance": 0,
+        "wallet_balance": 0,
+        "synthetic": true
       }
     ],
     "subtotals": [
@@ -11477,7 +11492,10 @@ and
   "debit": 0,
   "credit": 0,
   "natural_balance": 0,
-  "abnormal": true
+  "abnormal": true,
+  "posted_balance": 0,
+  "wallet_balance": 0,
+  "synthetic": true
 }
 
 ```
@@ -11502,6 +11520,39 @@ and
 |credit|integer(int64)|true|none|none|
 |natural_balance|integer(int64)|true|none|Positive when the balance sits on the account's normal side.|
 |abnormal|boolean|true|none|none|
+|posted_balance|integer(int64)|false|none|Customer Wallets line only. The balance posted to the GL account itself.|
+|wallet_balance|integer(int64)|false|none|Customer Wallets line only. Available plus lien of every wallet in the currency.|
+|synthetic|boolean|false|none|True for a line that is not a registered GL account (system:control, or Customer Wallets when 201100 is not registered).|
+
+<h2 id="tocS_V2GLWalletRollup">V2GLWalletRollup</h2>
+<!-- backwards compatibility -->
+<a id="schemav2glwalletrollup"></a>
+<a id="schema_V2GLWalletRollup"></a>
+<a id="tocSv2glwalletrollup"></a>
+<a id="tocsv2glwalletrollup"></a>
+
+```json
+{
+  "ledger": "string",
+  "account_code": "201100",
+  "available": 0,
+  "lien": 0,
+  "total": 0,
+  "control": 0
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|ledger|string|true|none|none|
+|account_code|string|true|none|GL account the wallets roll up into.|
+|available|integer(int64)|true|none|none|
+|lien|integer(int64)|true|none|none|
+|total|integer(int64)|true|none|available + lien, a credit balance.|
+|control|integer(int64)|true|none|Raw ledger balance of system:control and its shards. Negative by the amount credited to wallets from the control account.|
 
 <h2 id="tocS_V2GLAccountBalanceResponse">V2GLAccountBalanceResponse</h2>
 <!-- backwards compatibility -->
@@ -11528,7 +11579,10 @@ and
     "debit": 0,
     "credit": 0,
     "natural_balance": 0,
-    "abnormal": true
+    "abnormal": true,
+    "posted_balance": 0,
+    "wallet_balance": 0,
+    "synthetic": true
   }
 }
 
@@ -11579,6 +11633,14 @@ and
 {
   "currency": "string",
   "asset": "string",
+  "wallets": {
+    "ledger": "string",
+    "account_code": "201100",
+    "available": 0,
+    "lien": 0,
+    "total": 0,
+    "control": 0
+  },
   "as_of": "2019-08-24T14:15:22Z",
   "accounts": [
     {
@@ -11597,7 +11659,10 @@ and
       "debit": 0,
       "credit": 0,
       "natural_balance": 0,
-      "abnormal": true
+      "abnormal": true,
+      "posted_balance": 0,
+      "wallet_balance": 0,
+      "synthetic": true
     }
   ],
   "subtotals": [
@@ -11623,6 +11688,7 @@ and
 |---|---|---|---|---|
 |currency|string|true|none|none|
 |asset|string|true|none|none|
+|wallets|[V2GLWalletRollup](#schemav2glwalletrollup)|true|none|none|
 |as_of|string(date-time)|false|none|none|
 |accounts|[[V2GLAccountBalance](#schemav2glaccountbalance)]|true|none|none|
 |subtotals|[[V2GLTrialBalanceSubtotal](#schemav2gltrialbalancesubtotal)]|true|none|One entry per account type, in the order asset, liability, equity, income, expense.|
@@ -11643,6 +11709,14 @@ and
   "data": {
     "currency": "string",
     "asset": "string",
+    "wallets": {
+      "ledger": "string",
+      "account_code": "201100",
+      "available": 0,
+      "lien": 0,
+      "total": 0,
+      "control": 0
+    },
     "as_of": "2019-08-24T14:15:22Z",
     "accounts": [
       {
@@ -11661,7 +11735,10 @@ and
         "debit": 0,
         "credit": 0,
         "natural_balance": 0,
-        "abnormal": true
+        "abnormal": true,
+        "posted_balance": 0,
+        "wallet_balance": 0,
+        "synthetic": true
       }
     ],
     "subtotals": [
