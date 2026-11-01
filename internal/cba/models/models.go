@@ -95,6 +95,8 @@ type TransactionFee struct {
 	Min      *string   `json:"min,omitempty"`
 	Max      *string   `json:"max,omitempty"`
 	Currency string    `json:"currency,omitempty"`
+	// IncomeAccount is the code of the GL income account that receives this fee when it is charged.
+	IncomeAccount string `json:"income_account,omitempty"`
 }
 
 type FeeSchedule struct {

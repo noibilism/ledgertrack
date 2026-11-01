@@ -75,6 +75,8 @@ type FeeQuoteRequest struct {
 type FeeQuoteLine struct {
 	Type   string          `json:"type"`
 	Amount decimal.Decimal `json:"amount"`
+	// IncomeAccountCode is the GL income account the fee is posted to, as configured on the rule.
+	IncomeAccountCode string `json:"income_account_code,omitempty"`
 }
 
 type TaxQuoteLine struct {
@@ -215,6 +217,7 @@ func (s *DefaultFeeConfigService) CreateOverride(ctx context.Context, in CreateF
 		if err := feequote.ValidateFeeRule(rule); err != nil {
 			return nil, feeConfigInvalid("rule %d: %v", i+1, err)
 		}
+		rule.IncomeAccount = strings.TrimSpace(rule.IncomeAccount)
 		rules[i] = rule
 	}
 	from, to, err := s.period(in.EffectiveFrom, in.EffectiveTo)
@@ -269,6 +272,12 @@ func (s *DefaultFeeConfigService) CreateOverride(ctx context.Context, in CreateF
 		override.Currency = in.Currency
 	default:
 		return nil, feeConfigInvalid("scope must be client or account")
+	}
+
+	for i, rule := range override.Rules {
+		if err := s.checkIncomeAccount(ctx, rule.IncomeAccount, override.Currency); err != nil {
+			return nil, feeConfigInvalid("rule %d: %v", i+1, err)
+		}
 	}
 
 	// Two active overrides for the same target must not cover the same moment.
@@ -517,7 +526,7 @@ func (s *DefaultFeeConfigService) Quote(ctx context.Context, req FeeQuoteRequest
 		TaxLines: make([]TaxQuoteLine, len(taxRules)),
 	}
 	for i, rule := range rules {
-		quote.FeeLines[i] = FeeQuoteLine{Type: rule.Type, Amount: result.FeeLines[i]}
+		quote.FeeLines[i] = FeeQuoteLine{Type: rule.Type, Amount: result.FeeLines[i], IncomeAccountCode: rule.IncomeAccount}
 	}
 	for i, rule := range taxRules {
 		quote.TaxLines[i] = TaxQuoteLine{
@@ -612,4 +621,44 @@ func (s *DefaultFeeConfigService) resolveTaxRules(ctx context.Context, client *m
 		}
 	}
 	return rules, nil
+}
+
+// checkIncomeAccount validates the GL income account a fee rule posts to. An empty code is allowed
+// here: the rule can be saved and the account added later, but a fee with no income account is
+// refused when it is charged.
+func (s *DefaultFeeConfigService) checkIncomeAccount(ctx context.Context, code, currency string) error {
+	if code == "" {
+		return nil
+	}
+	account, err := s.glAccounts.GetByCode(ctx, code)
+	if err != nil {
+		if postgres.IsNotFoundError(err) || errors.Is(err, postgres.ErrNotFound) {
+			return fmt.Errorf("income account %q does not exist", code)
+		}
+		return err
+	}
+	switch {
+	case account.Currency != currency:
+		return fmt.Errorf("income account %s is in %s, not %s", account.Code, account.Currency, currency)
+	case account.Type != models.GLAccountTypeIncome:
+		return fmt.Errorf("income account %s must be an income account", account.Code)
+	case account.Status != models.GLAccountStatusActive:
+		return fmt.Errorf("income account %s is not active", account.Code)
+	case !glAccountPosts(account):
+		return fmt.Errorf("income account %s is a header and takes no postings", account.Code)
+	}
+	return nil
+}
+
+// glAccountPosts says whether postings may go to the account. Header accounts carry metadata
+// posting=false; an account with no flag takes postings.
+func glAccountPosts(account *models.GLAccount) bool {
+	switch v := account.Metadata["posting"].(type) {
+	case bool:
+		return v
+	case string:
+		return !strings.EqualFold(strings.TrimSpace(v), "false")
+	default:
+		return true
+	}
 }
