@@ -1768,12 +1768,133 @@ paths:
       security:
         - Authorization:
             - ledger:write
+  /v2/{ledger}/business-calendars:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a business calendar
+      description: |
+        Defines business hours for reserve holds: an IANA `timezone`, ISO `working_days` (1 Monday to 7 Sunday), the opening window `open_time` to `close_time` (HH:MM, at least one hour) and `holidays` (YYYY-MM-DD) on which nothing counts. The code is unique. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateBusinessCalendar
+      x-speakeasy-name-override: CreateBusinessCalendar
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2BusinessCalendarRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2BusinessCalendarResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List business calendars
+      description: |
+        This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListBusinessCalendars
+      x-speakeasy-name-override: ListBusinessCalendars
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2BusinessCalendarListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/business-calendars/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a business calendar
+      description: |
+        This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetBusinessCalendar
+      x-speakeasy-name-override: GetBusinessCalendar
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2BusinessCalendarResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+    put:
+      tags:
+        - ledger.v2
+      summary: Replace a business calendar
+      description: |
+        Replaces the name, timezone, working days, hours and holidays. The code cannot change. Holds already scheduled keep their release time. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2UpdateBusinessCalendar
+      x-speakeasy-name-override: UpdateBusinessCalendar
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2BusinessCalendarRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2BusinessCalendarResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
   /v2/{ledger}/reserve-rules:
     post:
       tags:
         - ledger.v2
       summary: Create a reserve rule
-      description: Holds back a share of every credit into the customer's wallet. The held share stays in the ledger balance (the wallet lien) for `hold_hours`, the agreed SLA, and is then released to the available balance. A `client` rule covers the client's accounts in `currency`, optionally only those of `product_id`. An `account` rule covers one account and takes its currency from the account. Resolution order is account rule, then client and product rule, then client-wide rule. `percentage` is above 0 and at most 100 with up to 4 decimals. `hold_hours` is 1 to 8760. Overlapping rules for the same target are rejected with 409. This endpoint is supported on the `ledgertrack` ledger.
+      description: |
+        Holds back a share of every credit into the customer's wallet. The held share stays in the ledger balance (the wallet lien) for `hold_hours`, the agreed SLA, and is then released to the available balance. A `client` rule covers the client's accounts in `currency`, optionally only those of `product_id`. An `account` rule covers one account and takes its currency from the account. Resolution order is account rule, then client and product rule, then client-wide rule. `percentage` is above 0 and at most 100 with up to 4 decimals. `hold_hours` is 1 to 8760. `hold_mode` is `calendar` (clock hours, default) or `business`, which counts only the hours inside the business calendar named by `calendar_id`. `credit_types` limits the rule to those credit types; a rule that names the credit type beats a general rule at the same level. Overlapping rules are rejected with 409: two general rules, or two rules sharing a credit type, for the same target and period. This endpoint is supported on the `ledgertrack` ledger.
       operationId: v2CreateReserveRule
       x-speakeasy-name-override: CreateReserveRule
       parameters:
@@ -1903,7 +2024,7 @@ paths:
         - ledger.v2
       summary: Preview the reserve on a credit
       description: |
-        Shows how a credit of `amount_minor` into an account would be split at `at` (default now): `reserve_minor` is held in the ledger balance until `release_at`, `available_minor` is available at once. The held share is the percentage of the amount rounded half-even to a whole minor unit. `rule_source` is `account`, `client` or `none`. Nothing is posted. This endpoint is supported on the `ledgertrack` ledger.
+        Shows how a credit of `amount_minor` into an account would be split at `at` (default now): `reserve_minor` is held in the ledger balance until `release_at`, `available_minor` is available at once. The held share is the percentage of the amount rounded half-even to a whole minor unit. `credit_type` selects rules that list credit types. For business-hours rules, `release_at` counts only open hours on working days outside holidays. `rule_source` is `account`, `client` or `none`. Nothing is posted. This endpoint is supported on the `ledgertrack` ledger.
       operationId: v2PreviewReserve
       x-speakeasy-name-override: PreviewReserve
       parameters:
@@ -5432,6 +5553,85 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/V2FeeQuoteTaxLine"
+    V2BusinessCalendarRequest:
+      type: object
+      required: [name, timezone, working_days, open_time, close_time]
+      properties:
+        code:
+          type: string
+          description: Required on create. Cannot change on update.
+        name:
+          type: string
+        timezone:
+          type: string
+          example: Africa/Lagos
+        working_days:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 7
+        open_time:
+          type: string
+          example: "08:00"
+        close_time:
+          type: string
+          example: "17:00"
+        holidays:
+          type: array
+          items:
+            type: string
+            format: date
+    V2BusinessCalendar:
+      type: object
+      required: [id, code, name, timezone, working_days, open_time, close_time, holidays, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        timezone:
+          type: string
+        working_days:
+          type: array
+          items:
+            type: integer
+        open_time:
+          type: string
+        close_time:
+          type: string
+        holidays:
+          type: array
+          items:
+            type: string
+            format: date
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2BusinessCalendarResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2BusinessCalendar"
+    V2BusinessCalendarListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [calendars]
+          properties:
+            calendars:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2BusinessCalendar"
     V2CreateReserveRuleRequest:
       type: object
       required: [scope, percentage, hold_hours]
@@ -5458,6 +5658,19 @@ components:
           type: integer
           minimum: 1
           maximum: 8760
+        hold_mode:
+          type: string
+          enum: [calendar, business]
+          description: "calendar counts hold_hours as clock hours. business counts only the hours inside the business calendar."
+        calendar_id:
+          type: string
+          format: uuid
+          description: Required for hold_mode business.
+        credit_types:
+          type: array
+          items:
+            type: string
+          description: Limits the rule to these credit types (lowercase, digits and underscores). Empty covers every credit.
         effective_from:
           type: string
           format: date-time
@@ -5492,6 +5705,16 @@ components:
           type: string
         hold_hours:
           type: integer
+        hold_mode:
+          type: string
+          enum: [calendar, business]
+        calendar_id:
+          type: string
+          format: uuid
+        credit_types:
+          type: array
+          items:
+            type: string
         effective_from:
           type: string
           format: date-time
@@ -5538,6 +5761,9 @@ components:
         amount_minor:
           type: integer
           format: int64
+        credit_type:
+          type: string
+          description: Matched against rules that list credit types. Omit to match only rules that cover every credit.
         at:
           type: string
           format: date-time
@@ -5563,6 +5789,14 @@ components:
           type: string
         hold_hours:
           type: integer
+        hold_mode:
+          type: string
+          enum: [calendar, business]
+        calendar_id:
+          type: string
+          format: uuid
+        credit_type:
+          type: string
         release_at:
           type: string
           format: date-time

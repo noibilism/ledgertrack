@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -35,13 +38,18 @@ const (
 var oneHundred = decimal.NewFromInt(100)
 
 type CreateReserveRuleInput struct {
-	Scope         string         `json:"scope"`
-	ClientID      *uuid.UUID     `json:"client_id,omitempty"`
-	AccountID     *uuid.UUID     `json:"account_id,omitempty"`
-	ProductID     *uuid.UUID     `json:"product_id,omitempty"`
-	Currency      string         `json:"currency,omitempty"`
-	Percentage    string         `json:"percentage"`
-	HoldHours     int            `json:"hold_hours"`
+	Scope      string     `json:"scope"`
+	ClientID   *uuid.UUID `json:"client_id,omitempty"`
+	AccountID  *uuid.UUID `json:"account_id,omitempty"`
+	ProductID  *uuid.UUID `json:"product_id,omitempty"`
+	Currency   string     `json:"currency,omitempty"`
+	Percentage string     `json:"percentage"`
+	HoldHours  int        `json:"hold_hours"`
+	// HoldMode is "calendar" (default) or "business". Business needs CalendarID.
+	HoldMode   string     `json:"hold_mode,omitempty"`
+	CalendarID *uuid.UUID `json:"calendar_id,omitempty"`
+	// CreditTypes limits the rule to these credit types. Empty covers every credit.
+	CreditTypes   []string       `json:"credit_types,omitempty"`
 	EffectiveFrom *time.Time     `json:"effective_from,omitempty"`
 	EffectiveTo   *time.Time     `json:"effective_to,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
@@ -50,6 +58,9 @@ type CreateReserveRuleInput struct {
 type ReservePreviewRequest struct {
 	AccountID   uuid.UUID
 	AmountMinor int64
+	// CreditType is the type of the credit, matched against rules that list credit types. Empty
+	// matches only rules that cover every credit.
+	CreditType string
 	// At is the moment of the credit. Zero means now.
 	At time.Time
 }
@@ -64,6 +75,9 @@ type ReservePreview struct {
 	AvailableMinor int64      `json:"available_minor"`
 	Percentage     string     `json:"percentage,omitempty"`
 	HoldHours      int        `json:"hold_hours,omitempty"`
+	HoldMode       string     `json:"hold_mode,omitempty"`
+	CalendarID     *uuid.UUID `json:"calendar_id,omitempty"`
+	CreditType     string     `json:"credit_type,omitempty"`
 	ReleaseAt      *time.Time `json:"release_at,omitempty"`
 	// RuleSource is "account", "client" or "none" when no rule applies.
 	RuleSource string     `json:"rule_source"`
@@ -84,6 +98,7 @@ type DefaultReserveRuleService struct {
 	accounts   repositories.AccountRepository
 	products   repositories.ProductRepository
 	clients    repositories.ClientRepository
+	calendars  repositories.CalendarRepository
 	now        func() time.Time
 }
 
@@ -92,9 +107,10 @@ func NewReserveRuleService(
 	accounts repositories.AccountRepository,
 	products repositories.ProductRepository,
 	clients repositories.ClientRepository,
+	calendars repositories.CalendarRepository,
 ) *DefaultReserveRuleService {
 	return &DefaultReserveRuleService{
-		repository: repository, accounts: accounts, products: products, clients: clients,
+		repository: repository, accounts: accounts, products: products, clients: clients, calendars: calendars,
 		now: func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -125,6 +141,51 @@ func validateReservePercentage(raw string) (decimal.Decimal, error) {
 	return value, nil
 }
 
+var creditTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+
+const maxCreditTypes = 20
+
+// normalizeCreditTypes lowercases, validates, de-duplicates and sorts the list.
+func normalizeCreditTypes(in []string) ([]string, error) {
+	if len(in) > maxCreditTypes {
+		return nil, reserveInvalid("at most %d credit types per rule", maxCreditTypes)
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		v := strings.ToLower(strings.TrimSpace(raw))
+		if !creditTypePattern.MatchString(v) {
+			return nil, reserveInvalid("credit type %q must be lowercase letters, digits and underscores, starting with a letter", raw)
+		}
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// creditTypesIntersect says whether two rules compete for the same credits. Two general rules do, and
+// two typed rules sharing a type do. A typed rule and a general one do not: the typed rule wins for its
+// own types, so a general rule can sit beside it.
+func creditTypesIntersect(a, b []string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	if len(a) == 0 || len(b) == 0 {
+		return false
+	}
+	for _, x := range a {
+		for _, y := range b {
+			if x == y {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *DefaultReserveRuleService) CreateRule(ctx context.Context, in CreateReserveRuleInput) (*models.ReserveRule, error) {
 	in.Scope = strings.ToLower(strings.TrimSpace(in.Scope))
 	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
@@ -134,6 +195,30 @@ func (s *DefaultReserveRuleService) CreateRule(ctx context.Context, in CreateRes
 	}
 	if in.HoldHours < 1 || in.HoldHours > MaxReserveHoldHours {
 		return nil, reserveInvalid("hold_hours must be between 1 and %d", MaxReserveHoldHours)
+	}
+
+	types, err := normalizeCreditTypes(in.CreditTypes)
+	if err != nil {
+		return nil, err
+	}
+	mode := strings.ToLower(strings.TrimSpace(in.HoldMode))
+	if mode == "" {
+		mode = models.HoldModeCalendar
+	}
+	switch mode {
+	case models.HoldModeCalendar:
+		if in.CalendarID != nil {
+			return nil, reserveInvalid("calendar_id is only for hold_mode business")
+		}
+	case models.HoldModeBusiness:
+		if in.CalendarID == nil {
+			return nil, reserveInvalid("hold_mode business needs a calendar_id")
+		}
+		if _, err := s.calendars.GetCalendar(ctx, *in.CalendarID); err != nil {
+			return nil, reserveNotFound(err, "business calendar")
+		}
+	default:
+		return nil, reserveInvalid("hold_mode must be calendar or business")
 	}
 
 	from := s.now()
@@ -151,6 +236,7 @@ func (s *DefaultReserveRuleService) CreateRule(ctx context.Context, in CreateRes
 
 	rule := &models.ReserveRule{
 		Scope: in.Scope, Percentage: percentage.String(), HoldHours: in.HoldHours,
+		HoldMode: mode, CalendarID: in.CalendarID, CreditTypes: types,
 		EffectiveFrom: from, EffectiveTo: to, Status: models.ReserveStatusActive, Metadata: in.Metadata,
 	}
 	if rule.Metadata == nil {
@@ -207,7 +293,7 @@ func (s *DefaultReserveRuleService) CreateRule(ctx context.Context, in CreateRes
 		if other.Currency != rule.Currency || !sameUUID(other.ProductID, rule.ProductID) {
 			continue
 		}
-		if overlaps(from, to, other.EffectiveFrom, other.EffectiveTo) {
+		if creditTypesIntersect(types, other.CreditTypes) && overlaps(from, to, other.EffectiveFrom, other.EffectiveTo) {
 			return nil, fmt.Errorf("%w: rule %s already covers this target for part of that period", ErrReserveConflict, other.ID)
 		}
 	}
@@ -251,7 +337,7 @@ func (s *DefaultReserveRuleService) RevokeRule(ctx context.Context, id uuid.UUID
 
 // resolveRule picks the most specific active rule: the account's own, then the client's rule for the
 // account's product, then the client's rule for the currency.
-func (s *DefaultReserveRuleService) resolveRule(ctx context.Context, account *models.Account, at time.Time) (*models.ReserveRule, string, error) {
+func (s *DefaultReserveRuleService) resolveRule(ctx context.Context, account *models.Account, creditType string, at time.Time) (*models.ReserveRule, string, error) {
 	rules, err := s.repository.ActiveRulesFor(ctx, account.ID, account.ClientID, at)
 	if err != nil {
 		return nil, "", err
@@ -263,6 +349,10 @@ func (s *DefaultReserveRuleService) resolveRule(ctx context.Context, account *mo
 		if r.Currency != account.Currency {
 			continue
 		}
+		typed := len(r.CreditTypes) > 0
+		if typed && !slices.Contains(r.CreditTypes, creditType) {
+			continue
+		}
 		rank := 0
 		switch {
 		case r.AccountID != nil && *r.AccountID == account.ID:
@@ -272,14 +362,22 @@ func (s *DefaultReserveRuleService) resolveRule(ctx context.Context, account *mo
 		case r.ClientID != nil && *r.ClientID == account.ClientID && r.ProductID == nil:
 			rank = 1
 		}
-		if rank > bestRank {
-			best, bestRank = r, rank
+		if rank == 0 {
+			continue
+		}
+		// a rule that names the credit type beats a general one at the same level
+		score := rank * 2
+		if typed {
+			score++
+		}
+		if score > bestRank {
+			best, bestRank = r, score
 		}
 	}
 	switch {
 	case best == nil:
 		return nil, ReserveSourceNone, nil
-	case bestRank == 3:
+	case bestRank >= 6:
 		return best, ReserveSourceAccount, nil
 	default:
 		return best, ReserveSourceClient, nil
@@ -302,7 +400,11 @@ func (s *DefaultReserveRuleService) Preview(ctx context.Context, req ReservePrev
 		AccountID: account.ID, Currency: account.Currency, AmountMinor: req.AmountMinor,
 		AvailableMinor: req.AmountMinor, RuleSource: ReserveSourceNone,
 	}
-	rule, source, err := s.resolveRule(ctx, account, at)
+	creditType := strings.ToLower(strings.TrimSpace(req.CreditType))
+	if creditType != "" && !creditTypePattern.MatchString(creditType) {
+		return nil, reserveInvalid("credit_type %q is not valid", req.CreditType)
+	}
+	rule, source, err := s.resolveRule(ctx, account, creditType, at)
 	if err != nil {
 		return nil, err
 	}
@@ -311,6 +413,18 @@ func (s *DefaultReserveRuleService) Preview(ctx context.Context, req ReservePrev
 	}
 	reserve := ReserveAmountMinor(req.AmountMinor, decimal.RequireFromString(rule.Percentage))
 	release := at.Add(time.Duration(rule.HoldHours) * time.Hour)
+	if rule.HoldMode == models.HoldModeBusiness && rule.CalendarID != nil {
+		calendar, err := s.calendars.GetCalendar(ctx, *rule.CalendarID)
+		if err != nil {
+			return nil, reserveNotFound(err, "business calendar")
+		}
+		if release, err = AddBusinessHours(at, rule.HoldHours, calendar); err != nil {
+			return nil, err
+		}
+	}
+	preview.HoldMode = rule.HoldMode
+	preview.CalendarID = rule.CalendarID
+	preview.CreditType = creditType
 	preview.ReserveMinor = reserve
 	preview.AvailableMinor = req.AmountMinor - reserve
 	preview.Percentage = rule.Percentage

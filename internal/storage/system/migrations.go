@@ -689,6 +689,37 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add business calendars and reserve rule credit types",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.business_calendars (
+							id uuid primary key default gen_random_uuid(),
+							code varchar(64) not null unique,
+							name varchar(255) not null,
+							timezone varchar(64) not null,
+							working_days jsonb not null,
+							open_time varchar(5) not null,
+							close_time varchar(5) not null,
+							holidays jsonb not null default '[]'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						alter table _system.reserve_rules
+							add column if not exists credit_types jsonb not null default '[]'::jsonb,
+							add column if not exists hold_mode varchar(16) not null default 'calendar',
+							add column if not exists calendar_id uuid references _system.business_calendars(id);
+						alter table _system.reserve_rules
+							add constraint reserve_rules_hold_mode check (
+								(hold_mode = 'calendar' and calendar_id is null) or
+								(hold_mode = 'business' and calendar_id is not null)
+							);
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator
