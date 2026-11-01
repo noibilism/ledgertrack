@@ -431,7 +431,7 @@ func expectGLBalances(mockLedger *LedgerController, balances map[string]*big.Int
 func TestGLAccountBalance(t *testing.T) {
 	router, _, mockLedger := newGLRouterForTests(t)
 	var calls []storagecommon.ResourceQuery[ledgerstore.GetAggregatedVolumesOptions]
-	expectGLBalances(mockLedger, map[string]*big.Int{"gl:liabilities:deposits": big.NewInt(-12_500)}, &calls)
+	expectGLBalances(mockLedger, map[string]*big.Int{"gl:liabilities:deposits": big.NewInt(12_500)}, &calls)
 
 	require.Equal(t, http.StatusCreated, doGL(t, router, http.MethodPost, "/ledgertrack/gl/accounts", glBody("2000", "Deposits", "liability", "NGN", "", "gl:liabilities:deposits")).Code)
 	require.Equal(t, http.StatusCreated, doGL(t, router, http.MethodPost, "/ledgertrack/gl/accounts", glBody("2001", "Empty", "liability", "NGN", "", "gl:liabilities:empty")).Code)
@@ -441,7 +441,7 @@ func TestGLAccountBalance(t *testing.T) {
 	balance, ok := api.DecodeSingleResponse[services.GLAccountBalance](t, rec.Body)
 	require.True(t, ok)
 	require.Equal(t, "NGN/2", balance.Asset)
-	require.EqualValues(t, -12_500, balance.Balance)
+	require.EqualValues(t, 12_500, balance.Balance)
 	require.EqualValues(t, 12_500, balance.Credit)
 	require.EqualValues(t, 12_500, balance.NaturalBalance)
 	require.False(t, balance.Abnormal)
@@ -473,9 +473,9 @@ func TestGLTrialBalanceReport(t *testing.T) {
 	router, _, mockLedger := newGLRouterForTests(t, WithFinanceReportingService(services.NewFinanceReportingService()))
 	var calls []storagecommon.ResourceQuery[ledgerstore.GetAggregatedVolumesOptions]
 	expectGLBalances(mockLedger, map[string]*big.Int{
-		"gl:assets:cash":         big.NewInt(30_000),
-		"gl:liabilities:deposit": big.NewInt(-20_000),
-		"gl:income:fees":         big.NewInt(-10_000),
+		"gl:assets:cash":         big.NewInt(-30_000),
+		"gl:liabilities:deposit": big.NewInt(20_000),
+		"gl:income:fees":         big.NewInt(10_000),
 	}, &calls)
 
 	for _, in := range []services.CreateGLAccountInput{
@@ -497,7 +497,7 @@ func TestGLTrialBalanceReport(t *testing.T) {
 	require.EqualValues(t, 30_000, report.TotalDebits)
 	require.EqualValues(t, 30_000, report.TotalCredits)
 	require.Len(t, report.Subtotals, 5)
-	require.Len(t, calls, 3, "USD accounts are not read")
+	require.Len(t, calls, 6, "USD accounts are not read; the wallet and control reads add three")
 
 	// asOf is forwarded as the point in time
 	asOf := libtime.New(libtime.Now().UTC().Add(-3600 * 1e9).Truncate(1e9))
@@ -506,8 +506,8 @@ func TestGLTrialBalanceReport(t *testing.T) {
 	report, ok = api.DecodeSingleResponse[services.GLTrialBalanceReport](t, rec.Body)
 	require.True(t, ok)
 	require.NotNil(t, report.AsOf)
-	require.NotNil(t, calls[3].PIT)
-	require.True(t, calls[3].PIT.Equal(asOf))
+	require.NotNil(t, calls[6].PIT)
+	require.True(t, calls[6].PIT.Equal(asOf))
 
 	assertErrorCode(t, doGL(t, router, http.MethodGet, "/ledgertrack/reports/finance/gl-trial-balance", nil), http.StatusBadRequest, common.ErrValidation)
 	assertErrorCode(t, doGL(t, router, http.MethodGet, "/ledgertrack/reports/finance/gl-trial-balance?currency=XXX", nil), http.StatusBadRequest, common.ErrValidation)
@@ -542,6 +542,6 @@ func TestGLTrialBalanceTreatsMissingLedgerAsZeroAndFlagsImbalance(t *testing.T) 
 	require.True(t, ok)
 	require.Len(t, report.Accounts, 2)
 	require.False(t, report.Balanced)
-	require.EqualValues(t, 500, report.Difference)
+	require.EqualValues(t, -500, report.Difference)
 	require.True(t, strings.HasPrefix(report.Accounts[0].Code, "1000"))
 }

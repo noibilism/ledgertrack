@@ -3578,7 +3578,7 @@ paths:
       tags:
         - ledger.v2
       summary: Get the ledger balance of a GL account
-      description: Reads the balance (input - output) at the account's ledger address, optionally at a point in time. A positive balance is a debit, a negative balance a credit. This endpoint is supported on the `ledgertrack` ledger.
+      description: Reads the balance (input - output) at the account's ledger address, optionally at a point in time. A positive balance is a credit, a negative balance a debit. For Customer Wallets (201100) the balance is read at the account's own address only; the trial balance adds the wallets under it. This endpoint is supported on the `ledgertrack` ledger.
       operationId: v2GetGLAccountBalance
       x-speakeasy-name-override: GetGLAccountBalance
       parameters:
@@ -3910,7 +3910,8 @@ paths:
       summary: Get the GL registry trial balance
       description: |
         Lists every active GL account of a currency with its debit or credit balance, per-type subtotals and a `balanced` flag (total debits equal total credits). Unlike `/reports/finance/trial-balance` it is driven by the GL registry, not by a fixed set of lines.
-        Sign convention: ledger balance is input - output; a positive balance is a debit and a negative balance a credit. A ledger that does not exist yet counts as zero. This endpoint is supported on the `ledgertrack` ledger.
+        Sign convention: ledger balance is input - output; a positive balance is a credit and a negative balance a debit. This is the orientation Cray's postings follow: a wallet holds a positive balance (liability), `system:control` is the source of every wallet credit and goes negative, and a fee or tax paid from a wallet lands positive on its income or payable account. A ledger that does not exist yet counts as zero.
+        Customer wallets are not registered GL accounts. Their available and lien balances roll up into GL 201100 Customer Wallets (`posted_balance` is what was posted to the account itself, `wallet_balance` what the wallets hold), and `system:control` appears as a synthetic asset line (`synthetic: true`) for the unallocated funding side. `wallets` shows the same figures and `balanced` covers all of it, so a posting that touches an address outside the registry, the wallets and the control account shows as a difference. This endpoint is supported on the `ledgertrack` ledger.
       operationId: v2GetGLTrialBalanceReport
       x-speakeasy-name-override: GetGLTrialBalanceReport
       parameters:
@@ -7972,6 +7973,47 @@ components:
           description: Positive when the balance sits on the account's normal side.
         abnormal:
           type: boolean
+        posted_balance:
+          type: integer
+          format: int64
+          description: Customer Wallets line only. The balance posted to the GL account itself.
+        wallet_balance:
+          type: integer
+          format: int64
+          description: Customer Wallets line only. Available plus lien of every wallet in the currency.
+        synthetic:
+          type: boolean
+          description: True for a line that is not a registered GL account (system:control, or Customer Wallets when 201100 is not registered).
+    V2GLWalletRollup:
+      type: object
+      required:
+        - ledger
+        - account_code
+        - available
+        - lien
+        - total
+        - control
+      properties:
+        ledger:
+          type: string
+        account_code:
+          type: string
+          description: GL account the wallets roll up into.
+          example: "201100"
+        available:
+          type: integer
+          format: int64
+        lien:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+          description: available + lien, a credit balance.
+        control:
+          type: integer
+          format: int64
+          description: Raw ledger balance of system:control and its shards. Negative by the amount credited to wallets from the control account.
     V2GLAccountBalanceResponse:
       type: object
       required:
@@ -8009,6 +8051,7 @@ components:
         - asset
         - accounts
         - subtotals
+        - wallets
         - total_debits
         - total_credits
         - difference
@@ -8018,6 +8061,8 @@ components:
           type: string
         asset:
           type: string
+        wallets:
+          $ref: "#/components/schemas/V2GLWalletRollup"
         as_of:
           type: string
           format: date-time

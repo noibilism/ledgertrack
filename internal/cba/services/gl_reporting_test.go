@@ -62,9 +62,9 @@ func TestGLAsset(t *testing.T) {
 
 func TestGLTrialBalanceBalanced(t *testing.T) {
 	svc, repo, fake := newGLReportingForTests(t, map[string]int64{
-		"ledgertrack|gl:assets:cash":         150_000,  // debit
-		"ledgertrack|gl:liabilities:deposit": -100_000, // credit
-		"revenue-NGN|gl:income:fees":         -50_000,  // credit
+		"ledgertrack|gl:assets:cash":         -150_000, // debit
+		"ledgertrack|gl:liabilities:deposit": 100_000,  // credit
+		"revenue-NGN|gl:income:fees":         50_000,   // credit
 	})
 	seedGL(t, repo,
 		glInput("1000", "Cash", "asset", "NGN", "", "gl:assets:cash"),
@@ -88,7 +88,7 @@ func TestGLTrialBalanceBalanced(t *testing.T) {
 	require.Zero(t, report.Difference)
 	require.EqualValues(t, 150_000, report.TotalDebits)
 	require.EqualValues(t, 150_000, report.TotalCredits)
-	require.Len(t, fake.calls, 4, "one read per active NGN account")
+	require.Len(t, fake.calls, 7, "one read per active NGN account, plus the wallet and control reads")
 	require.NotContains(t, fake.calls, "ledgertrack|gl:assets:cash_usd|USD/2")
 
 	byCode := map[string]GLAccountBalance{}
@@ -118,8 +118,8 @@ func TestGLTrialBalanceBalanced(t *testing.T) {
 
 func TestGLTrialBalanceDetectsImbalance(t *testing.T) {
 	svc, repo, _ := newGLReportingForTests(t, map[string]int64{
-		"ledgertrack|gl:assets:cash":         150_000,
-		"ledgertrack|gl:liabilities:deposit": -100_000,
+		"ledgertrack|gl:assets:cash":         -150_000,
+		"ledgertrack|gl:liabilities:deposit": 100_000,
 	})
 	seedGL(t, repo,
 		glInput("1000", "Cash", "asset", "NGN", "", "gl:assets:cash"),
@@ -134,9 +134,9 @@ func TestGLTrialBalanceDetectsImbalance(t *testing.T) {
 
 func TestGLTrialBalanceFlagsAbnormalBalancesAndSkipsClosedAccounts(t *testing.T) {
 	svc, repo, fake := newGLReportingForTests(t, map[string]int64{
-		"ledgertrack|gl:assets:cash":  -2_000, // an overdrawn asset
-		"ledgertrack|gl:assets:old":   9_999,  // closed, must not be read
-		"ledgertrack|gl:equity:other": 2_000,
+		"ledgertrack|gl:assets:cash":  2_000, // an overdrawn asset
+		"ledgertrack|gl:assets:old":   9_999, // closed, must not be read
+		"ledgertrack|gl:equity:other": -2_000,
 	})
 	seedGL(t, repo,
 		glInput("1000", "Cash", "asset", "NGN", "", "gl:assets:cash"),
@@ -167,7 +167,7 @@ func TestGLTrialBalanceFlagsAbnormalBalancesAndSkipsClosedAccounts(t *testing.T)
 }
 
 func TestGLTrialBalanceContraAccountUsesItsOwnNormalSide(t *testing.T) {
-	svc, repo, _ := newGLReportingForTests(t, map[string]int64{"ledgertrack|gl:assets:acc_dep": -300})
+	svc, repo, _ := newGLReportingForTests(t, map[string]int64{"ledgertrack|gl:assets:acc_dep": 300})
 	contra := glInput("1900", "Accumulated depreciation", "asset", "NGN", "", "gl:assets:acc_dep")
 	contra.NormalSide = "credit"
 	seedGL(t, repo, contra)
@@ -208,13 +208,13 @@ func TestGLTrialBalanceWithNoAccountsIsEmptyAndBalanced(t *testing.T) {
 }
 
 func TestGLAccountBalance(t *testing.T) {
-	svc, repo, fake := newGLReportingForTests(t, map[string]int64{"ledgertrack|gl:liabilities:deposit": -4_200})
+	svc, repo, fake := newGLReportingForTests(t, map[string]int64{"ledgertrack|gl:liabilities:deposit": 4_200})
 	seedGL(t, repo, glInput("2000", "Deposits", "liability", "NGN", "", "gl:liabilities:deposit"))
 
 	pit := libtime.Now()
 	balance, err := svc.AccountBalance(context.Background(), nil, "2000", &pit)
 	require.NoError(t, err)
-	require.EqualValues(t, -4_200, balance.Balance)
+	require.EqualValues(t, 4_200, balance.Balance)
 	require.EqualValues(t, 4_200, balance.Credit)
 	require.EqualValues(t, 4_200, balance.NaturalBalance)
 	require.Equal(t, "NGN/2", balance.Asset)
@@ -223,4 +223,114 @@ func TestGLAccountBalance(t *testing.T) {
 
 	_, err = svc.AccountBalance(context.Background(), nil, "9999", nil)
 	require.ErrorIs(t, err, ErrGLAccountNotFound)
+}
+
+const (
+	walletsAvailable = "ledgertrack|users::wallets:NGN:available"
+	walletsLien      = "ledgertrack|users::wallets:NGN:lien"
+	controlAll       = "ledgertrack|system:control:NGN:"
+)
+
+func TestGLTrialBalanceRollsWalletsIntoCustomerWallets(t *testing.T) {
+	// Wallets hold 90_000 available and 10_000 lien, funded 100_000 from system:control (the control balance covers its shards).
+	// A 500 fee was paid out of a wallet into fee income.
+	svc, repo, _ := newGLReportingForTests(t, map[string]int64{
+		walletsAvailable:                       89_500,
+		walletsLien:                            10_000,
+		controlAll:                             -100_000,
+		"ledgertrack|gl:income:fees":           500,
+		"ledgertrack|gl:liabilities:customers": 0,
+	})
+	seedGL(t, repo,
+		glInput("201100.NGN", "Customer Wallets", "liability", "NGN", "", "gl:liabilities:customers"),
+		glInput("401101.NGN", "Fee income", "income", "NGN", "", "gl:income:fees"),
+	)
+
+	report, err := svc.TrialBalance(context.Background(), nil, GLTrialBalanceFilter{Currency: "NGN"})
+	require.NoError(t, err)
+
+	require.Equal(t, GLWalletRollup{
+		Ledger: "ledgertrack", AccountCode: "201100.NGN",
+		Available: 89_500, Lien: 10_000, Total: 99_500, Control: -100_000,
+	}, report.Wallets)
+	require.True(t, report.Balanced, "difference %d", report.Difference)
+	require.EqualValues(t, 100_000, report.TotalDebits)
+	require.EqualValues(t, 100_000, report.TotalCredits)
+
+	byCode := map[string]GLAccountBalance{}
+	for _, line := range report.Accounts {
+		byCode[line.Code] = line
+	}
+	wallets := byCode["201100.NGN"]
+	require.EqualValues(t, 99_500, wallets.Credit)
+	require.EqualValues(t, 99_500, wallets.WalletBalance)
+	require.Zero(t, wallets.PostedBalance)
+	require.False(t, wallets.Synthetic)
+	require.False(t, wallets.Abnormal)
+
+	fees := byCode["401101.NGN"]
+	require.EqualValues(t, 500, fees.Credit)
+	require.False(t, fees.Abnormal, "fee income paid out of a wallet is a credit")
+
+	control := byCode["system:control"]
+	require.True(t, control.Synthetic)
+	require.EqualValues(t, 100_000, control.Debit)
+	require.EqualValues(t, 100_000, control.NaturalBalance)
+	require.False(t, control.Abnormal)
+}
+
+func TestGLTrialBalanceKeepsPostedBalanceOfCustomerWalletsApart(t *testing.T) {
+	svc, repo, _ := newGLReportingForTests(t, map[string]int64{
+		walletsAvailable:                       7_000,
+		controlAll:                             -7_250,
+		"ledgertrack|gl:liabilities:customers": 250,
+	})
+	seedGL(t, repo, glInput("201100.NGN", "Customer Wallets", "liability", "NGN", "", "gl:liabilities:customers"))
+
+	report, err := svc.TrialBalance(context.Background(), nil, GLTrialBalanceFilter{Currency: "NGN"})
+	require.NoError(t, err)
+	require.True(t, report.Balanced)
+	line := report.Accounts[0]
+	require.EqualValues(t, 7_250, line.Credit)
+	require.EqualValues(t, 250, line.PostedBalance)
+	require.EqualValues(t, 7_000, line.WalletBalance)
+}
+
+func TestGLTrialBalanceAddsSyntheticWalletsLineWhenAccountIsNotRegistered(t *testing.T) {
+	svc, _, _ := newGLReportingForTests(t, map[string]int64{
+		walletsAvailable: 4_000,
+		controlAll:       -4_000,
+	})
+	report, err := svc.TrialBalance(context.Background(), nil, GLTrialBalanceFilter{Currency: "NGN"})
+	require.NoError(t, err)
+	require.True(t, report.Balanced)
+	require.Len(t, report.Accounts, 2)
+	require.Equal(t, "201100", report.Accounts[0].Code)
+	require.True(t, report.Accounts[0].Synthetic)
+	require.EqualValues(t, 4_000, report.Accounts[0].Credit)
+	require.Equal(t, "201100", report.Wallets.AccountCode)
+}
+
+func TestGLTrialBalanceShowsMovementOutsideTheMappedAddresses(t *testing.T) {
+	// 5_000 left a wallet for an address the registry does not know: the trial balance cannot see the
+	// other side, so it reports the difference instead of hiding it.
+	svc, _, _ := newGLReportingForTests(t, map[string]int64{
+		walletsAvailable: 5_000,
+		controlAll:       -10_000,
+	})
+	report, err := svc.TrialBalance(context.Background(), nil, GLTrialBalanceFilter{Currency: "NGN"})
+	require.NoError(t, err)
+	require.False(t, report.Balanced)
+	require.EqualValues(t, 5_000, report.Difference)
+}
+
+func TestGLTrialBalanceWalletReadsFollowTheAsOfDate(t *testing.T) {
+	svc, _, fake := newGLReportingForTests(t, nil)
+	asOf := libtime.Now()
+	_, err := svc.TrialBalance(context.Background(), nil, GLTrialBalanceFilter{Currency: "NGN", AsOf: &asOf})
+	require.NoError(t, err)
+	require.Contains(t, fake.calls, "ledgertrack|users::wallets:NGN:available|NGN/2")
+	require.Contains(t, fake.calls, "ledgertrack|users::wallets:NGN:lien|NGN/2")
+	require.Contains(t, fake.calls, "ledgertrack|system:control:NGN:|NGN/2")
+	require.Equal(t, &asOf, fake.lastPIT)
 }
