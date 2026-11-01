@@ -3000,6 +3000,349 @@ To perform this operation, you must be authenticated by means of one of the foll
 Authorization ( Scopes: ledger:write )
 </aside>
 
+## Create a reserve rule
+
+<a id="opIdv2CreateReserveRule"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/reserve-rules HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/reserve-rules`
+
+Holds back a share of every credit into the customer's wallet. The held share stays in the ledger balance (the wallet lien) for `hold_hours`, the agreed SLA, and is then released to the available balance. A `client` rule covers the client's accounts in `currency`, optionally only those of `product_id`. An `account` rule covers one account and takes its currency from the account. Resolution order is account rule, then client and product rule, then client-wide rule. `percentage` is above 0 and at most 100 with up to 4 decimals. `hold_hours` is 1 to 8760. Overlapping rules for the same target are rejected with 409. This endpoint is supported on the `ledgertrack` ledger.
+
+> Body parameter
+
+```json
+{
+  "scope": "client",
+  "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+  "currency": "string",
+  "percentage": "string",
+  "hold_hours": 1,
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "metadata": {}
+}
+```
+
+<h3 id="create-a-reserve-rule-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|body|body|[V2CreateReserveRuleRequest](#schemav2createreserverulerequest)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "scope": "client",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+    "currency": "string",
+    "percentage": "string",
+    "hold_hours": 0,
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="create-a-reserve-rule-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[V2ReserveRuleResponse](#schemav2reserveruleresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
+## List reserve rules
+
+<a id="opIdv2ListReserveRules"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/reserve-rules HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/reserve-rules`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="list-reserve-rules-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|client_id|query|string(uuid)|false|none|
+|account_id|query|string(uuid)|false|none|
+|status|query|string|false|none|
+
+#### Enumerated Values
+
+|Parameter|Value|
+|---|---|
+|status|active|
+|status|revoked|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "rules": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "scope": "client",
+        "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+        "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+        "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+        "currency": "string",
+        "percentage": "string",
+        "hold_hours": 0,
+        "effective_from": "2019-08-24T14:15:22Z",
+        "effective_to": "2019-08-24T14:15:22Z",
+        "status": "active",
+        "metadata": {},
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+```
+
+<h3 id="list-reserve-rules-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2ReserveRuleListResponse](#schemav2reserverulelistresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Get a reserve rule
+
+<a id="opIdv2GetReserveRule"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/reserve-rules/{id} HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/reserve-rules/{id}`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="get-a-reserve-rule-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "scope": "client",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+    "currency": "string",
+    "percentage": "string",
+    "hold_hours": 0,
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="get-a-reserve-rule-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2ReserveRuleResponse](#schemav2reserveruleresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Revoke a reserve rule
+
+<a id="opIdv2RevokeReserveRule"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/reserve-rules/{id}/revoke HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/reserve-rules/{id}/revoke`
+
+Ends the rule now. Holds already made keep their release time. This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="revoke-a-reserve-rule-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "scope": "client",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+    "currency": "string",
+    "percentage": "string",
+    "hold_hours": 0,
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="revoke-a-reserve-rule-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2ReserveRuleResponse](#schemav2reserveruleresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
+## Preview the reserve on a credit
+
+<a id="opIdv2PreviewReserve"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/reserve-rules/preview HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/reserve-rules/preview`
+
+Shows how a credit of `amount_minor` into an account would be split at `at` (default now): `reserve_minor` is held in the ledger balance until `release_at`, `available_minor` is available at once. The held share is the percentage of the amount rounded half-even to a whole minor unit. `rule_source` is `account`, `client` or `none`. Nothing is posted. This endpoint is supported on the `ledgertrack` ledger.
+
+> Body parameter
+
+```json
+{
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "amount_minor": 0,
+  "at": "2019-08-24T14:15:22Z"
+}
+```
+
+<h3 id="preview-the-reserve-on-a-credit-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|body|body|[V2ReservePreviewRequest](#schemav2reservepreviewrequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "currency": "string",
+    "amount_minor": 0,
+    "reserve_minor": 0,
+    "available_minor": 0,
+    "percentage": "string",
+    "hold_hours": 0,
+    "release_at": "2019-08-24T14:15:22Z",
+    "rule_source": "account",
+    "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60"
+  }
+}
+```
+
+<h3 id="preview-the-reserve-on-a-credit-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2ReservePreviewResponse](#schemav2reservepreviewresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
 ## Quote the fee and tax for a transaction
 
 <a id="opIdv2QuoteFees"></a>
@@ -9523,6 +9866,282 @@ and
 |fee_source|client|
 |fee_source|product|
 |fee_source|none|
+
+<h2 id="tocS_V2CreateReserveRuleRequest">V2CreateReserveRuleRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemav2createreserverulerequest"></a>
+<a id="schema_V2CreateReserveRuleRequest"></a>
+<a id="tocSv2createreserverulerequest"></a>
+<a id="tocsv2createreserverulerequest"></a>
+
+```json
+{
+  "scope": "client",
+  "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+  "currency": "string",
+  "percentage": "string",
+  "hold_hours": 1,
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "metadata": {}
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|scope|string|true|none|none|
+|client_id|string(uuid)|false|none|none|
+|account_id|string(uuid)|false|none|none|
+|product_id|string(uuid)|false|none|none|
+|currency|string|false|none|Required for a client rule. An account rule takes the account currency.|
+|percentage|string|true|none|Share of each credit that is held, as a decimal string. "10" is 10%.|
+|hold_hours|integer|true|none|none|
+|effective_from|string(date-time)|false|none|none|
+|effective_to|string(date-time)|false|none|none|
+|metadata|object|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|scope|client|
+|scope|account|
+
+<h2 id="tocS_V2ReserveRule">V2ReserveRule</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reserverule"></a>
+<a id="schema_V2ReserveRule"></a>
+<a id="tocSv2reserverule"></a>
+<a id="tocsv2reserverule"></a>
+
+```json
+{
+  "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+  "scope": "client",
+  "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+  "currency": "string",
+  "percentage": "string",
+  "hold_hours": 0,
+  "effective_from": "2019-08-24T14:15:22Z",
+  "effective_to": "2019-08-24T14:15:22Z",
+  "status": "active",
+  "metadata": {},
+  "created_at": "2019-08-24T14:15:22Z",
+  "updated_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|id|string(uuid)|true|none|none|
+|scope|string|true|none|none|
+|client_id|string(uuid)|false|none|none|
+|account_id|string(uuid)|false|none|none|
+|product_id|string(uuid)|false|none|none|
+|currency|string|true|none|none|
+|percentage|string|true|none|none|
+|hold_hours|integer|true|none|none|
+|effective_from|string(date-time)|true|none|none|
+|effective_to|string(date-time)|false|none|none|
+|status|string|true|none|none|
+|metadata|object|false|none|none|
+|created_at|string(date-time)|true|none|none|
+|updated_at|string(date-time)|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|scope|client|
+|scope|account|
+|status|active|
+|status|revoked|
+
+<h2 id="tocS_V2ReserveRuleResponse">V2ReserveRuleResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reserveruleresponse"></a>
+<a id="schema_V2ReserveRuleResponse"></a>
+<a id="tocSv2reserveruleresponse"></a>
+<a id="tocsv2reserveruleresponse"></a>
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "scope": "client",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+    "currency": "string",
+    "percentage": "string",
+    "hold_hours": 0,
+    "effective_from": "2019-08-24T14:15:22Z",
+    "effective_to": "2019-08-24T14:15:22Z",
+    "status": "active",
+    "metadata": {},
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|[V2ReserveRule](#schemav2reserverule)|true|none|none|
+
+<h2 id="tocS_V2ReserveRuleListResponse">V2ReserveRuleListResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reserverulelistresponse"></a>
+<a id="schema_V2ReserveRuleListResponse"></a>
+<a id="tocSv2reserverulelistresponse"></a>
+<a id="tocsv2reserverulelistresponse"></a>
+
+```json
+{
+  "data": {
+    "rules": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "scope": "client",
+        "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+        "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+        "product_id": "0d012afa-f885-4e65-aeca-37e27701e2d1",
+        "currency": "string",
+        "percentage": "string",
+        "hold_hours": 0,
+        "effective_from": "2019-08-24T14:15:22Z",
+        "effective_to": "2019-08-24T14:15:22Z",
+        "status": "active",
+        "metadata": {},
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|object|true|none|none|
+|» rules|[[V2ReserveRule](#schemav2reserverule)]|true|none|none|
+
+<h2 id="tocS_V2ReservePreviewRequest">V2ReservePreviewRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reservepreviewrequest"></a>
+<a id="schema_V2ReservePreviewRequest"></a>
+<a id="tocSv2reservepreviewrequest"></a>
+<a id="tocsv2reservepreviewrequest"></a>
+
+```json
+{
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "amount_minor": 0,
+  "at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|account_id|string(uuid)|true|none|none|
+|amount_minor|integer(int64)|true|none|none|
+|at|string(date-time)|false|none|none|
+
+<h2 id="tocS_V2ReservePreview">V2ReservePreview</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reservepreview"></a>
+<a id="schema_V2ReservePreview"></a>
+<a id="tocSv2reservepreview"></a>
+<a id="tocsv2reservepreview"></a>
+
+```json
+{
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "currency": "string",
+  "amount_minor": 0,
+  "reserve_minor": 0,
+  "available_minor": 0,
+  "percentage": "string",
+  "hold_hours": 0,
+  "release_at": "2019-08-24T14:15:22Z",
+  "rule_source": "account",
+  "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|account_id|string(uuid)|true|none|none|
+|currency|string|true|none|none|
+|amount_minor|integer(int64)|true|none|none|
+|reserve_minor|integer(int64)|true|none|none|
+|available_minor|integer(int64)|true|none|none|
+|percentage|string|false|none|none|
+|hold_hours|integer|false|none|none|
+|release_at|string(date-time)|false|none|none|
+|rule_source|string|true|none|none|
+|rule_id|string(uuid)|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|rule_source|account|
+|rule_source|client|
+|rule_source|none|
+
+<h2 id="tocS_V2ReservePreviewResponse">V2ReservePreviewResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reservepreviewresponse"></a>
+<a id="schema_V2ReservePreviewResponse"></a>
+<a id="tocSv2reservepreviewresponse"></a>
+<a id="tocsv2reservepreviewresponse"></a>
+
+```json
+{
+  "data": {
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "currency": "string",
+    "amount_minor": 0,
+    "reserve_minor": 0,
+    "available_minor": 0,
+    "percentage": "string",
+    "hold_hours": 0,
+    "release_at": "2019-08-24T14:15:22Z",
+    "rule_source": "account",
+    "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|[V2ReservePreview](#schemav2reservepreview)|true|none|none|
 
 <h2 id="tocS_V2FeeQuoteResponse">V2FeeQuoteResponse</h2>
 <!-- backwards compatibility -->

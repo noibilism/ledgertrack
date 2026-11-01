@@ -656,6 +656,39 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add reserve rules table",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.reserve_rules (
+							id uuid primary key default gen_random_uuid(),
+							scope varchar(16) not null check (scope in ('client', 'account')),
+							client_id uuid,
+							account_id uuid,
+							product_id uuid,
+							currency varchar(16) not null,
+							percentage varchar(32) not null,
+							hold_hours integer not null check (hold_hours between 1 and 8760),
+							effective_from timestamp without time zone not null,
+							effective_to timestamp without time zone,
+							status varchar(16) not null default 'active' check (status in ('active', 'revoked')),
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint reserve_rules_target check (
+								(scope = 'client' and client_id is not null and account_id is null) or
+								(scope = 'account' and account_id is not null and client_id is null and product_id is null)
+							),
+							constraint reserve_rules_period check (effective_to is null or effective_to > effective_from)
+						);
+						create index if not exists idx_reserve_rules_client on _system.reserve_rules(client_id) where client_id is not null;
+						create index if not exists idx_reserve_rules_account on _system.reserve_rules(account_id) where account_id is not null;
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator
