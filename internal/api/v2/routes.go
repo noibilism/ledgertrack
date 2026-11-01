@@ -125,9 +125,9 @@ func NewRouter(
 							router.Get("/balance", ledgertrackOnly(getAccountBalance(routerOptions.accountService)))
 							router.Get("/history", ledgertrackOnly(getAccountHistory(routerOptions.accountService)))
 							router.Get("/statement", ledgertrackOnly(getAccountStatement(routerOptions.accountService)))
-							router.Post("/credit", ledgertrackOnly(creditAccount(routerOptions.accountService, routerOptions.reserveHoldService)))
-							router.Post("/debit", ledgertrackOnly(debitAccount(routerOptions.accountService, systemController, routerOptions.reserveHoldService)))
-							router.Post("/transfer", ledgertrackOnly(transferAccount(routerOptions.accountService, routerOptions.reserveHoldService)))
+							router.Post("/credit", ledgertrackOnly(creditAccount(routerOptions.accountService, routerOptions.reserveHoldService, routerOptions.chargeService)))
+							router.Post("/debit", ledgertrackOnly(debitAccount(routerOptions.accountService, systemController, routerOptions.reserveHoldService, routerOptions.chargeService)))
+							router.Post("/transfer", ledgertrackOnly(transferAccount(routerOptions.accountService, routerOptions.reserveHoldService, routerOptions.chargeService)))
 							router.Post("/lien", ledgertrackOnly(lienAccount(routerOptions.accountService)))
 							router.Post("/lien/release", ledgertrackOnly(releaseAccountLien(routerOptions.accountService, systemController)))
 							router.Post("/activate", ledgertrackOnly(activateAccount(routerOptions.accountService)))
@@ -353,6 +353,7 @@ type routerOptions struct {
 	reserveRuleService             services.ReserveRuleService
 	calendarService                services.BusinessCalendarService
 	reserveHoldService             services.ReserveHoldService
+	chargeService                  services.ChargeService
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
@@ -424,6 +425,12 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithChargeService(chargeService services.ChargeService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.chargeService = chargeService
 	}
 }
 

@@ -3338,7 +3338,7 @@ paths:
         - ledger.v2
       summary: Quote the fee and tax for a transaction
       description: |
-        Previews the fee and tax for an amount on an account, using the configuration in force at `at` (default now). Nothing is posted. Fee and tax lines are rounded half-even to the currency precision, tax on the fee uses the rounded fee, and `total` is amount plus fee plus tax. Returns 400 when tax rules exist for the event and the client's country is unknown. This endpoint is supported on the `ledgertrack` ledger.
+        Previews the fee and tax for an amount on an account, using the configuration in force at `at` (default now). Nothing is posted. The same quote is what an account debit, credit or transfer charges when its request sets `charge_fees`: the fee goes to the `income_account` of each fee rule and each tax to its `payable_accounts` entry, in the same ledger transaction as the customer's movement. On a debit or transfer the customer pays amount plus fee plus tax; on a credit the fee and tax come out of the credit and the reserve applies to what the wallet receives. The response of the charged call carries `charges`. Fee and tax lines are rounded half-even to the currency precision, tax on the fee uses the rounded fee, and `total` is amount plus fee plus tax. Returns 400 when tax rules exist for the event and the client's country is unknown. This endpoint is supported on the `ledgertrack` ledger.
       operationId: v2QuoteFees
       x-speakeasy-name-override: QuoteFees
       parameters:
@@ -7129,6 +7129,9 @@ components:
           type: string
         currency:
           type: string
+        income_account:
+          type: string
+          description: Code of the GL income account that receives this fee when it is charged. It must be an active income account in the rule's currency that takes postings. A fee with no income account is refused when charged (422 CHARGE_CONFIGURATION).
     V2CreateFeeOverrideRequest:
       type: object
       required: [scope, currency, event, rules]
@@ -7359,6 +7362,9 @@ components:
           type: string
         amount:
           type: string
+        income_account_code:
+          type: string
+          description: GL income account the fee is posted to, as set on the rule. Empty when the rule has none.
     V2FeeQuoteTaxLine:
       type: object
       required: [rule_id, code, base, rate, amount, payable_account_code]

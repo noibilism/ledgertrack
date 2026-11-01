@@ -135,6 +135,9 @@ func NewFXModule() fx.Option {
 			func(glAccountRepository repositories.GLAccountRepository) services.GLReportingService {
 				return services.NewGLReportingService(glAccountRepository)
 			},
+			func(feeConfigService services.FeeConfigService, glAccountRepository repositories.GLAccountRepository) services.ChargeService {
+				return services.NewChargeService(feeConfigService, glAccountRepository)
+			},
 		),
 	)
 }

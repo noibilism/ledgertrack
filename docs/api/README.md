@@ -2383,7 +2383,8 @@ Replaces the product's transaction fees for one event, for one client (optionall
       ],
       "min": "string",
       "max": "string",
-      "currency": "string"
+      "currency": "string",
+      "income_account": "string"
     }
   ],
   "effective_from": "2019-08-24T14:15:22Z",
@@ -2428,7 +2429,8 @@ Replaces the product's transaction fees for one event, for one client (optionall
         ],
         "min": "string",
         "max": "string",
-        "currency": "string"
+        "currency": "string",
+        "income_account": "string"
       }
     ],
     "effective_from": "2019-08-24T14:15:22Z",
@@ -2518,7 +2520,8 @@ This endpoint is supported on the `ledgertrack` ledger.
             ],
             "min": "string",
             "max": "string",
-            "currency": "string"
+            "currency": "string",
+            "income_account": "string"
           }
         ],
         "effective_from": "2019-08-24T14:15:22Z",
@@ -2598,7 +2601,8 @@ This endpoint is supported on the `ledgertrack` ledger.
         ],
         "min": "string",
         "max": "string",
-        "currency": "string"
+        "currency": "string",
+        "income_account": "string"
       }
     ],
     "effective_from": "2019-08-24T14:15:22Z",
@@ -2676,7 +2680,8 @@ Ends the override now. The product default (or the next override in the resoluti
         ],
         "min": "string",
         "max": "string",
-        "currency": "string"
+        "currency": "string",
+        "income_account": "string"
       }
     ],
     "effective_from": "2019-08-24T14:15:22Z",
@@ -3674,7 +3679,7 @@ Accept: application/json
 
 `POST /v2/{ledger}/fees/quote`
 
-Previews the fee and tax for an amount on an account, using the configuration in force at `at` (default now). Nothing is posted. Fee and tax lines are rounded half-even to the currency precision, tax on the fee uses the rounded fee, and `total` is amount plus fee plus tax. Returns 400 when tax rules exist for the event and the client's country is unknown. This endpoint is supported on the `ledgertrack` ledger.
+Previews the fee and tax for an amount on an account, using the configuration in force at `at` (default now). Nothing is posted. The same quote is what an account debit, credit or transfer charges when its request sets `charge_fees`: the fee goes to the `income_account` of each fee rule and each tax to its `payable_accounts` entry, in the same ledger transaction as the customer's movement. On a debit or transfer the customer pays amount plus fee plus tax; on a credit the fee and tax come out of the credit and the reserve applies to what the wallet receives. The response of the charged call carries `charges`. Fee and tax lines are rounded half-even to the currency precision, tax on the fee uses the rounded fee, and `total` is amount plus fee plus tax. Returns 400 when tax rules exist for the event and the client's country is unknown. This endpoint is supported on the `ledgertrack` ledger.
 
 > Body parameter
 
@@ -3718,7 +3723,8 @@ Previews the fee and tax for an amount on an account, using the configuration in
     "fee_lines": [
       {
         "type": "string",
-        "amount": "string"
+        "amount": "string",
+        "income_account_code": "string"
       }
     ],
     "tax_lines": [
@@ -9797,7 +9803,8 @@ and
   ],
   "min": "string",
   "max": "string",
-  "currency": "string"
+  "currency": "string",
+  "income_account": "string"
 }
 
 ```
@@ -9813,6 +9820,7 @@ and
 |min|string|false|none|none|
 |max|string|false|none|none|
 |currency|string|false|none|none|
+|income_account|string|false|none|Code of the GL income account that receives this fee when it is charged. It must be an active income account in the rule's currency that takes postings. A fee with no income account is refused when charged (422 CHARGE_CONFIGURATION).|
 
 #### Enumerated Values
 
@@ -9855,7 +9863,8 @@ and
       ],
       "min": "string",
       "max": "string",
-      "currency": "string"
+      "currency": "string",
+      "income_account": "string"
     }
   ],
   "effective_from": "2019-08-24T14:15:22Z",
@@ -9921,7 +9930,8 @@ and
       ],
       "min": "string",
       "max": "string",
-      "currency": "string"
+      "currency": "string",
+      "income_account": "string"
     }
   ],
   "effective_from": "2019-08-24T14:15:22Z",
@@ -9992,7 +10002,8 @@ and
         ],
         "min": "string",
         "max": "string",
-        "currency": "string"
+        "currency": "string",
+        "income_account": "string"
       }
     ],
     "effective_from": "2019-08-24T14:15:22Z",
@@ -10046,7 +10057,8 @@ and
             ],
             "min": "string",
             "max": "string",
-            "currency": "string"
+            "currency": "string",
+            "income_account": "string"
           }
         ],
         "effective_from": "2019-08-24T14:15:22Z",
@@ -10314,7 +10326,8 @@ and
 ```json
 {
   "type": "string",
-  "amount": "string"
+  "amount": "string",
+  "income_account_code": "string"
 }
 
 ```
@@ -10325,6 +10338,7 @@ and
 |---|---|---|---|---|
 |type|string|true|none|none|
 |amount|string|true|none|none|
+|income_account_code|string|false|none|GL income account the fee is posted to, as set on the rule. Empty when the rule has none.|
 
 <h2 id="tocS_V2FeeQuoteTaxLine">V2FeeQuoteTaxLine</h2>
 <!-- backwards compatibility -->
@@ -10382,7 +10396,8 @@ and
   "fee_lines": [
     {
       "type": "string",
-      "amount": "string"
+      "amount": "string",
+      "income_account_code": "string"
     }
   ],
   "tax_lines": [
@@ -11154,7 +11169,8 @@ and
     "fee_lines": [
       {
         "type": "string",
-        "amount": "string"
+        "amount": "string",
+        "income_account_code": "string"
       }
     ],
     "tax_lines": [

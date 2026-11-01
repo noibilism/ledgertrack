@@ -458,3 +458,40 @@ func TestQuoteRejectsBadRequests(t *testing.T) {
 	_, err = f.svc.Quote(f.ctx, FeeQuoteRequest{AccountID: uuid.New(), Event: "debit", AmountMinor: 1})
 	require.ErrorIs(t, err, ErrFeeConfigNotFound)
 }
+
+func TestOverrideIncomeAccountIsCheckedAndReachesTheQuote(t *testing.T) {
+	f := newFeeConfigFixture(t, "NG")
+	rule := func(code string) []models.TransactionFee {
+		return []models.TransactionFee{{Type: "flat", Value: "10", IncomeAccount: code}}
+	}
+	create := func(code string) error {
+		_, err := f.svc.CreateOverride(f.ctx, CreateFeeOverrideInput{Scope: "client", ClientID: &f.client.ID, Currency: "NGN", Event: "debit", Rules: rule(code)})
+		return err
+	}
+
+	require.NoError(t, f.glRepo.Create(f.ctx, &models.GLAccount{Code: "401199.GHS", Name: "GHS fees", Type: models.GLAccountTypeIncome, NormalSide: models.GLSideCredit, Currency: "GHS", Ledger: "ledgertrack", Address: "gl:ghs:income:fees", Status: models.GLAccountStatusActive}))
+	require.NoError(t, f.glRepo.Create(f.ctx, &models.GLAccount{Code: "401000.NGN", Name: "Fee income header", Type: models.GLAccountTypeIncome, NormalSide: models.GLSideCredit, Currency: "NGN", Ledger: "ledgertrack", Address: "gl:ngn:income:header", Status: models.GLAccountStatusActive, Metadata: map[string]any{"posting": false}}))
+
+	for name, code := range map[string]string{
+		"unknown":        "999999.NGN",
+		"other currency": "401199.GHS",
+		"not income":     "202200.NGN",
+		"header":         "401000.NGN",
+	} {
+		err := create(code)
+		require.ErrorIs(t, err, ErrFeeConfigValidation, name)
+	}
+
+	require.NoError(t, create("401100.NGN"))
+	q := f.quote(t, "debit", 10_000_000)
+	require.Len(t, q.FeeLines, 1)
+	require.Equal(t, "401100.NGN", q.FeeLines[0].IncomeAccountCode)
+}
+
+func TestOverrideWithoutIncomeAccountIsAllowedButQuotesNone(t *testing.T) {
+	f := newFeeConfigFixture(t, "NG")
+	_, err := f.svc.CreateOverride(f.ctx, CreateFeeOverrideInput{Scope: "client", ClientID: &f.client.ID, Currency: "NGN", Event: "debit", Rules: []models.TransactionFee{{Type: "flat", Value: "10"}}})
+	require.NoError(t, err)
+	q := f.quote(t, "debit", 10_000_000)
+	require.Empty(t, q.FeeLines[0].IncomeAccountCode, "charging such a fee is refused by the charge service")
+}

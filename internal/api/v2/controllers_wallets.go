@@ -54,6 +54,9 @@ type WalletTransactionRequest struct {
 	// DrawFromReserve makes a debit (a chargeback, say) spend the wallet's held reserve shares before the
 	// available balance. Not allowed with a channel.
 	DrawFromReserve bool `json:"draw_from_reserve,omitempty"`
+	// ChargeFees posts the fee and tax of the account's fee schedule in the same transaction, to the GL
+	// accounts named on the fee and tax rules. Only on account endpoints; not with a channel.
+	ChargeFees bool `json:"charge_fees,omitempty"`
 }
 
 type ReleaseLienRequest struct {
