@@ -215,6 +215,23 @@ func (e *Engine) Apply(ctx context.Context) (*Result, error) {
 		}
 		e.opt.Logf("phase %s: %d items", ph.name, len(ph.tasks))
 		e.runPhase(ctx, cancel, ph.tasks)
+		// A worker that refreshes the index lists the server before it takes the
+		// snapshot lock, so its list can land after another worker stored a newer
+		// client or account and overwrite it with a stale copy. Reload from the
+		// server once the phase is quiet so the next phase reads the truth.
+		if ctx.Err() == nil {
+			var rerr error
+			switch ph.name {
+			case "clients":
+				rerr = e.refreshClients(ctx)
+			case "accounts":
+				rerr = e.refreshAccounts(ctx)
+			}
+			if rerr != nil {
+				// Keep the current index; later phases report their own failures.
+				e.opt.Logf("could not reload after phase %s: %v", ph.name, rerr)
+			}
+		}
 		if err := e.st.Flush(); err != nil {
 			return e.res, fmt.Errorf("writing state: %w", err)
 		}
