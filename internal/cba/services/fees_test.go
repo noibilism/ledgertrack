@@ -118,3 +118,37 @@ func TestFeeServiceMarkPosted(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, models.FeePostingStatusPosted, posting.Status)
 }
+
+func TestFeeServicePrepareTransactionFeesTieredAndRoundedToCents(t *testing.T) {
+	t.Parallel()
+
+	accountRepo := newAccountRepositoryStub()
+	productRepo := newProductRepositoryStub()
+	service := NewFeeService(accountRepo, productRepo, newFeePostingRepositoryStub())
+
+	to := "50000.00"
+	productID := uuid.New()
+	require.NoError(t, productRepo.Create(context.Background(), &models.Product{
+		ID: productID, Code: "CUR-NGN-TIER", Name: "Tiered", Category: "current", Currency: "NGN",
+		Status: models.ProductStatusActive,
+		FeeSchedule: &models.FeeSchedule{TransactionFees: []models.TransactionFee{{
+			Event: "debit", Type: "tiered",
+			Tiers: []models.FeeTier{
+				{From: "0", To: &to, Type: "flat", Value: "25.00"},
+				{From: "50000.00", Type: "percentage", Value: "0.125"},
+			},
+		}}},
+	}))
+	account := &models.Account{ID: uuid.New(), AccountNumber: "3000000002", ProductID: productID, Currency: "NGN", Status: models.AccountStatusActive, WalletID: "wallet-fee-2"}
+	require.NoError(t, accountRepo.Create(context.Background(), account))
+
+	// 10,000.00 NGN falls in the first band.
+	fees, err := service.PrepareTransactionFees(context.Background(), account.ID, "debit", 1_000_000, "tier-1")
+	require.NoError(t, err)
+	require.Equal(t, "25", fees[0].Amount.String())
+
+	// 100,000.01 NGN: 0.125% is 125.0000125, which must be stored as 125.00 and not as 8 decimals.
+	fees, err = service.PrepareTransactionFees(context.Background(), account.ID, "debit", 10_000_001, "tier-2")
+	require.NoError(t, err)
+	require.Equal(t, "125", fees[0].Amount.String())
+}

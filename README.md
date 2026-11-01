@@ -22,7 +22,7 @@ Each product carries:
 
 * **Rules**: minimum opening balance, minimum and maximum balance, allowed transaction types, KYC requirements, eligible client types, dormancy thresholds, and transaction limits (per-transaction and daily).
 * **Interest configuration**: type (none, simple, compound, tiered), rate, accrual frequency, posting frequency, and tier definitions where applicable.
-* **Fee schedule**: maintenance fees, transaction fees (flat or percentage), and penalty fees.
+* **Fee schedule**: maintenance fees, transaction fees (flat, percentage or tiered by amount band, rounded to the currency precision), and penalty fees.
 
 Products have a lifecycle of `draft → active → retired`. Only draft products are fully editable; retired products cannot be used to open new accounts, but existing accounts continue to operate.
 

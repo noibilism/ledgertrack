@@ -12,8 +12,10 @@ import (
 
 	"github.com/formancehq/go-libs/v3/platform/postgres"
 
+	"github.com/formancehq/ledger/internal/cba/feequote"
 	"github.com/formancehq/ledger/internal/cba/models"
 	"github.com/formancehq/ledger/internal/cba/repositories"
+	currencyregistry "github.com/formancehq/ledger/internal/currency"
 )
 
 var (
@@ -202,43 +204,19 @@ func (s *DefaultFeeService) calculateTransactionFeeAmount(accountCurrency string
 	}
 	amountMajor := minorUnitsToDecimal(amountMinorUnits, accountCurrency)
 
-	var feeAmount decimal.Decimal
-	switch rule.Type {
-	case "flat":
-		parsed, err := decimal.NewFromString(rule.Value)
-		if err != nil {
-			return decimal.Zero, "", fmt.Errorf("%w: invalid flat fee value", ErrFeeValidation)
-		}
-		feeAmount = parsed
-	case "percentage":
-		percentage, err := decimal.NewFromString(rule.Value)
-		if err != nil {
-			return decimal.Zero, "", fmt.Errorf("%w: invalid percentage fee value", ErrFeeValidation)
-		}
-		feeAmount = amountMajor.Mul(percentage).Div(decimal.NewFromInt(100))
-	default:
-		return decimal.Zero, "", fmt.Errorf("%w: unsupported fee type %s", ErrFeeValidation, rule.Type)
+	feeAmount, err := feequote.FeeAmount(rule, amountMajor)
+	if err != nil {
+		return decimal.Zero, "", fmt.Errorf("%w: %v", ErrFeeValidation, err)
 	}
+	return feeAmount.RoundBank(currencyPrecision(currency)), currency, nil
+}
 
-	if rule.Min != nil {
-		minimum, err := decimal.NewFromString(*rule.Min)
-		if err != nil {
-			return decimal.Zero, "", fmt.Errorf("%w: invalid fee min bound", ErrFeeValidation)
-		}
-		if feeAmount.LessThan(minimum) {
-			feeAmount = minimum
-		}
+// currencyPrecision returns the number of decimals of a currency, 2 when it is unknown.
+func currencyPrecision(currency string) int32 {
+	if definition, ok := currencyregistry.Lookup(currency); ok {
+		return int32(definition.Precision)
 	}
-	if rule.Max != nil {
-		maximum, err := decimal.NewFromString(*rule.Max)
-		if err != nil {
-			return decimal.Zero, "", fmt.Errorf("%w: invalid fee max bound", ErrFeeValidation)
-		}
-		if feeAmount.GreaterThan(maximum) {
-			feeAmount = maximum
-		}
-	}
-	return feeAmount.RoundBank(8), currency, nil
+	return 2
 }
 
 func isMaintenanceBoundary(frequency string, scheduledFor time.Time) bool {

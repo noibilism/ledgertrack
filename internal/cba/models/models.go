@@ -77,13 +77,24 @@ type MaintenanceFee struct {
 	Currency  string `json:"currency"`
 }
 
+// FeeTier is one band of a tiered fee. The band that contains the transaction amount
+// decides the fee for the whole transaction; bands are not marginal. From is inclusive
+// and To is exclusive; the last band has no To.
+type FeeTier struct {
+	From  string  `json:"from"`
+	To    *string `json:"to,omitempty"`
+	Type  string  `json:"type"`
+	Value string  `json:"value"`
+}
+
 type TransactionFee struct {
-	Event    string  `json:"event"`
-	Type     string  `json:"type"`
-	Value    string  `json:"value"`
-	Min      *string `json:"min,omitempty"`
-	Max      *string `json:"max,omitempty"`
-	Currency string  `json:"currency,omitempty"`
+	Event    string    `json:"event"`
+	Type     string    `json:"type"`
+	Value    string    `json:"value,omitempty"`
+	Tiers    []FeeTier `json:"tiers,omitempty"`
+	Min      *string   `json:"min,omitempty"`
+	Max      *string   `json:"max,omitempty"`
+	Currency string    `json:"currency,omitempty"`
 }
 
 type FeeSchedule struct {
