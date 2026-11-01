@@ -21,7 +21,7 @@ Then import with `ledgertrack-import` (see `docs/import`), starting with a dry r
 - No client is excluded and no account is suspended. Accounts keep their Bankman status. The real KYC status stays in `kyc_source`.
 - Amounts are rounded half-even to cents. Every difference is a row in `export_issues.csv`.
 - `external_id` of each client (the key callers send) is exported and stored on the client as `legacy_external_id`.
-- Open liens are exported one per Bankman lien transaction, with the Bankman transaction id as `source_id`, so a release by lien transaction id can be resolved after cutover. A lien is open when it completed and no release row points at it through `original_transaction_id`. An account uses this detail only when it adds up to `locked_amount`; otherwise it gets one aggregate lien and an `lien_detail_mismatch` or `lien_detail_missing` issue. Check how production Bankman links a release to its lien before relying on the detail; the fallback keeps balances right either way.
+- Open liens are exported one per Bankman lien transaction, with the Bankman transaction id as `source_id`, so a release by lien transaction id can be resolved after cutover. A lien is open under Bankman's own rule (`Transaction::canReleaseLien()`): it completed and no transaction of any type or status points at it through `original_transaction_id`. An account uses this detail only when it adds up to `locked_amount`; otherwise it gets one aggregate lien and an `lien_detail_mismatch` or `lien_detail_missing` issue.
 
 ## Before production
 - Review `export_issues.csv` and `finance_followup.csv` with Finance.

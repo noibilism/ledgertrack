@@ -19,6 +19,7 @@ import (
 	"github.com/formancehq/go-libs/v3/otlp"
 	"github.com/formancehq/go-libs/v3/service"
 
+	"github.com/formancehq/ledger/internal/api/bankman"
 	"github.com/formancehq/ledger/internal/api/bulking"
 	"github.com/formancehq/ledger/internal/api/common"
 	v1 "github.com/formancehq/ledger/internal/api/v1"
@@ -29,6 +30,9 @@ import (
 	"github.com/formancehq/ledger/internal/controller/system"
 	"github.com/formancehq/ledger/internal/transfers"
 )
+
+// walletLedgerName is the ledger that holds customer wallets.
+const walletLedgerName = "ledgertrack"
 
 // todo: refine textual errors
 func NewRouter(
@@ -124,6 +128,15 @@ func NewRouter(
 		chi.RouteContext(r.Context()).Reset()
 		v2Router.ServeHTTP(w, r)
 	}))))
+	if routerOptions.legacyLookupService != nil {
+		// The compat layer dispatches to v2Router in process, so every call passes the same authentication
+		// and business rules as a native one. Authentication also runs here, before its own lookups.
+		compat := auth.Middleware(authenticator)(bankman.New(routerOptions.legacyLookupService, v2Router, walletLedgerName))
+		mux.Handle("/bankman/api/v1/*", admitWrites(http.StripPrefix("/bankman/api/v1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			chi.RouteContext(r.Context()).Reset()
+			compat.ServeHTTP(w, r)
+		}))))
+	}
 	mux.Handle("/*", admitWrites(v1.NewRouter(
 		systemController,
 		authenticator,
@@ -154,6 +167,7 @@ type routerOptions struct {
 	calendarService                services.BusinessCalendarService
 	reserveHoldService             services.ReserveHoldService
 	chargeService                  services.ChargeService
+	legacyLookupService            services.LegacyLookupService
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
@@ -233,6 +247,13 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+// WithLegacyLookupService enables the Bankman compatibility API at /bankman/api/v1.
+func WithLegacyLookupService(legacyLookupService services.LegacyLookupService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.legacyLookupService = legacyLookupService
 	}
 }
 
