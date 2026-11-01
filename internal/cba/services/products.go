@@ -11,6 +11,7 @@ import (
 
 	"github.com/formancehq/go-libs/v3/platform/postgres"
 
+	"github.com/formancehq/ledger/internal/cba/feequote"
 	"github.com/formancehq/ledger/internal/cba/models"
 	"github.com/formancehq/ledger/internal/cba/repositories"
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
@@ -449,21 +450,8 @@ func validateFeeSchedule(schedule *models.FeeSchedule) error {
 		default:
 			return fmt.Errorf("%w: invalid transaction fee event %s", ErrProductValidation, fee.Event)
 		}
-		switch fee.Type {
-		case "flat", "percentage":
-		default:
-			return fmt.Errorf("%w: invalid transaction fee type %s", ErrProductValidation, fee.Type)
-		}
-		if _, err := parseDecimalField("transaction fee value", fee.Value); err != nil {
-			return err
-		}
-		for _, maybeValue := range []*string{fee.Min, fee.Max} {
-			if maybeValue == nil {
-				continue
-			}
-			if _, err := parseDecimalField("transaction fee bounds", *maybeValue); err != nil {
-				return err
-			}
+		if err := feequote.ValidateFeeRule(fee); err != nil {
+			return fmt.Errorf("%w: %v", ErrProductValidation, err)
 		}
 		if fee.Currency != "" {
 			definition, ok := currencyregistry.Lookup(fee.Currency)
