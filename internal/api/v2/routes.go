@@ -204,6 +204,26 @@ func NewRouter(
 					})
 				}
 
+				if routerOptions.feeConfigService != nil {
+					router.Route("/fee-overrides", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createFeeOverride(routerOptions.feeConfigService)))
+						router.Get("/", ledgertrackOnly(listFeeOverrides(routerOptions.feeConfigService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readFeeOverride(routerOptions.feeConfigService)))
+							router.Post("/revoke", ledgertrackOnly(revokeFeeOverride(routerOptions.feeConfigService)))
+						})
+					})
+					router.Route("/tax-rules", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createTaxRule(routerOptions.feeConfigService)))
+						router.Get("/", ledgertrackOnly(listTaxRules(routerOptions.feeConfigService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readTaxRule(routerOptions.feeConfigService)))
+							router.Post("/revoke", ledgertrackOnly(revokeTaxRule(routerOptions.feeConfigService)))
+						})
+					})
+					router.Post("/fees/quote", ledgertrackOnly(quoteFees(routerOptions.feeConfigService)))
+				}
+
 				if routerOptions.glAccountService != nil {
 					router.Route("/gl/accounts", func(router chi.Router) {
 						router.Post("/", ledgertrackOnly(createGLAccount(routerOptions.glAccountService)))
@@ -296,6 +316,7 @@ type routerOptions struct {
 	reportingService               services.ReportingService
 	financeReportingService        services.FinanceReportingService
 	glAccountService               services.GLAccountService
+	feeConfigService               services.FeeConfigService
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
@@ -367,6 +388,12 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+func WithFeeConfigService(feeConfigService services.FeeConfigService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.feeConfigService = feeConfigService
 	}
 }
 

@@ -1505,6 +1505,302 @@ paths:
       security:
         - Authorization:
             - ledger:read
+  /v2/{ledger}/fee-overrides:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a fee override
+      description: |
+        Replaces the product's transaction fees for one event, for one client (optionally one product) or one account. `rules` are all the fee rules for the event, so a combined fee (flat plus percentage) is one override. Resolution order is account override, then client and product override, then client-wide override in the same currency, then the product default. Overlapping overrides for the same target are rejected with 409. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateFeeOverride
+      x-speakeasy-name-override: CreateFeeOverride
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreateFeeOverrideRequest"
+      responses:
+        "201":
+          description: Fee override created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeOverrideResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List fee overrides
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListFeeOverrides
+      x-speakeasy-name-override: ListFeeOverrides
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: client_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: account_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: event
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, revoked]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeOverrideListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/fee-overrides/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a fee override
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetFeeOverride
+      x-speakeasy-name-override: GetFeeOverride
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeOverrideResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/fee-overrides/{id}/revoke:
+    post:
+      tags:
+        - ledger.v2
+      summary: Revoke a fee override
+      description: Ends the override now. The product default (or the next override in the resolution order) applies from then on. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2RevokeFeeOverride
+      x-speakeasy-name-override: RevokeFeeOverride
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeOverrideResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/tax-rules:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a tax rule
+      description: |
+        A tax rule applies to a client country (ISO 3166-1 alpha-2) and an event. `base` is `fee` (tax on the rounded fee) or `amount` (tax on the transaction amount). `payable_accounts` maps each currency to the liability GL account code that receives the tax. The country comes from the client's incorporation country, then the contact address country. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateTaxRule
+      x-speakeasy-name-override: CreateTaxRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreateTaxRuleRequest"
+      responses:
+        "201":
+          description: Tax rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TaxRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List tax rules
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListTaxRules
+      x-speakeasy-name-override: ListTaxRules
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: country
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: event
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, revoked]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TaxRuleListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/tax-rules/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a tax rule
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetTaxRule
+      x-speakeasy-name-override: GetTaxRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TaxRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/tax-rules/{id}/revoke:
+    post:
+      tags:
+        - ledger.v2
+      summary: Revoke a tax rule
+      description: Ends the rule now. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2RevokeTaxRule
+      x-speakeasy-name-override: RevokeTaxRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TaxRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/fees/quote:
+    post:
+      tags:
+        - ledger.v2
+      summary: Quote the fee and tax for a transaction
+      description: |
+        Previews the fee and tax for an amount on an account, using the configuration in force at `at` (default now). Nothing is posted. Fee and tax lines are rounded half-even to the currency precision, tax on the fee uses the rounded fee, and `total` is amount plus fee plus tax. Returns 400 when tax rules exist for the event and the client's country is unknown. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2QuoteFees
+      x-speakeasy-name-override: QuoteFees
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2FeeQuoteRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeQuoteResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
   /v2/{ledger}/gl/accounts:
     post:
       tags:
@@ -3538,6 +3834,14 @@ components:
       schema:
         type: string
         example: ledgertrack
+    V2FeeConfigID:
+      name: id
+      in: path
+      description: Identifier of the fee override or tax rule.
+      required: true
+      schema:
+        type: string
+        format: uuid
     V2GLCode:
       name: code
       in: path
@@ -4631,6 +4935,347 @@ components:
         updated_at:
           type: string
           format: date-time
+    V2FeeTier:
+      type: object
+      required: [from, type, value]
+      properties:
+        from:
+          type: string
+          example: "0"
+        to:
+          type: string
+          description: Exclusive upper bound. Omitted on the last tier.
+        type:
+          type: string
+          enum: [flat, percentage]
+        value:
+          type: string
+    V2TransactionFee:
+      type: object
+      required: [event, type]
+      properties:
+        event:
+          type: string
+          enum: [debit, credit, transfer]
+        type:
+          type: string
+          enum: [flat, percentage, tiered]
+        value:
+          type: string
+          description: Amount for `flat`, percent for `percentage`. Not used for `tiered`.
+        tiers:
+          type: array
+          description: Bands for `tiered`. They start at 0, touch each other and the last one is open ended.
+          items:
+            $ref: "#/components/schemas/V2FeeTier"
+        min:
+          type: string
+        max:
+          type: string
+        currency:
+          type: string
+    V2CreateFeeOverrideRequest:
+      type: object
+      required: [scope, currency, event, rules]
+      properties:
+        scope:
+          type: string
+          enum: [client, account]
+        client_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+          description: Client scope only. Limits the override to accounts of this product.
+        currency:
+          type: string
+          example: NGN
+        event:
+          type: string
+          enum: [debit, credit, transfer]
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2TransactionFee"
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    V2FeeOverride:
+      type: object
+      required: [id, scope, currency, event, rules, effective_from, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+        client_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        event:
+          type: string
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2TransactionFee"
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, revoked]
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2FeeOverrideResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2FeeOverride"
+    V2FeeOverrideListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [overrides]
+          properties:
+            overrides:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2FeeOverride"
+    V2CreateTaxRuleRequest:
+      type: object
+      required: [country, code, name, event, base, rate, payable_accounts]
+      properties:
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2.
+          example: NG
+        code:
+          type: string
+          example: VAT
+        name:
+          type: string
+          example: Value added tax
+        event:
+          type: string
+          enum: [debit, credit, transfer]
+        base:
+          type: string
+          enum: [fee, amount]
+        rate:
+          type: string
+          description: Percent, so "7.5" is 7.5%.
+          example: "7.5"
+        min:
+          type: string
+        max:
+          type: string
+        payable_accounts:
+          type: object
+          description: Liability GL account code per currency.
+          additionalProperties:
+            type: string
+          example:
+            NGN: "202100.NGN"
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    V2TaxRule:
+      type: object
+      required: [id, country, code, name, event, base, rate, payable_accounts, effective_from, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        country:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        event:
+          type: string
+        base:
+          type: string
+        rate:
+          type: string
+        min:
+          type: string
+        max:
+          type: string
+        payable_accounts:
+          type: object
+          additionalProperties:
+            type: string
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, revoked]
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2TaxRuleResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2TaxRule"
+    V2TaxRuleListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [rules]
+          properties:
+            rules:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2TaxRule"
+    V2FeeQuoteRequest:
+      type: object
+      required: [account_id, event, amount_minor]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+          enum: [debit, credit, transfer]
+        amount_minor:
+          type: integer
+          format: int64
+          description: Transaction amount in minor units.
+        at:
+          type: string
+          format: date-time
+    V2FeeQuoteFeeLine:
+      type: object
+      required: [type, amount]
+      properties:
+        type:
+          type: string
+        amount:
+          type: string
+    V2FeeQuoteTaxLine:
+      type: object
+      required: [rule_id, code, base, rate, amount, payable_account_code]
+      properties:
+        rule_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        base:
+          type: string
+        rate:
+          type: string
+        amount:
+          type: string
+        payable_account_code:
+          type: string
+    V2FeeQuote:
+      type: object
+      required: [account_id, event, currency, amount, fee, tax, gross, total, amount_minor, fee_minor, tax_minor, total_minor, fee_source, fee_lines, tax_lines]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+        currency:
+          type: string
+        amount:
+          type: string
+        fee:
+          type: string
+        tax:
+          type: string
+        gross:
+          type: string
+          description: Fee plus tax.
+        total:
+          type: string
+          description: Amount plus fee plus tax, what leaves the customer's wallet.
+        amount_minor:
+          type: integer
+          format: int64
+        fee_minor:
+          type: integer
+          format: int64
+        tax_minor:
+          type: integer
+          format: int64
+        total_minor:
+          type: integer
+          format: int64
+        fee_source:
+          type: string
+          enum: [account, client, product, none]
+        fee_override_id:
+          type: string
+          format: uuid
+        fee_lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FeeQuoteFeeLine"
+        tax_lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FeeQuoteTaxLine"
+    V2FeeQuoteResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2FeeQuote"
     V2GLAccountResponse:
       type: object
       required:
