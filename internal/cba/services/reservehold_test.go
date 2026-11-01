@@ -20,6 +20,7 @@ import (
 // as the SQL one: leases, status guards and a unique key per credit.
 type reserveHoldRepositoryStub struct {
 	holds        map[uuid.UUID]*models.ReserveHold
+	draws        []*models.ReserveDraw
 	rulesExist   bool
 	ruleChecks   int
 	failMarkHeld error
@@ -141,9 +142,88 @@ func (s *reserveHoldRepositoryStub) claim(match func(*models.ReserveHold) bool, 
 	}
 	return out
 }
+func (s *reserveHoldRepositoryStub) pendingDraw(holdID uuid.UUID) bool {
+	for _, d := range s.draws {
+		if d.HoldID == holdID && d.Status == models.DrawStatusPending {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *reserveHoldRepositoryStub) Draw(_ context.Context, ledger, wallet, ref string, amount int64, now time.Time) ([]models.ReserveDraw, error) {
+	out := []models.ReserveDraw{}
+	for _, d := range s.draws {
+		if d.Ledger == ledger && d.WalletID == wallet && d.Reference == ref && d.Status != models.DrawStatusReverted {
+			out = append(out, *d)
+		}
+	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	hs := []*models.ReserveHold{}
+	for _, h := range s.holds {
+		if h.Ledger == ledger && h.WalletID == wallet && h.Status == models.HoldStatusHeld && h.AmountMinor > 0 && leaseFree(h, now) {
+			hs = append(hs, h)
+		}
+	}
+	sort.Slice(hs, func(i, j int) bool { return hs[i].ReleaseAt.Before(hs[j].ReleaseAt) })
+	remaining := amount
+	for _, h := range hs {
+		if remaining <= 0 {
+			break
+		}
+		take := h.AmountMinor
+		if take > remaining {
+			take = remaining
+		}
+		h.AmountMinor -= take
+		if h.AmountMinor == 0 {
+			h.Status, h.ReleaseReason = models.HoldStatusReleased, models.HoldReleaseDrawn
+		}
+		d := &models.ReserveDraw{ID: uuid.New(), HoldID: h.ID, Ledger: ledger, WalletID: wallet, Reference: ref, AmountMinor: take, Status: models.DrawStatusPending, CreatedAt: now}
+		s.draws = append(s.draws, d)
+		out = append(out, *d)
+		remaining -= take
+	}
+	return out, nil
+}
+func (s *reserveHoldRepositoryStub) ConfirmDraws(_ context.Context, ledger, wallet, ref string) error {
+	for _, d := range s.draws {
+		if d.Ledger == ledger && d.WalletID == wallet && d.Reference == ref && d.Status == models.DrawStatusPending {
+			d.Status = models.DrawStatusApplied
+		}
+	}
+	return nil
+}
+func (s *reserveHoldRepositoryStub) RevertDraws(_ context.Context, ledger, wallet, ref string) error {
+	for _, d := range s.draws {
+		if d.Ledger == ledger && d.WalletID == wallet && d.Reference == ref && d.Status == models.DrawStatusPending {
+			d.Status = models.DrawStatusReverted
+			h := s.holds[d.HoldID]
+			h.AmountMinor += d.AmountMinor
+			if h.Status == models.HoldStatusReleased && h.ReleaseReason == models.HoldReleaseDrawn {
+				h.Status, h.ReleaseReason = models.HoldStatusHeld, ""
+			}
+		}
+	}
+	return nil
+}
+func (s *reserveHoldRepositoryStub) StaleDraws(_ context.Context, olderThan time.Time, limit int) ([]models.DrawRef, error) {
+	seen := map[models.DrawRef]bool{}
+	out := []models.DrawRef{}
+	for _, d := range s.draws {
+		ref := models.DrawRef{Ledger: d.Ledger, WalletID: d.WalletID, Reference: d.Reference}
+		if d.Status == models.DrawStatusPending && d.CreatedAt.Before(olderThan) && !seen[ref] && len(out) < limit {
+			seen[ref] = true
+			out = append(out, ref)
+		}
+	}
+	return out, nil
+}
 func (s *reserveHoldRepositoryStub) ClaimDue(_ context.Context, owner string, now time.Time, lease time.Duration, limit int) ([]models.ReserveHold, error) {
 	return s.claim(func(h *models.ReserveHold) bool {
-		return h.Status == models.HoldStatusHeld && !h.ReleaseAt.After(now)
+		return h.Status == models.HoldStatusHeld && !h.ReleaseAt.After(now) && !s.pendingDraw(h.ID)
 	}, owner, now, lease, limit), nil
 }
 func (s *reserveHoldRepositoryStub) ClaimStalePending(_ context.Context, owner string, olderThan, now time.Time, lease time.Duration, limit int) ([]models.ReserveHold, error) {
@@ -499,4 +579,120 @@ func TestListHoldsFilters(t *testing.T) {
 	none, err := f.holds.ListHolds(f.ctx, repositories.ReserveHoldFilter{DueBefore: &soon})
 	require.NoError(t, err)
 	require.Empty(t, none)
+}
+
+func (f *holdFixture) draw(t *testing.T, ref string, minor int64) *DrawPlan {
+	t.Helper()
+	p, err := f.holds.DrawReserve(f.ctx, DrawRequest{Ledger: "ledgertrack", WalletID: f.account.WalletID, Reference: ref, AmountMinor: minor})
+	require.NoError(t, err)
+	return p
+}
+
+func TestDrawTakesOldestHoldFirstAndKeepsTheRest(t *testing.T) {
+	f := newHoldFixture(t)
+	f.clientRule(t, "10", 24)
+	older := f.heldHold(t, "cr-old", 10_000_000, 1) // holds 1,000,000
+	f.now = f.now.Add(time.Hour)
+	newer := f.heldHold(t, "cr-new", 10_000_000, 2) // holds 1,000,000, releases an hour later
+
+	p := f.draw(t, "chargeback-1", 1_500_000)
+	require.NotNil(t, p)
+	require.Equal(t, int64(1_500_000), p.DrawnMinor)
+	require.Zero(t, p.RemainderMinor)
+	require.Len(t, p.Draws, 2)
+
+	got, _ := f.holds.GetHold(f.ctx, older.ID)
+	require.Equal(t, models.HoldStatusReleased, got.Status)
+	require.Equal(t, models.HoldReleaseDrawn, got.ReleaseReason)
+	require.Zero(t, got.AmountMinor)
+	got, _ = f.holds.GetHold(f.ctx, newer.ID)
+	require.Equal(t, models.HoldStatusHeld, got.Status)
+	require.EqualValues(t, 500_000, got.AmountMinor)
+}
+
+func TestDrawCoversLessThanTheDebitWhenLittleIsHeld(t *testing.T) {
+	f := newHoldFixture(t)
+	f.clientRule(t, "10", 24)
+	f.heldHold(t, "cr-1", 10_000_000, 1)
+	p := f.draw(t, "chargeback-1", 5_000_000)
+	require.Equal(t, int64(1_000_000), p.DrawnMinor)
+	require.Equal(t, int64(4_000_000), p.RemainderMinor, "the rest comes from the available balance")
+	require.Nil(t, f.draw(t, "chargeback-2", 100), "nothing is left to draw")
+}
+
+func TestDrawIsIdempotentOnTheReference(t *testing.T) {
+	f := newHoldFixture(t)
+	f.clientRule(t, "10", 24)
+	h := f.heldHold(t, "cr-1", 10_000_000, 1)
+	first := f.draw(t, "chargeback-1", 400_000)
+	again := f.draw(t, "chargeback-1", 400_000)
+	require.Equal(t, first.DrawnMinor, again.DrawnMinor)
+	got, _ := f.holds.GetHold(f.ctx, h.ID)
+	require.EqualValues(t, 600_000, got.AmountMinor, "a retry does not draw twice")
+
+	_, err := f.holds.DrawReserve(f.ctx, DrawRequest{Ledger: "ledgertrack", WalletID: f.account.WalletID, Reference: "chargeback-1", AmountMinor: 100_000})
+	require.ErrorIs(t, err, ErrReserveConflict, "a retry with a smaller amount than was drawn is refused")
+	_, err = f.holds.DrawReserve(f.ctx, DrawRequest{Ledger: "ledgertrack", WalletID: f.account.WalletID, Reference: "", AmountMinor: 1})
+	require.ErrorIs(t, err, ErrReserveValidation)
+}
+
+func TestRevertGivesTheHoldBack(t *testing.T) {
+	f := newHoldFixture(t)
+	f.clientRule(t, "10", 24)
+	h := f.heldHold(t, "cr-1", 10_000_000, 1)
+	f.draw(t, "chargeback-1", 1_000_000) // uses the hold up
+	got, _ := f.holds.GetHold(f.ctx, h.ID)
+	require.Equal(t, models.HoldStatusReleased, got.Status)
+
+	require.NoError(t, f.holds.RevertDraw(f.ctx, "ledgertrack", f.account.WalletID, "chargeback-1"))
+	got, _ = f.holds.GetHold(f.ctx, h.ID)
+	require.Equal(t, models.HoldStatusHeld, got.Status)
+	require.EqualValues(t, 1_000_000, got.AmountMinor)
+	require.Empty(t, got.ReleaseReason)
+
+	// the same reference can draw again after a revert
+	require.Equal(t, int64(1_000_000), f.draw(t, "chargeback-1", 1_000_000).DrawnMinor)
+}
+
+func TestPendingDrawBlocksReleaseUntilSettled(t *testing.T) {
+	f := newHoldFixture(t)
+	f.clientRule(t, "10", 24)
+	h := f.heldHold(t, "cr-1", 10_000_000, 1)
+	f.now = f.now.Add(25 * time.Hour) // the SLA has passed
+	f.draw(t, "chargeback-1", 400_000)
+
+	stats, err := f.holds.RunRelease(f.ctx, releaseOpts())
+	require.NoError(t, err)
+	require.Zero(t, stats.Released, "the SLA release waits while a debit is mid-air")
+
+	require.NoError(t, f.holds.ConfirmDraw(f.ctx, "ledgertrack", f.account.WalletID, "chargeback-1"))
+	stats, err = f.holds.RunRelease(f.ctx, releaseOpts())
+	require.NoError(t, err)
+	require.Equal(t, 1, stats.Released)
+	require.Equal(t, 1, len(f.ledger.released))
+	got, _ := f.holds.GetHold(f.ctx, h.ID)
+	require.EqualValues(t, 600_000, got.AmountMinor, "only what is left is released")
+}
+
+func TestInterruptedDebitIsSettledFromTheLedger(t *testing.T) {
+	f := newHoldFixture(t)
+	f.clientRule(t, "10", 48)
+	h := f.heldHold(t, "cr-1", 10_000_000, 1)
+	f.draw(t, "cb-posted", 300_000)
+	f.draw(t, "cb-lost", 200_000)
+	f.draw(t, "cb-fresh", 100_000)
+	f.ledger.credits["cb-posted"] = 900 // the debit reached the ledger
+
+	for _, d := range f.repo.draws {
+		if d.Reference != "cb-fresh" {
+			d.CreatedAt = f.now.Add(-time.Hour)
+		}
+	}
+	stats, err := f.holds.RunRelease(f.ctx, releaseOpts())
+	require.NoError(t, err)
+	require.Equal(t, 1, stats.DrawsApplied)
+	require.Equal(t, 1, stats.DrawsReverted)
+
+	got, _ := f.holds.GetHold(f.ctx, h.ID)
+	require.EqualValues(t, 1_000_000-300_000-100_000, got.AmountMinor, "the lost debit gave its 200,000 back; the fresh one is still in flight")
 }

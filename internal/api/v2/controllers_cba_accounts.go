@@ -327,7 +327,7 @@ func creditAccount(accountService services.AccountService, holds services.Reserv
 			}
 		}
 		if plan != nil {
-			script = reserveCreditScript(asset, accountSystem, accountUser, walletaddr.Lien(account.WalletID, account.Currency), plan)
+			script = reserveCreditScript(asset, accountSystem, accountUser, walletaddr.Lien(account.WalletID, account.Currency), true, plan)
 			accountMetadata = withReserveMetadata(accountMetadata, plan)
 		}
 
@@ -374,7 +374,7 @@ func creditAccount(accountService services.AccountService, holds services.Reserv
 	}
 }
 
-func debitAccount(accountService services.AccountService, sys systemcontroller.Controller) http.HandlerFunc {
+func debitAccount(accountService services.AccountService, sys systemcontroller.Controller, holds services.ReserveHoldService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accountID, err := getCBAAccountID(r)
 		if err != nil {
@@ -417,20 +417,51 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			}
 		}
 
+		// A chargeback asks to spend the held reserve first (see debitWallet).
+		var drawPlan *services.DrawPlan
+		if req.DrawFromReserve {
+			if req.ChannelID != "" {
+				api.BadRequest(w, common.ErrValidation, fmt.Errorf("draw_from_reserve cannot be combined with a channel"))
+				return
+			}
+			if holds != nil && chi.URLParam(r, "ledger") == reserveLedgerName {
+				drawPlan, err = holds.DrawReserve(r.Context(), services.DrawRequest{
+					Ledger: reserveLedgerName, WalletID: account.WalletID, Reference: req.Reference, AmountMinor: amount,
+				})
+				if err != nil {
+					handleReserveError(w, r, err)
+					return
+				}
+			}
+		}
+		// Anything that stops the debit before it is posted gives the held shares back.
+		giveBack := func() {
+			if drawPlan != nil {
+				_ = holds.RevertDraw(r.Context(), reserveLedgerName, account.WalletID, req.Reference)
+			}
+		}
+
 		l := common.LedgerFromContext(r.Context())
 		currentBalance, err := readAvailableBalance(r.Context(), l, account.WalletID, account.Currency)
 		if err != nil {
+			giveBack()
 			common.HandleCommonErrors(w, r, err)
 			return
 		}
+		if drawPlan != nil {
+			// the held shares are funds this debit can spend
+			currentBalance += drawPlan.DrawnMinor
+		}
 		usageAt := time.Now().UTC()
 		if _, err := accountService.ValidateDebit(r.Context(), accountID, amount, currentBalance, usageAt); err != nil && !isIdempotentRetry(r.Context(), l, r.Header.Get("Idempotency-Key")) {
+			giveBack()
 			handleAccountError(w, r, err)
 			return
 		}
 
 		asset, err := currencyregistry.AssetFor(account.Currency)
 		if err != nil {
+			giveBack()
 			common.HandleCommonErrors(w, r, err)
 			return
 		}
@@ -442,6 +473,11 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			destination = @%s
 		)
 	`, asset, amount, accountUser, accountSystem)
+		accountMetadata := buildAccountMetadata(req.Metadata, account, "debit")
+		if drawPlan != nil {
+			script = reserveDebitScript(asset, accountUser, walletaddr.Lien(account.WalletID, account.Currency), accountSystem, drawPlan)
+			accountMetadata = withDrawMetadata(accountMetadata, drawPlan)
+		}
 
 		params := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
@@ -449,13 +485,16 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 				RunScript: vm.RunScript{
 					Script:    vm.Script{Plain: script},
 					Reference: req.Reference,
-					Metadata:  buildAccountMetadata(req.Metadata, account, "debit"),
+					Metadata:  accountMetadata,
 				},
 				Runtime: ledgerinternal.RuntimeMachine,
 			},
 		}
 
 		_, tx, replayed, err := l.CreateTransaction(r.Context(), params)
+		if drawPlan != nil {
+			settleReserveDraw(r.Context(), holds, reserveLedgerName, account.WalletID, req.Reference, err)
+		}
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "insufficient fund") {
 				api.WriteErrorResponse(w, http.StatusPaymentRequired, common.ErrInsufficientFund, err)
@@ -558,6 +597,9 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 
 		response := accountTransactionResponse(tx.Transaction, accountUser, asset)
 		response["metadata"] = respMetadata
+		if drawPlan != nil {
+			response["reserve"] = drawResponse(drawPlan)
+		}
 		if warningMsg != "" {
 			response["warning"] = warningMsg
 		}
@@ -568,16 +610,18 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 // AccountTransferRequest moves money between two accounts of the same currency in one ledger
 // transaction.
 type AccountTransferRequest struct {
-	DestinationAccountID string            `json:"destinationAccountID"`
-	Amount               json.Number       `json:"amount"`
-	Reference            string            `json:"reference"`
-	Metadata             map[string]string `json:"metadata"`
+	DestinationAccountID string      `json:"destinationAccountID"`
+	Amount               json.Number `json:"amount"`
+	Reference            string      `json:"reference"`
+	// CreditType is how the destination sees the credit for reserve rules. Default "transfer".
+	CreditType string            `json:"credit_type,omitempty"`
+	Metadata   map[string]string `json:"metadata"`
 }
 
 // transferAccount debits {accountID} and credits the destination account atomically. Both
 // sides go through the same checks as a separate debit and credit, and a single posting moves
 // the money, so a failure can never leave it half-way.
-func transferAccount(accountService services.AccountService) http.HandlerFunc {
+func transferAccount(accountService services.AccountService, holds services.ReserveHoldService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sourceID, err := getCBAAccountID(r)
 		if err != nil {
@@ -666,6 +710,29 @@ func transferAccount(accountService services.AccountService) http.HandlerFunc {
 		md := buildAccountMetadata(req.Metadata, source, "transfer")
 		md["destination_account_id"] = destination.ID.String()
 		md["destination_wallet_id"] = destination.WalletID
+
+		// The destination is credited, so a reserve rule on it holds its share in the lien. The
+		// source is debited in full either way and the money still moves in one transaction.
+		var plan *services.CreditPlan
+		if holds != nil && chi.URLParam(r, "ledger") == reserveLedgerName {
+			creditType := strings.TrimSpace(req.CreditType)
+			if creditType == "" {
+				creditType = "transfer"
+			}
+			plan, err = holds.PlanCredit(r.Context(), services.PlanCreditRequest{
+				Ledger: reserveLedgerName, WalletID: destination.WalletID, Currency: destination.Currency,
+				Reference: req.Reference, AmountMinor: amount, CreditType: creditType,
+			})
+			if err != nil {
+				handleReserveError(w, r, err)
+				return
+			}
+		}
+		if plan != nil {
+			script = reserveCreditScript(asset, sourceAddress, destinationAddress,
+				walletaddr.Lien(destination.WalletID, destination.Currency), false, plan)
+			md = withReserveMetadata(md, plan)
+		}
 		_, tx, replayed, err := l.CreateTransaction(r.Context(), ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 			IdempotencyKey: idempotencyKey,
 			Input: ledgercontroller.CreateTransaction{
@@ -710,8 +777,15 @@ func transferAccount(accountService services.AccountService) http.HandlerFunc {
 			}
 		}
 
+		if plan != nil {
+			confirmReserveHold(r.Context(), holds, plan, tx)
+		}
+
 		response := accountTransactionResponse(tx.Transaction, sourceAddress, asset)
 		response["destination_account_id"] = destination.ID.String()
+		if plan != nil {
+			response["reserve"] = reserveResponse(plan)
+		}
 		api.Created(w, response)
 	}
 }

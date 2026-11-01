@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,24 @@ type ReleaseStats struct {
 	Escalated int
 	Recovered int
 	Voided    int
+	// DrawsApplied and DrawsReverted count debits whose draw was left pending and was settled from the ledger.
+	DrawsApplied  int
+	DrawsReverted int
+}
+
+// DrawRequest asks to take up to AmountMinor from the wallet's held shares for a debit.
+type DrawRequest struct {
+	Ledger      string
+	WalletID    string
+	Reference   string
+	AmountMinor int64
+}
+
+// DrawPlan tells the debit path how much comes from the lien (the held shares) and how much from available.
+type DrawPlan struct {
+	DrawnMinor     int64
+	RemainderMinor int64
+	Draws          []models.ReserveDraw
 }
 
 // ReserveHoldService splits credits into the wallet lien under reserve rules and releases the held
@@ -72,6 +91,13 @@ type ReserveHoldService interface {
 	ListHolds(context.Context, repositories.ReserveHoldFilter) ([]models.ReserveHold, error)
 	// ReleaseHold releases one hold now, ahead of its SLA (Backoffice).
 	ReleaseHold(context.Context, uuid.UUID, string) (*models.ReserveHold, error)
+	// DrawReserve takes up to the debit amount from the wallet's held shares, oldest release first, so a
+	// chargeback hits the reserve before the available balance. It returns nil when nothing is held.
+	// Calling it again with the same reference returns the same draw. The caller then posts the debit and
+	// calls ConfirmDraw, or RevertDraw when the ledger refused the debit.
+	DrawReserve(context.Context, DrawRequest) (*DrawPlan, error)
+	ConfirmDraw(ctx context.Context, ledger, walletID, reference string) error
+	RevertDraw(ctx context.Context, ledger, walletID, reference string) error
 	// RunRelease releases every due hold and settles pending holds whose credit call was interrupted.
 	RunRelease(context.Context, ReleaseOptions) (ReleaseStats, error)
 }
@@ -302,5 +328,63 @@ func (s *DefaultReserveHoldService) RunRelease(ctx context.Context, opts Release
 		}
 		stats.Voided++
 	}
+
+	// 3. debits whose draw was left pending: the ledger says whether the debit happened
+	refs, err := s.holds.StaleDraws(ctx, now.Add(-opts.PendingGrace), opts.Batch)
+	if err != nil {
+		return stats, err
+	}
+	stats.Claimed += len(refs)
+	for _, ref := range refs {
+		_, found, err := s.ledger.FindCredit(ctx, ref.Ledger, ref.Reference)
+		if err != nil {
+			stats.Failed++
+			continue
+		}
+		if found {
+			if err := s.holds.ConfirmDraws(ctx, ref.Ledger, ref.WalletID, ref.Reference); err != nil {
+				stats.Failed++
+				continue
+			}
+			stats.DrawsApplied++
+			continue
+		}
+		if err := s.holds.RevertDraws(ctx, ref.Ledger, ref.WalletID, ref.Reference); err != nil {
+			stats.Failed++
+			continue
+		}
+		stats.DrawsReverted++
+	}
 	return stats, nil
+}
+
+func (s *DefaultReserveHoldService) DrawReserve(ctx context.Context, req DrawRequest) (*DrawPlan, error) {
+	if req.AmountMinor <= 0 || strings.TrimSpace(req.Reference) == "" || req.WalletID == "" {
+		return nil, fmt.Errorf("%w: draw needs a wallet, a reference and a positive amount", ErrReserveValidation)
+	}
+	draws, err := s.holds.Draw(ctx, req.Ledger, req.WalletID, req.Reference, req.AmountMinor, s.now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if len(draws) == 0 {
+		return nil, nil
+	}
+	var drawn int64
+	for _, d := range draws {
+		drawn += d.AmountMinor
+	}
+	if drawn > req.AmountMinor {
+		// A replay with a different amount: the first call decides how much comes from the reserve.
+		// Spending more from the lien than the debit is a bug, so refuse.
+		return nil, fmt.Errorf("%w: reference %q already drew %d from the reserve, more than %d", ErrReserveConflict, req.Reference, drawn, req.AmountMinor)
+	}
+	return &DrawPlan{DrawnMinor: drawn, RemainderMinor: req.AmountMinor - drawn, Draws: draws}, nil
+}
+
+func (s *DefaultReserveHoldService) ConfirmDraw(ctx context.Context, ledger, walletID, reference string) error {
+	return s.holds.ConfirmDraws(ctx, ledger, walletID, reference)
+}
+
+func (s *DefaultReserveHoldService) RevertDraw(ctx context.Context, ledger, walletID, reference string) error {
+	return s.holds.RevertDraws(ctx, ledger, walletID, reference)
 }

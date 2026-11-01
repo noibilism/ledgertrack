@@ -2,6 +2,7 @@ package v2
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,11 @@ type holdServiceForHTTPTests struct {
 	lastFilter  repositories.ReserveHoldFilter
 	lastRelease uuid.UUID
 	hold        *models.ReserveHold
+
+	drawPlan      *services.DrawPlan
+	lastDraw      services.DrawRequest
+	confirmedDraw string
+	revertedDraw  string
 }
 
 func (s *holdServiceForHTTPTests) PlanCredit(_ context.Context, r services.PlanCreditRequest) (*services.CreditPlan, error) {
@@ -52,6 +58,18 @@ func (s *holdServiceForHTTPTests) ListHolds(_ context.Context, f repositories.Re
 func (s *holdServiceForHTTPTests) ReleaseHold(_ context.Context, id uuid.UUID, _ string) (*models.ReserveHold, error) {
 	s.lastRelease = id
 	return s.hold, s.err
+}
+func (s *holdServiceForHTTPTests) DrawReserve(_ context.Context, r services.DrawRequest) (*services.DrawPlan, error) {
+	s.lastDraw = r
+	return s.drawPlan, s.err
+}
+func (s *holdServiceForHTTPTests) ConfirmDraw(_ context.Context, _, _, ref string) error {
+	s.confirmedDraw = ref
+	return nil
+}
+func (s *holdServiceForHTTPTests) RevertDraw(_ context.Context, _, _, ref string) error {
+	s.revertedDraw = ref
+	return nil
 }
 func (s *holdServiceForHTTPTests) RunRelease(context.Context, services.ReleaseOptions) (services.ReleaseStats, error) {
 	return services.ReleaseStats{}, s.err
@@ -223,4 +241,110 @@ func TestCreditWalletRefusesWhenThePlanFails(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/ledgertrack/wallets/u1-NGN/credit",
 		strings.NewReader(`{"amount":10000,"reference":"cr-1"}`)))
 	require.Equal(t, http.StatusBadRequest, rec.Code, "nothing is credited when the hold cannot be recorded")
+}
+
+func debitResult(wallet string) *ledger.CreatedTransaction {
+	return &ledger.CreatedTransaction{
+		Transaction: ledger.NewTransaction().
+			WithID(9).
+			WithPostings(ledger.NewPosting("users:"+wallet+":wallets:NGN:lien", "system:control:NGN", "NGN/2", big.NewInt(100))).
+			WithPostCommitVolumes(ledger.PostCommitVolumes{
+				"system:control:NGN":                         {"NGN/2": ledger.NewVolumesInt64(100, 0)},
+				"users:" + wallet + ":wallets:NGN:lien":      {"NGN/2": ledger.NewVolumesInt64(200, 100)},
+				"users:" + wallet + ":wallets:NGN:available": {"NGN/2": ledger.NewVolumesInt64(1000, 100)},
+			}),
+	}
+}
+
+func TestDebitWalletDrawsFromTheReserveFirst(t *testing.T) {
+	t.Parallel()
+	svc := &holdServiceForHTTPTests{drawPlan: &services.DrawPlan{DrawnMinor: 3000, RemainderMinor: 7000}}
+	systemController, mockLedger := newTestingSystemController(t, true)
+	mockLedger.EXPECT().
+		CreateTransaction(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, params ledgercontroller.Parameters[ledgercontroller.CreateTransaction]) (*ledger.Log, *ledger.CreatedTransaction, bool, error) {
+			script := params.Input.RunScript.Script.Plain
+			require.Contains(t, script, "[NGN/2 3000]")
+			require.Contains(t, script, "source = @users:u1:wallets:NGN:lien")
+			require.Contains(t, script, "[NGN/2 7000]")
+			require.Contains(t, script, "source = @users:u1:wallets:NGN:available")
+			require.Equal(t, "3000", params.Input.RunScript.Metadata["reserve_drawn_minor"])
+			return &ledger.Log{}, debitResult("u1"), false, nil
+		})
+	router := NewRouter(systemController, auth.NewNoAuth(), "develop", WithReserveHoldService(svc))
+
+	rec := doGL(t, router, http.MethodPost, "/ledgertrack/wallets/u1-NGN/debit",
+		`{"amount":10000,"reference":"cb-1","draw_from_reserve":true}`)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Equal(t, "cb-1", svc.lastDraw.Reference)
+	require.Equal(t, int64(10000), svc.lastDraw.AmountMinor)
+	require.Equal(t, "cb-1", svc.confirmedDraw)
+	require.Empty(t, svc.revertedDraw)
+	require.Contains(t, rec.Body.String(), `"drawn_minor":3000`)
+}
+
+func TestDebitWalletGivesTheReserveBackWhenFundsAreShort(t *testing.T) {
+	t.Parallel()
+	svc := &holdServiceForHTTPTests{drawPlan: &services.DrawPlan{DrawnMinor: 3000, RemainderMinor: 7000}}
+	systemController, mockLedger := newTestingSystemController(t, true)
+	mockLedger.EXPECT().
+		CreateTransaction(gomock.Any(), gomock.Any()).
+		Return(nil, nil, false, errors.New("insufficient funds"))
+	router := NewRouter(systemController, auth.NewNoAuth(), "develop", WithReserveHoldService(svc))
+
+	rec := doGL(t, router, http.MethodPost, "/ledgertrack/wallets/u1-NGN/debit",
+		`{"amount":10000,"reference":"cb-1","draw_from_reserve":true}`)
+	require.Equal(t, http.StatusPaymentRequired, rec.Code, rec.Body.String())
+	require.Equal(t, "cb-1", svc.revertedDraw)
+	require.Empty(t, svc.confirmedDraw)
+}
+
+func TestDebitWalletLeavesTheDrawPendingWhenTheOutcomeIsUnknown(t *testing.T) {
+	t.Parallel()
+	svc := &holdServiceForHTTPTests{drawPlan: &services.DrawPlan{DrawnMinor: 3000, RemainderMinor: 7000}}
+	systemController, mockLedger := newTestingSystemController(t, true)
+	mockLedger.EXPECT().
+		CreateTransaction(gomock.Any(), gomock.Any()).
+		Return(nil, nil, false, errors.New("connection reset"))
+	router := NewRouter(systemController, auth.NewNoAuth(), "develop", WithReserveHoldService(svc))
+
+	rec := doGL(t, router, http.MethodPost, "/ledgertrack/wallets/u1-NGN/debit",
+		`{"amount":10000,"reference":"cb-1","draw_from_reserve":true}`)
+	require.GreaterOrEqual(t, rec.Code, 500)
+	require.Empty(t, svc.confirmedDraw, "the release job decides from the ledger")
+	require.Empty(t, svc.revertedDraw)
+}
+
+func TestDebitWalletWithoutDrawFlagOrOnOtherLedgerIsUnchanged(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct{ target, body string }{
+		"no flag":      {"/ledgertrack/wallets/u1-NGN/debit", `{"amount":10000,"reference":"d-1"}`},
+		"other ledger": {"/other/wallets/u1-NGN/debit", `{"amount":10000,"reference":"d-1","draw_from_reserve":true}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			svc := &holdServiceForHTTPTests{drawPlan: &services.DrawPlan{DrawnMinor: 1, RemainderMinor: 1}}
+			systemController, mockLedger := newTestingSystemController(t, true)
+			mockLedger.EXPECT().
+				CreateTransaction(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, params ledgercontroller.Parameters[ledgercontroller.CreateTransaction]) (*ledger.Log, *ledger.CreatedTransaction, bool, error) {
+					require.NotContains(t, params.Input.RunScript.Script.Plain, "lien")
+					require.NotContains(t, params.Input.RunScript.Metadata, "reserve_drawn_minor")
+					return &ledger.Log{}, debitResult("u1"), false, nil
+				})
+			router := NewRouter(systemController, auth.NewNoAuth(), "develop", WithReserveHoldService(svc))
+			rec := doGL(t, router, http.MethodPost, tc.target, tc.body)
+			require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+			require.Empty(t, svc.lastDraw.Reference)
+		})
+	}
+}
+
+func TestDebitWalletRejectsDrawWithAChannel(t *testing.T) {
+	t.Parallel()
+	systemController, _ := newTestingSystemController(t, true)
+	router := NewRouter(systemController, auth.NewNoAuth(), "develop", WithReserveHoldService(&holdServiceForHTTPTests{}))
+	rec := doGL(t, router, http.MethodPost, "/ledgertrack/wallets/u1-NGN/debit",
+		`{"amount":10000,"reference":"cb-1","draw_from_reserve":true,"channelID":"c1","channelAmount":9000}`)
+	assertErrorCode(t, rec, http.StatusBadRequest, common.ErrValidation)
 }

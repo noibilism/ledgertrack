@@ -58,3 +58,38 @@ type ReserveHold struct {
 	CreatedAt time.Time `json:"created_at" bun:"created_at,type:timestamp without time zone,nullzero"`
 	UpdatedAt time.Time `json:"updated_at" bun:"updated_at,type:timestamp without time zone,nullzero"`
 }
+
+const (
+	// DrawStatusPending: the draw reduced the hold and the debit is being posted.
+	DrawStatusPending = "pending"
+	// DrawStatusApplied: the debit is in the ledger, so the lien was spent.
+	DrawStatusApplied = "applied"
+	// DrawStatusReverted: the debit did not happen, so the hold was given back.
+	DrawStatusReverted = "reverted"
+
+	// HoldReleaseDrawn is the release reason of a hold that a debit (a chargeback, say) used up entirely.
+	HoldReleaseDrawn = "drawn"
+)
+
+// ReserveDraw records a debit that took part of a hold. The debit spends the wallet lien before the
+// available balance, so the hold must shrink by the same amount or its SLA release would fail later.
+type ReserveDraw struct {
+	bun.BaseModel `bun:"_system.reserve_draws,alias:reserve_draws"`
+
+	ID          uuid.UUID `json:"id" bun:"id,type:uuid,pk"`
+	HoldID      uuid.UUID `json:"hold_id" bun:"hold_id,type:uuid,notnull"`
+	Ledger      string    `json:"ledger" bun:"ledger,type:varchar(255),notnull"`
+	WalletID    string    `json:"wallet_id" bun:"wallet_id,type:varchar(255),notnull"`
+	Reference   string    `json:"reference" bun:"reference,type:varchar(255),notnull"`
+	AmountMinor int64     `json:"amount_minor" bun:"amount_minor,type:bigint,notnull"`
+	Status      string    `json:"status" bun:"status,type:varchar(16),notnull"`
+	CreatedAt   time.Time `json:"created_at" bun:"created_at,type:timestamp without time zone,nullzero"`
+	UpdatedAt   time.Time `json:"updated_at" bun:"updated_at,type:timestamp without time zone,nullzero"`
+}
+
+// DrawRef names the debit a set of draws belongs to.
+type DrawRef struct {
+	Ledger    string `bun:"ledger"`
+	WalletID  string `bun:"wallet_id"`
+	Reference string `bun:"reference"`
+}
