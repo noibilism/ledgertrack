@@ -257,7 +257,7 @@ func getAccountStatement(accountService services.AccountService) http.HandlerFun
 	return transactionCursorForAccount(accountService, bunpaginate.OrderAsc)
 }
 
-func creditAccount(accountService services.AccountService) http.HandlerFunc {
+func creditAccount(accountService services.AccountService, holds services.ReserveHoldService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		accountID, err := getCBAAccountID(r)
 		if err != nil {
@@ -313,13 +313,31 @@ func creditAccount(accountService services.AccountService) http.HandlerFunc {
 		)
 	`, asset, amount, accountSystem, accountUser)
 
+		// A reserve rule holds a share of the credit in the wallet lien (see creditWallet).
+		accountMetadata := buildAccountMetadata(req.Metadata, account, "credit")
+		var plan *services.CreditPlan
+		if holds != nil {
+			plan, err = holds.PlanCredit(r.Context(), services.PlanCreditRequest{
+				Ledger: reserveLedgerName, WalletID: account.WalletID, Currency: account.Currency,
+				Reference: req.Reference, AmountMinor: amount, CreditType: req.CreditType,
+			})
+			if err != nil {
+				handleReserveError(w, r, err)
+				return
+			}
+		}
+		if plan != nil {
+			script = reserveCreditScript(asset, accountSystem, accountUser, walletaddr.Lien(account.WalletID, account.Currency), plan)
+			accountMetadata = withReserveMetadata(accountMetadata, plan)
+		}
+
 		params := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
 			Input: ledgercontroller.CreateTransaction{
 				RunScript: vm.RunScript{
 					Script:    vm.Script{Plain: script},
 					Reference: req.Reference,
-					Metadata:  buildAccountMetadata(req.Metadata, account, "credit"),
+					Metadata:  accountMetadata,
 				},
 				Runtime: ledgerinternal.RuntimeMachine,
 			},
@@ -347,7 +365,12 @@ func creditAccount(accountService services.AccountService) http.HandlerFunc {
 			}
 		}
 
-		api.Created(w, accountTransactionResponse(tx.Transaction, accountUser, asset))
+		response := accountTransactionResponse(tx.Transaction, accountUser, asset)
+		if plan != nil {
+			confirmReserveHold(r.Context(), holds, plan, tx)
+			response["reserve"] = reserveResponse(plan)
+		}
+		api.Created(w, response)
 	}
 }
 

@@ -109,6 +109,7 @@ func (s *calendarRepositoryStub) UpdateCalendar(_ context.Context, c *models.Bus
 }
 
 type reserveFixture struct {
+	accounts  *accountRepositoryStub
 	calendars *DefaultBusinessCalendarService
 	svc       *DefaultReserveRuleService
 	ctx       context.Context
@@ -122,6 +123,7 @@ func newReserveFixture(t *testing.T) *reserveFixture {
 	t.Helper()
 	f := &reserveFixture{ctx: context.Background(), now: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}
 	clients, accounts, products := newClientRepositoryStub(), newAccountRepositoryStub(), newProductRepositoryStub()
+	f.accounts = accounts
 	calendarRepo := newCalendarRepositoryStub()
 	f.calendars = NewBusinessCalendarService(calendarRepo)
 	f.svc = NewReserveRuleService(newReserveRepositoryStub(), accounts, products, clients, calendarRepo)

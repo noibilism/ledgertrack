@@ -1,6 +1,8 @@
 package scheduler
 
 import (
+	"time"
+
 	"github.com/robfig/cron/v3"
 	"go.uber.org/fx"
 
@@ -37,6 +39,20 @@ type TransferRecoveryRunnerConfig struct {
 	BatchSize int
 }
 
+// ReserveReleaseRunnerConfig configures the runner that releases held reserve shares to the
+// available balance when their SLA has passed.
+type ReserveReleaseRunnerConfig struct {
+	Schedule cron.Schedule
+	// BatchSize is the number of holds claimed per pass.
+	BatchSize int
+	// Lease is how long a pod owns a claimed hold before another may take it over.
+	Lease time.Duration
+	// PendingGrace is the age after which a hold whose credit was interrupted is settled.
+	PendingGrace time.Duration
+	// MaxAttempts is the number of failed releases before a hold goes to needs_review.
+	MaxAttempts int
+}
+
 type ModuleConfig struct {
 	LedgerPostingConfig          LedgerPostingConfig
 	InterestAccrualRunnerConfig  InterestAccrualRunnerConfig
@@ -44,6 +60,7 @@ type ModuleConfig struct {
 	MaintenanceFeeRunnerConfig   MaintenanceFeeRunnerConfig
 	DormancyRunnerConfig         DormancyRunnerConfig
 	TransferRecoveryRunnerConfig TransferRecoveryRunnerConfig
+	ReserveReleaseRunnerConfig   ReserveReleaseRunnerConfig
 }
 
 func NewFXModule(cfg ModuleConfig) fx.Option {
@@ -56,5 +73,6 @@ func NewFXModule(cfg ModuleConfig) fx.Option {
 		NewMaintenanceFeeRunnerModule(cfg.MaintenanceFeeRunnerConfig),
 		NewDormancyRunnerModule(cfg.DormancyRunnerConfig),
 		NewTransferRecoveryRunnerModule(cfg.TransferRecoveryRunnerConfig),
+		NewReserveReleaseRunnerModule(cfg.ReserveReleaseRunnerConfig),
 	)
 }

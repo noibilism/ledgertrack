@@ -4982,6 +4982,229 @@ To perform this operation, you must be authenticated by means of one of the foll
 Authorization ( Scopes: ledger:read )
 </aside>
 
+## List reserve holds
+
+<a id="opIdv2ListReserveHolds"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/reserve-holds HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/reserve-holds`
+
+Lists the shares of credits held in wallet liens under a reserve rule, oldest release first. A hold is `pending` while its credit is being posted, `held` until `release_at`, then `released`. `voided` means the credit never reached the ledger; `needs_review` means the release failed repeatedly (for example the lien was spent) and needs an operator. `due_before` keeps holds whose release time is at or before it. This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="list-reserve-holds-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|account_id|query|string(uuid)|false|none|
+|client_id|query|string(uuid)|false|none|
+|wallet_id|query|string|false|none|
+|status|query|string|false|none|
+|due_before|query|string(date-time)|false|RFC 3339 time.|
+|limit|query|integer|false|1 to 500.|
+
+#### Enumerated Values
+
+|Parameter|Value|
+|---|---|
+|status|pending|
+|status|held|
+|status|released|
+|status|voided|
+|status|needs_review|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "holds": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+        "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+        "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+        "ledger": "string",
+        "wallet_id": "string",
+        "currency": "string",
+        "credit_reference": "string",
+        "credit_tx_id": 0,
+        "credit_type": "string",
+        "credit_amount_minor": 0,
+        "amount_minor": 0,
+        "release_at": "2019-08-24T14:15:22Z",
+        "status": "pending",
+        "released_at": "2019-08-24T14:15:22Z",
+        "release_reason": "sla",
+        "release_reference": "string",
+        "attempts": 0,
+        "last_error": "string",
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+```
+
+<h3 id="list-reserve-holds-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2ReserveHoldListResponse](#schemav2reserveholdlistresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Get a reserve hold
+
+<a id="opIdv2GetReserveHold"></a>
+
+> Code samples
+
+```http
+GET http://localhost:8080/v2/{ledger}/reserve-holds/{id} HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`GET /v2/{ledger}/reserve-holds/{id}`
+
+This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="get-a-reserve-hold-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "ledger": "string",
+    "wallet_id": "string",
+    "currency": "string",
+    "credit_reference": "string",
+    "credit_tx_id": 0,
+    "credit_type": "string",
+    "credit_amount_minor": 0,
+    "amount_minor": 0,
+    "release_at": "2019-08-24T14:15:22Z",
+    "status": "pending",
+    "released_at": "2019-08-24T14:15:22Z",
+    "release_reason": "sla",
+    "release_reference": "string",
+    "attempts": 0,
+    "last_error": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="get-a-reserve-hold-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2ReserveHoldResponse](#schemav2reserveholdresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:read )
+</aside>
+
+## Release a reserve hold now
+
+<a id="opIdv2ReleaseReserveHold"></a>
+
+> Code samples
+
+```http
+POST http://localhost:8080/v2/{ledger}/reserve-holds/{id}/release HTTP/1.1
+Host: localhost:8080
+Accept: application/json
+
+```
+
+`POST /v2/{ledger}/reserve-holds/{id}/release`
+
+Moves the held share from the wallet lien to the available balance ahead of its SLA. Releasing a hold that is already released returns it unchanged and moves nothing. A hold that is `pending`, `voided`, or leased by the release job answers 409. This endpoint is supported on the `ledgertrack` ledger.
+
+<h3 id="release-a-reserve-hold-now-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|ledger|path|string|true|Name of the ledger. The GL registry is served on `ledgertrack`.|
+|id|path|string(uuid)|true|Identifier of the fee override or tax rule.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "ledger": "string",
+    "wallet_id": "string",
+    "currency": "string",
+    "credit_reference": "string",
+    "credit_tx_id": 0,
+    "credit_type": "string",
+    "credit_amount_minor": 0,
+    "amount_minor": 0,
+    "release_at": "2019-08-24T14:15:22Z",
+    "status": "pending",
+    "released_at": "2019-08-24T14:15:22Z",
+    "release_reason": "sla",
+    "release_reference": "string",
+    "attempts": 0,
+    "last_error": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="release-a-reserve-hold-now-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[V2ReserveHoldResponse](#schemav2reserveholdresponse)|
+|default|Default|Error|[V2ErrorResponse](#schemav2errorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+Authorization ( Scopes: ledger:write )
+</aside>
+
 ## Credit a wallet
 
 <a id="opIdv2CreditWallet"></a>
@@ -4999,10 +5222,20 @@ Idempotency-Key: string
 
 `POST /v2/{ledger}/wallets/{walletID}/credit`
 
+On the `ledgertrack` ledger, when a reserve rule applies to the wallet's account, the credit is posted as one transaction that puts the reserve share in the wallet lien and the rest in the available balance. The response then carries `reserve` with `hold_id`, `reserve_minor`, `available_minor` and `release_at`. `credit_type` selects rules that list credit types. A retry of the same `reference` keeps the original split. Without a matching rule the credit is posted as before.
+
 > Body parameter
 
 ```json
-false
+{
+  "amount": 0,
+  "reference": "string",
+  "credit_type": "string",
+  "metadata": {
+    "property1": "string",
+    "property2": "string"
+  }
+}
 ```
 
 <h3 id="credit-a-wallet-parameters">Parameters</h3>
@@ -5012,6 +5245,7 @@ false
 |ledger|path|string|true|Name of the ledger.|
 |walletID|path|string|true|Wallet ID|
 |Idempotency-Key|header|string|false|Use an idempotency key|
+|body|body|[V2CreditWalletRequest](#schemav2creditwalletrequest)|true|none|
 
 > Example responses
 
@@ -10539,6 +10773,197 @@ and
 |---|---|---|---|---|
 |data|object|true|none|none|
 |» rules|[[V2ReserveRule](#schemav2reserverule)]|true|none|none|
+
+<h2 id="tocS_V2CreditWalletRequest">V2CreditWalletRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemav2creditwalletrequest"></a>
+<a id="schema_V2CreditWalletRequest"></a>
+<a id="tocSv2creditwalletrequest"></a>
+<a id="tocsv2creditwalletrequest"></a>
+
+```json
+{
+  "amount": 0,
+  "reference": "string",
+  "credit_type": "string",
+  "metadata": {
+    "property1": "string",
+    "property2": "string"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|amount|number|true|none|Amount in minor units.|
+|reference|string|true|none|none|
+|credit_type|string|false|none|Kind of credit (for example `card`), matched against the `credit_types` of reserve rules.|
+|metadata|object|false|none|none|
+|» **additionalProperties**|string|false|none|none|
+
+<h2 id="tocS_V2ReserveHold">V2ReserveHold</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reservehold"></a>
+<a id="schema_V2ReserveHold"></a>
+<a id="tocSv2reservehold"></a>
+<a id="tocsv2reservehold"></a>
+
+```json
+{
+  "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+  "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+  "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+  "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+  "ledger": "string",
+  "wallet_id": "string",
+  "currency": "string",
+  "credit_reference": "string",
+  "credit_tx_id": 0,
+  "credit_type": "string",
+  "credit_amount_minor": 0,
+  "amount_minor": 0,
+  "release_at": "2019-08-24T14:15:22Z",
+  "status": "pending",
+  "released_at": "2019-08-24T14:15:22Z",
+  "release_reason": "sla",
+  "release_reference": "string",
+  "attempts": 0,
+  "last_error": "string",
+  "created_at": "2019-08-24T14:15:22Z",
+  "updated_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|id|string(uuid)|true|none|none|
+|rule_id|string(uuid)|false|none|none|
+|account_id|string(uuid)|true|none|none|
+|client_id|string(uuid)|true|none|none|
+|ledger|string|true|none|none|
+|wallet_id|string|true|none|none|
+|currency|string|true|none|none|
+|credit_reference|string|true|none|none|
+|credit_tx_id|integer(int64)|false|none|none|
+|credit_type|string|false|none|none|
+|credit_amount_minor|integer(int64)|true|none|none|
+|amount_minor|integer(int64)|true|none|The held share, in minor units.|
+|release_at|string(date-time)|true|none|none|
+|status|string|true|none|none|
+|released_at|string(date-time)|false|none|none|
+|release_reason|string|false|none|none|
+|release_reference|string|false|none|none|
+|attempts|integer|true|none|none|
+|last_error|string|false|none|none|
+|created_at|string(date-time)|true|none|none|
+|updated_at|string(date-time)|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|status|pending|
+|status|held|
+|status|released|
+|status|voided|
+|status|needs_review|
+|release_reason|sla|
+|release_reason|manual|
+
+<h2 id="tocS_V2ReserveHoldResponse">V2ReserveHoldResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reserveholdresponse"></a>
+<a id="schema_V2ReserveHoldResponse"></a>
+<a id="tocSv2reserveholdresponse"></a>
+<a id="tocsv2reserveholdresponse"></a>
+
+```json
+{
+  "data": {
+    "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+    "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+    "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+    "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+    "ledger": "string",
+    "wallet_id": "string",
+    "currency": "string",
+    "credit_reference": "string",
+    "credit_tx_id": 0,
+    "credit_type": "string",
+    "credit_amount_minor": 0,
+    "amount_minor": 0,
+    "release_at": "2019-08-24T14:15:22Z",
+    "status": "pending",
+    "released_at": "2019-08-24T14:15:22Z",
+    "release_reason": "sla",
+    "release_reference": "string",
+    "attempts": 0,
+    "last_error": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|[V2ReserveHold](#schemav2reservehold)|true|none|none|
+
+<h2 id="tocS_V2ReserveHoldListResponse">V2ReserveHoldListResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemav2reserveholdlistresponse"></a>
+<a id="schema_V2ReserveHoldListResponse"></a>
+<a id="tocSv2reserveholdlistresponse"></a>
+<a id="tocsv2reserveholdlistresponse"></a>
+
+```json
+{
+  "data": {
+    "holds": [
+      {
+        "id": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
+        "rule_id": "728c1541-d6d1-4290-9a53-cdf01dd32d60",
+        "account_id": "449e7a5c-69d3-4b8a-aaaf-5c9b713ebc65",
+        "client_id": "5b3fa7ba-57d3-4017-a65b-d57dcd2db643",
+        "ledger": "string",
+        "wallet_id": "string",
+        "currency": "string",
+        "credit_reference": "string",
+        "credit_tx_id": 0,
+        "credit_type": "string",
+        "credit_amount_minor": 0,
+        "amount_minor": 0,
+        "release_at": "2019-08-24T14:15:22Z",
+        "status": "pending",
+        "released_at": "2019-08-24T14:15:22Z",
+        "release_reason": "sla",
+        "release_reference": "string",
+        "attempts": 0,
+        "last_error": "string",
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      }
+    ]
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|data|object|true|none|none|
+|» holds|[[V2ReserveHold](#schemav2reservehold)]|true|none|none|
 
 <h2 id="tocS_V2ReservePreviewRequest">V2ReservePreviewRequest</h2>
 <!-- backwards compatibility -->

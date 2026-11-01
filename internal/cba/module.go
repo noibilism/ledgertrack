@@ -5,7 +5,9 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/formancehq/ledger/internal/cba/repositories"
+	"github.com/formancehq/ledger/internal/cba/reserveledger"
 	"github.com/formancehq/ledger/internal/cba/services"
+	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 )
 
 func NewFXModule() fx.Option {
@@ -115,6 +117,20 @@ func NewFXModule() fx.Option {
 				calendarRepository repositories.CalendarRepository,
 			) services.ReserveRuleService {
 				return services.NewReserveRuleService(reserveRepository, accountRepository, productRepository, clientRepository, calendarRepository)
+			},
+			func(db *bun.DB) repositories.ReserveHoldRepository {
+				return repositories.NewReserveHoldRepository(db)
+			},
+			func(system systemcontroller.Controller) services.ReserveLedger {
+				return reserveledger.New(system)
+			},
+			func(
+				holdRepository repositories.ReserveHoldRepository,
+				accountRepository repositories.AccountRepository,
+				ruleService services.ReserveRuleService,
+				ledger services.ReserveLedger,
+			) services.ReserveHoldService {
+				return services.NewReserveHoldService(holdRepository, accountRepository, ruleService, ledger)
 			},
 			func(glAccountRepository repositories.GLAccountRepository) services.GLReportingService {
 				return services.NewGLReportingService(glAccountRepository)
