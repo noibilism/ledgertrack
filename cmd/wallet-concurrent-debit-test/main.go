@@ -139,7 +139,7 @@ func createWallet(userID, currency string) string {
 	}
 
 	var res map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&res)
+	_ = json.NewDecoder(resp.Body).Decode(&res)
 
 	if data, ok := res["data"].(map[string]interface{}); ok {
 		if id, ok := data["walletID"].(string); ok {

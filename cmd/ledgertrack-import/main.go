@@ -281,7 +281,7 @@ func runPlan(cmd *cobra.Command, f *flags) error {
 		if st, err = legacyimport.LoadState(f.statePath, c.Target()); err != nil {
 			return err
 		}
-		defer st.Close()
+		defer func() { _ = st.Close() }()
 	}
 	pl, err := legacyimport.BuildPlan(ctx, c, prep, snap, st, f.options())
 	if err != nil {
@@ -293,7 +293,7 @@ func runPlan(cmd *cobra.Command, f *flags) error {
 	}
 	if f.planOut != "" {
 		b, _ := json.MarshalIndent(pl, "", "  ")
-		if err := os.WriteFile(f.planOut, b, 0o644); err != nil {
+		if err := os.WriteFile(f.planOut, b, 0o600); err != nil {
 			return err
 		}
 	}
@@ -321,7 +321,7 @@ func runApply(cmd *cobra.Command, f *flags) error {
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	res, err := legacyimport.NewEngine(c, prep, snap, st, f.options()).Apply(ctx)
 	fmt.Print(res.Summary())
 	if err != nil {
@@ -354,7 +354,7 @@ func runVerify(cmd *cobra.Command, f *flags) error {
 		return err
 	}
 	if err := rep.WriteCSV(out); err != nil {
-		out.Close()
+		_ = out.Close()
 		return err
 	}
 	if err := out.Close(); err != nil {

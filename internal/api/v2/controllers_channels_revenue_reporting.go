@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/formancehq/go-libs/v3/api"
 	"github.com/phpdave11/gofpdf"
+
+	"github.com/formancehq/go-libs/v3/api"
 
 	"github.com/formancehq/ledger/internal/api/common"
 	channelmodels "github.com/formancehq/ledger/internal/channels/models"
@@ -38,9 +39,9 @@ type channelRevenueTimeseriesRequest struct {
 }
 
 type channelRevenueExportRequest struct {
-	Format   string  `json:"format,omitempty"`
-	Report   string  `json:"report,omitempty"`
-	Currency string  `json:"currency"`
+	Format   string `json:"format,omitempty"`
+	Report   string `json:"report,omitempty"`
+	Currency string `json:"currency"`
 
 	ChannelID *string `json:"channel_id,omitempty"`
 	StartTime *string `json:"start_time,omitempty"`
@@ -78,10 +79,10 @@ func getChannelRevenueSummaryReport(reportingService channelservices.ChannelReve
 		report, err := reportingService.RevenueSummary(r.Context(), channelservices.ChannelRevenueSummaryFilter{
 			Currency:  req.Currency,
 			ChannelID: req.ChannelID,
-			StartTime:  startTime,
-			EndTime:    endTime,
-			Limit:      req.Limit,
-			Offset:     req.Offset,
+			StartTime: startTime,
+			EndTime:   endTime,
+			Limit:     req.Limit,
+			Offset:    req.Offset,
 		})
 		if err != nil {
 			handleChannelRevenueReportingError(w, r, err)
@@ -167,10 +168,10 @@ func exportChannelRevenueReport(reportingService channelservices.ChannelRevenueR
 			report, err := reportingService.RevenueSummary(r.Context(), channelservices.ChannelRevenueSummaryFilter{
 				Currency:  req.Currency,
 				ChannelID: req.ChannelID,
-				StartTime:  startTime,
-				EndTime:    endTime,
-				Limit:      req.Limit,
-				Offset:     req.Offset,
+				StartTime: startTime,
+				EndTime:   endTime,
+				Limit:     req.Limit,
+				Offset:    req.Offset,
 			})
 			if err != nil {
 				handleChannelRevenueReportingError(w, r, err)
@@ -183,10 +184,10 @@ func exportChannelRevenueReport(reportingService channelservices.ChannelRevenueR
 			report, err := reportingService.RevenueSummary(r.Context(), channelservices.ChannelRevenueSummaryFilter{
 				Currency:  req.Currency,
 				ChannelID: req.ChannelID,
-				StartTime:  startTime,
-				EndTime:    endTime,
-				Limit:      req.Limit,
-				Offset:     req.Offset,
+				StartTime: startTime,
+				EndTime:   endTime,
+				Limit:     req.Limit,
+				Offset:    req.Offset,
 			})
 			if err != nil {
 				handleChannelRevenueReportingError(w, r, err)
@@ -274,8 +275,8 @@ func getChannelRevenueDashboardMetrics(reportingService channelservices.ChannelR
 
 		currentAll, err := reportingService.RevenueSummary(r.Context(), channelservices.ChannelRevenueSummaryFilter{
 			Currency:  req.Currency,
-			StartTime:  &currentStart,
-			EndTime:    &now,
+			StartTime: &currentStart,
+			EndTime:   &now,
 		})
 		if err != nil {
 			handleChannelRevenueReportingError(w, r, err)
@@ -284,10 +285,10 @@ func getChannelRevenueDashboardMetrics(reportingService channelservices.ChannelR
 
 		currentTop, err := reportingService.RevenueSummary(r.Context(), channelservices.ChannelRevenueSummaryFilter{
 			Currency:  req.Currency,
-			StartTime:  &currentStart,
-			EndTime:    &now,
-			Limit:      topN,
-			Offset:     0,
+			StartTime: &currentStart,
+			EndTime:   &now,
+			Limit:     topN,
+			Offset:    0,
 		})
 		if err != nil {
 			handleChannelRevenueReportingError(w, r, err)
@@ -296,8 +297,8 @@ func getChannelRevenueDashboardMetrics(reportingService channelservices.ChannelR
 
 		prevAll, err := reportingService.RevenueSummary(r.Context(), channelservices.ChannelRevenueSummaryFilter{
 			Currency:  req.Currency,
-			StartTime:  &prevStart,
-			EndTime:    &prevEnd,
+			StartTime: &prevStart,
+			EndTime:   &prevEnd,
 		})
 		if err != nil {
 			handleChannelRevenueReportingError(w, r, err)
@@ -310,7 +311,7 @@ func getChannelRevenueDashboardMetrics(reportingService channelservices.ChannelR
 			momGrowthPercent = &p
 		}
 
-		trendStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -(months-1), 0)
+		trendStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -(months - 1), 0)
 		trend, err := reportingService.RevenueTimeseries(r.Context(), channelservices.ChannelRevenueTimeseriesFilter{
 			Currency:  req.Currency,
 			StartTime: trendStart,
@@ -328,10 +329,10 @@ func getChannelRevenueDashboardMetrics(reportingService channelservices.ChannelR
 				"start_time": currentStart,
 				"end_time":   now,
 			},
-			"net_revenue_current":   currentAll.Totals.NetRevenue,
-			"net_revenue_previous":  prevAll.Totals.NetRevenue,
-			"mom_growth_percent":    momGrowthPercent,
-			"top_channels_by_net":   currentTop.Rows,
+			"net_revenue_current":    currentAll.Totals.NetRevenue,
+			"net_revenue_previous":   prevAll.Totals.NetRevenue,
+			"mom_growth_percent":     momGrowthPercent,
+			"top_channels_by_net":    currentTop.Rows,
 			"month_over_month_trend": trend,
 		})
 	}

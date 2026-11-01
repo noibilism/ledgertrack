@@ -159,21 +159,12 @@ func (c *Config) mixUsesChannel() bool {
 	return false
 }
 
-func (c *Config) mixUses(op Op) bool {
-	for _, m := range c.Mix {
-		if m.Op == op {
-			return true
-		}
-	}
-	return false
-}
-
 func parseConfig(args []string, stderr io.Writer) (*Config, error) {
 	c := &Config{}
 	fs := flag.NewFlagSet("ledgertrack-bench", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: ledgertrack-bench [flags]\n\nLoad generator and consistency checker for the LedgerTrack wallet API.\n\n")
+		_, _ = fmt.Fprintf(stderr, "Usage: ledgertrack-bench [flags]\n\nLoad generator and consistency checker for the LedgerTrack wallet API.\n\n")
 		fs.PrintDefaults()
 	}
 

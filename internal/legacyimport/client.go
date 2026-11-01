@@ -247,7 +247,7 @@ func (c *Client) call(ctx context.Context, method, p string, body any, o callOpt
 			return nil, nil, fmt.Errorf("%s %s: %w", method, full, err)
 		}
 		raw, rerr := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if rerr != nil {
 			lastErr = rerr
 			if safe && attempt+1 < maxAttempts {

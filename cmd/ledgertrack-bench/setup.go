@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/formancehq/ledger/internal/hotrows"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/formancehq/ledger/internal/hotrows"
 )
 
 // baselines are the balances read after setup and before the load starts.

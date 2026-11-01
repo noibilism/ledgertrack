@@ -97,7 +97,7 @@ func LoadState(path, target string) (*State, error) {
 		return nil, err
 	}
 	st := &State{Version: 1, Target: target, Items: map[string]*ItemState{}, path: path, lock: unlock, Started: time.Now().UTC()}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from the operator/CLI, not from request input
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
@@ -122,7 +122,7 @@ func LoadState(path, target string) (*State, error) {
 
 // ReadStateReadOnly loads a state file without locking (for the status command).
 func ReadStateReadOnly(path string) (*State, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path comes from the operator/CLI, not from request input
 	if err != nil {
 		return nil, err
 	}
@@ -211,21 +211,21 @@ func (s *State) Flush() error {
 		return err
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return err
 	}
 	if err := os.Rename(tmp.Name(), s.path); err != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return err
 	}
 	s.dirty = false

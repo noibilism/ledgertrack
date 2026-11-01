@@ -55,7 +55,7 @@ func doApply(t *testing.T, c *Client, dir, statePath string, opt Options) *Resul
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	res, err := NewEngine(c, prep, snap, st, opt).Apply(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func doPlan(t *testing.T, c *Client, dir, statePath string) *Plan {
 		if st, err = LoadState(statePath, c.Target()); err != nil {
 			t.Fatal(err)
 		}
-		defer st.Close()
+		defer func() { _ = st.Close() }()
 	}
 	pl, err := BuildPlan(context.Background(), c, prep, snap, st, Options{})
 	if err != nil {
@@ -464,7 +464,7 @@ func TestIdempotentPlanningOfPartialImport(t *testing.T) {
 	if _, err := eng.Apply(ctx); err == nil {
 		t.Fatal("expected cancellation")
 	}
-	st.Close()
+	_ = st.Close()
 
 	pl := doPlan(t, c, samplesDir, state)
 	counts := pl.Counts()

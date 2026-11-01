@@ -70,7 +70,7 @@ func TestShardsAreSpreadEvenly(t *testing.T) {
 	const n, refs = 16, 32000
 	counts := make([]int, n)
 	for i := 0; i < refs; i++ {
-		counts[ShardFor(fmt.Sprintf("bench-r1-channel_debit-%06d", i), n)]++
+		counts[ShardFor(fmt.Sprintf("bench-r1-channel_debit-%06d", i), n)]++ //nolint:gosec // G602: index is bounded by construction (modulo / shard count)
 	}
 	for shard, c := range counts {
 		// expected 2000 per shard; a skew above 15% would defeat the purpose

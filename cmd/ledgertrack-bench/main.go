@@ -32,7 +32,7 @@ const (
 var logOut io.Writer = os.Stderr
 
 func logf(format string, args ...any) {
-	fmt.Fprintf(logOut, format+"\n", args...)
+	_, _ = fmt.Fprintf(logOut, format+"\n", args...)
 }
 
 func main() {
@@ -46,7 +46,7 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return exitOK
 		}
-		fmt.Fprintf(stderr, "error: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 		return exitSetup
 	}
 	if cfg.AuthToken == "" {
@@ -61,7 +61,7 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 
 	uni, bl, err := setup(ctx, cfg, cl, runID)
 	if err != nil {
-		fmt.Fprintf(stderr, "setup failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "setup failed: %v\n", err)
 		return exitSetup
 	}
 
@@ -91,11 +91,11 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	rep.writeTable(table)
 
 	if err := emit(cfg.JSONOut, stdout, rep.writeJSON); err != nil {
-		fmt.Fprintf(stderr, "writing JSON report: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "writing JSON report: %v\n", err)
 		return exitSetup
 	}
 	if err := emit(cfg.CSVOut, stdout, rep.writeCSV); err != nil {
-		fmt.Fprintf(stderr, "writing CSV report: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "writing CSV report: %v\n", err)
 		return exitSetup
 	}
 
@@ -123,12 +123,12 @@ func emit(path string, stdout io.Writer, fn func(io.Writer) error) error {
 	case "-":
 		return fn(stdout)
 	}
-	f, err := os.Create(path)
+	f, err := os.Create(path) //nolint:gosec // path comes from the operator/CLI, not from request input
 	if err != nil {
 		return err
 	}
 	if err := fn(f); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	return f.Close()

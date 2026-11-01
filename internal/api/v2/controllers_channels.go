@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/bun/bunpaginate"
 	"github.com/formancehq/go-libs/v3/metadata"
 	"github.com/formancehq/go-libs/v3/query"
+
 	ledgerinternal "github.com/formancehq/ledger/internal"
 	"github.com/formancehq/ledger/internal/api/common"
 	"github.com/formancehq/ledger/internal/controller/ledger"
@@ -16,8 +20,6 @@ import (
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 )
 
 type CreateChannelRequest struct {

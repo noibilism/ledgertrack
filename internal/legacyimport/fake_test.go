@@ -468,8 +468,6 @@ func (f *fakeLT) vol(addr, asset string) *[2]*big.Int {
 	return &v
 }
 
-func (f *fakeLT) txJSON(tx map[string]any) map[string]any { return tx }
-
 func (f *fakeLT) createTx(w http.ResponseWriter, r *http.Request, b map[string]any) (any, *fakeErr) {
 	script, _ := b["script"].(map[string]any)
 	ref := str(b, "reference")

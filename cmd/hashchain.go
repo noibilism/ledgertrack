@@ -126,34 +126,34 @@ Exit code: 0 chain intact, 2 mismatch or anchor failure, 3 tail older than --max
 
 func printReport(cmd *cobra.Command, r *loghash.Report) {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "ledger:        %s (HASH_LOGS=%s)\n", r.Ledger, r.HashMode)
-	fmt.Fprintf(out, "verified:      %d logs\n", r.Verified)
+	_, _ = fmt.Fprintf(out, "ledger:        %s (HASH_LOGS=%s)\n", r.Ledger, r.HashMode)
+	_, _ = fmt.Fprintf(out, "verified:      %d logs\n", r.Verified)
 	if r.HeadID != nil {
-		fmt.Fprintf(out, "chain head:    id=%d hash=%s\n", *r.HeadID, r.HeadHash)
+		_, _ = fmt.Fprintf(out, "chain head:    id=%d hash=%s\n", *r.HeadID, r.HeadHash)
 	} else {
-		fmt.Fprintf(out, "chain head:    (empty chain)\n")
+		_, _ = fmt.Fprintf(out, "chain head:    (empty chain)\n")
 	}
-	fmt.Fprintf(out, "id holes:      %d (rolled back transactions, informational)\n", r.IDHoles)
+	_, _ = fmt.Fprintf(out, "id holes:      %d (rolled back transactions, informational)\n", r.IDHoles)
 	if r.Tail.Count > 0 {
-		fmt.Fprintf(out, "unhashed tail: %d logs, ids %d..%d, oldest %s, lag %.1fs\n",
+		_, _ = fmt.Fprintf(out, "unhashed tail: %d logs, ids %d..%d, oldest %s, lag %.1fs\n",
 			r.Tail.Count, *r.Tail.FirstID, *r.Tail.LastID, r.Tail.Oldest.Format(time.RFC3339), r.Tail.LagSeconds)
 	} else {
-		fmt.Fprintf(out, "unhashed tail: none\n")
+		_, _ = fmt.Fprintf(out, "unhashed tail: none\n")
 	}
 	if r.Anchor != nil {
 		if r.Anchor.Match {
-			fmt.Fprintf(out, "anchor:        id=%d MATCH\n", r.Anchor.ID)
+			_, _ = fmt.Fprintf(out, "anchor:        id=%d MATCH\n", r.Anchor.ID)
 		} else {
-			fmt.Fprintf(out, "anchor:        id=%d MISMATCH expected=%s actual=%s\n", r.Anchor.ID, r.Anchor.Expected, r.Anchor.Actual)
+			_, _ = fmt.Fprintf(out, "anchor:        id=%d MISMATCH expected=%s actual=%s\n", r.Anchor.ID, r.Anchor.Expected, r.Anchor.Actual)
 		}
 	}
 	if r.FirstMismatch != nil {
-		fmt.Fprintf(out, "RESULT:        CHAIN BROKEN, %d problem(s), first at log id %d (%s) stored=%s expected=%s\n",
+		_, _ = fmt.Fprintf(out, "RESULT:        CHAIN BROKEN, %d problem(s), first at log id %d (%s) stored=%s expected=%s\n",
 			r.Mismatches, r.FirstMismatch.ID, r.FirstMismatch.Reason, r.FirstMismatch.Stored, r.FirstMismatch.Expected)
 	} else if r.Anchor != nil && !r.Anchor.Match {
-		fmt.Fprintf(out, "RESULT:        ANCHOR MISMATCH\n")
+		_, _ = fmt.Fprintf(out, "RESULT:        ANCHOR MISMATCH\n")
 	} else {
-		fmt.Fprintf(out, "RESULT:        OK\n")
+		_, _ = fmt.Fprintf(out, "RESULT:        OK\n")
 	}
 }
 
@@ -199,7 +199,7 @@ This works even if the worker (and its own ALERT log line) is down, which is why
 				if st.HeadID != nil {
 					head = fmt.Sprintf("%d", *st.HeadID)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "ledger=%s HASH_LOGS=%s head_id=%s unhashed=%d lag=%.1fs\n", st.Ledger, st.HashMode, head, st.Unhashed, st.LagSeconds)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ledger=%s HASH_LOGS=%s head_id=%s unhashed=%d lag=%.1fs\n", st.Ledger, st.HashMode, head, st.Unhashed, st.LagSeconds)
 			}
 			if maxLag > 0 && time.Duration(st.LagSeconds*float64(time.Second)) > maxLag {
 				os.Exit(exitLagExceeded)
@@ -242,10 +242,10 @@ configuration: restart every API and worker process afterwards.`,
 				return err
 			}
 			if previous == mode {
-				fmt.Fprintf(cmd.OutOrStdout(), "ledger %s already uses HASH_LOGS=%s, nothing to do\n", name, mode)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ledger %s already uses HASH_LOGS=%s, nothing to do\n", name, mode)
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "ledger %s: HASH_LOGS %s -> %s. Restart every API and worker process now.\n", name, previous, mode)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ledger %s: HASH_LOGS %s -> %s. Restart every API and worker process now.\n", name, previous, mode)
 			return nil
 		},
 	}

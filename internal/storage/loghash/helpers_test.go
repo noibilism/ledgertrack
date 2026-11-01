@@ -111,7 +111,7 @@ func (e *env) hashes(t *testing.T, ledgerName string) map[uint64]string {
 	t.Helper()
 	rows, err := e.db.QueryContext(e.ctx, `select id, coalesce(encode(hash, 'hex'), '') from bkt.logs where ledger = ? order by id`, ledgerName)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ret := map[uint64]string{}
 	for rows.Next() {
 		var (

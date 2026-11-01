@@ -2,11 +2,12 @@ package legacyimport
 
 import (
 	"encoding/json"
-	"github.com/formancehq/ledger/internal/currency"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/formancehq/ledger/internal/currency"
 )
 
 func TestStateRoundTripAndResumeSemantics(t *testing.T) {
@@ -30,7 +31,7 @@ func TestStateRoundTripAndResumeSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer again.Close()
+	defer func() { _ = again.Close() }()
 	if it := again.Get(KindClient, "m-1"); it == nil || it.Status != StatusFailed || !it.CreateStarted || it.Error == "" {
 		t.Fatalf("client state lost: %+v", it)
 	}
@@ -78,7 +79,7 @@ func TestStateFlushIsAtomicAndSkipsWhenClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	if err := st.Flush(); err != nil { // clean: nothing written
 		t.Fatal(err)
 	}
@@ -95,7 +96,7 @@ func TestStateFlushIsAtomicAndSkipsWhenClean(t *testing.T) {
 			t.Fatalf("temporary file left behind: %s", e.Name())
 		}
 	}
-	raw, _ := os.ReadFile(path)
+	raw, _ := os.ReadFile(path) //nolint:gosec // path comes from the operator/CLI, not from request input
 	if !json.Valid(raw) {
 		t.Fatal("state file is not valid JSON")
 	}

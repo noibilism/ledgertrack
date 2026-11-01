@@ -103,16 +103,6 @@ func (r *hrRecorder) createTransaction(t *testing.T) func(context.Context, ledge
 	}
 }
 
-func (r *hrRecorder) legsOf(kind string) []hrLeg {
-	var ret []hrLeg
-	for _, l := range r.legs {
-		if l.ledgerKind == kind {
-			ret = append(ret, l)
-		}
-	}
-	return ret
-}
-
 func (r *hrRecorder) sumPrefix(kind, base string) int64 {
 	var total int64
 	for addr, bal := range r.balances[kind] {

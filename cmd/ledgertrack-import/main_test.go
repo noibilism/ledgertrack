@@ -26,7 +26,7 @@ func TestValidateSamples(t *testing.T) {
 func TestValidateFailsWithExitCode1(t *testing.T) {
 	dir := t.TempDir()
 	for _, f := range []string{"products.jsonl", "clients.jsonl", "accounts.jsonl", "balances.jsonl", "liens.jsonl"} {
-		b, err := os.ReadFile(filepath.Join(samples, f))
+		b, err := os.ReadFile(filepath.Join(samples, f)) //nolint:gosec // path comes from the operator/CLI, not from request input
 		if err != nil {
 			t.Fatal(err)
 		}
