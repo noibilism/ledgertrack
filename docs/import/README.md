@@ -94,6 +94,7 @@ Amounts are decimal strings in major units: `"1250000.50"`. No numbers, no sign,
 | `kyc_source` | yes | Free text saying where the level comes from. Stored in the KYC payload |
 | `status` | no | `active` (default), `suspended`, `closed`, `pending` |
 | `trading_name`, `registration_number`, `tax_id`, `incorporation_country`, `industry`, `email`, `address`, `legacy_created_at` | no | |
+| `external_id` | no | The identifier callers use for the client in the legacy system (Bankman `clients.external_id`). Stored in the client's KYC payload as `legacy_external_id`, lower-cased, so the Bankman compatibility API can find the client. |
 | `kyc_identifier` | no | Sent as `national_id_number`, which LedgerTrack requires from level 1. Defaults to `registration_number`, then `tax_id` |
 
 Clients with accounts need `kyc_level >= 1` and a status other than `pending`. Two clients may not share legal name, phone and registration number (the tool relies on that to recover from crashes).

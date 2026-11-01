@@ -52,6 +52,9 @@ type ClientRec struct {
 	KYCSource            string   `json:"kyc_source"`
 	KYCIdentifier        string   `json:"kyc_identifier,omitempty"`
 	LegacyCreatedAt      string   `json:"legacy_created_at,omitempty"`
+	// ExternalID is the identifier callers use for the client in the legacy system (Bankman clients.external_id).
+	// It is kept on the client so the Bankman compatibility API can resolve it.
+	ExternalID string `json:"external_id,omitempty"`
 
 	Line int `json:"-"`
 }

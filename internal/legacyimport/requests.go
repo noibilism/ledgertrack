@@ -154,6 +154,9 @@ func kycBody(c *ClientRec) map[string]any {
 	if c.LegacyCreatedAt != "" {
 		payload[metaLegacyCreatedAt] = c.LegacyCreatedAt
 	}
+	if strings.TrimSpace(c.ExternalID) != "" {
+		payload[metaLegacyExternalID] = strings.ToLower(strings.TrimSpace(c.ExternalID))
+	}
 	docs := []map[string]any{}
 	if c.KYCLevel >= 1 {
 		payload["national_id_number"] = c.kycIdentifier()
