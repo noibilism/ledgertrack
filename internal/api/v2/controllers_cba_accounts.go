@@ -30,6 +30,7 @@ import (
 	"github.com/formancehq/ledger/internal/machine/vm"
 	storagecommon "github.com/formancehq/ledger/internal/storage/common"
 	ledgerstore "github.com/formancehq/ledger/internal/storage/ledger"
+	"github.com/formancehq/ledger/internal/walletaddr"
 )
 
 type accountBalanceResponse struct {
@@ -324,7 +325,7 @@ func creditAccount(accountService services.AccountService) http.HandlerFunc {
 			},
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, replayed, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
 				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
@@ -334,13 +335,16 @@ func creditAccount(accountService services.AccountService) http.HandlerFunc {
 			return
 		}
 
-		if _, err := accountService.TouchActivity(r.Context(), accountID, tx.Transaction.Timestamp.Time); err != nil {
-			handleAccountError(w, r, err)
-			return
-		}
-		if err := accountService.RecordCreditUsage(r.Context(), accountID, amount, req.Reference, usageAt); err != nil {
-			handleAccountError(w, r, err)
-			return
+		// A replayed request already counted: do not touch activity or usage twice.
+		if !replayed {
+			if _, err := accountService.TouchActivity(r.Context(), accountID, tx.Transaction.Timestamp.Time); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
+			if err := accountService.RecordCreditUsage(r.Context(), accountID, amount, req.Reference, usageAt); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
 		}
 
 		api.Created(w, accountTransactionResponse(tx.Transaction, accountUser, asset))
@@ -428,7 +432,7 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			},
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, replayed, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "insufficient fund") {
 				api.WriteErrorResponse(w, http.StatusPaymentRequired, common.ErrInsufficientFund, err)
@@ -517,13 +521,16 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			}
 		}
 
-		if _, err := accountService.TouchActivity(r.Context(), accountID, tx.Transaction.Timestamp.Time); err != nil {
-			handleAccountError(w, r, err)
-			return
-		}
-		if err := accountService.RecordDebitUsage(r.Context(), accountID, amount, req.Reference, usageAt); err != nil {
-			handleAccountError(w, r, err)
-			return
+		// A replayed request already counted: do not touch activity or usage twice.
+		if !replayed {
+			if _, err := accountService.TouchActivity(r.Context(), accountID, tx.Transaction.Timestamp.Time); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
+			if err := accountService.RecordDebitUsage(r.Context(), accountID, amount, req.Reference, usageAt); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
 		}
 
 		response := accountTransactionResponse(tx.Transaction, accountUser, asset)
@@ -531,6 +538,157 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 		if warningMsg != "" {
 			response["warning"] = warningMsg
 		}
+		api.Created(w, response)
+	}
+}
+
+// AccountTransferRequest moves money between two accounts of the same currency in one ledger
+// transaction.
+type AccountTransferRequest struct {
+	DestinationAccountID string            `json:"destinationAccountID"`
+	Amount               json.Number       `json:"amount"`
+	Reference            string            `json:"reference"`
+	Metadata             map[string]string `json:"metadata"`
+}
+
+// transferAccount debits {accountID} and credits the destination account atomically. Both
+// sides go through the same checks as a separate debit and credit, and a single posting moves
+// the money, so a failure can never leave it half-way.
+func transferAccount(accountService services.AccountService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sourceID, err := getCBAAccountID(r)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, err)
+			return
+		}
+		source, err := accountService.Get(r.Context(), sourceID)
+		if err != nil {
+			handleAccountError(w, r, err)
+			return
+		}
+
+		var req AccountTransferRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			api.BadRequest(w, common.ErrValidation, err)
+			return
+		}
+		destinationID, err := uuid.Parse(strings.TrimSpace(req.DestinationAccountID))
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("destinationAccountID must be an account id"))
+			return
+		}
+		if destinationID == sourceID {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("source and destination accounts must differ"))
+			return
+		}
+		destination, err := accountService.Get(r.Context(), destinationID)
+		if err != nil {
+			handleAccountError(w, r, err)
+			return
+		}
+		if destination.Currency != source.Currency {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("accounts must have the same currency (%s and %s)", source.Currency, destination.Currency))
+			return
+		}
+		amount, err := parseAmount(req.Amount, source.Currency)
+		if err != nil {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("invalid amount: %v", err))
+			return
+		}
+		if amount <= 0 {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("amount must be positive"))
+			return
+		}
+		if req.Reference == "" {
+			api.BadRequest(w, common.ErrValidation, fmt.Errorf("reference is required"))
+			return
+		}
+
+		l := common.LedgerFromContext(r.Context())
+		idempotencyKey := r.Header.Get("Idempotency-Key")
+		sourceBalance, err := readAvailableBalance(r.Context(), l, source.WalletID, source.Currency)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
+		destinationBalance, err := readAvailableBalance(r.Context(), l, destination.WalletID, destination.Currency)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
+		usageAt := time.Now().UTC()
+		if _, err := accountService.ValidateDebit(r.Context(), sourceID, amount, sourceBalance, usageAt); err != nil && !isIdempotentRetry(r.Context(), l, idempotencyKey) {
+			handleAccountError(w, r, err)
+			return
+		}
+		if _, err := accountService.ValidateCredit(r.Context(), destinationID, amount, destinationBalance, usageAt); err != nil && !isIdempotentRetry(r.Context(), l, idempotencyKey) {
+			handleAccountError(w, r, err)
+			return
+		}
+
+		asset, err := currencyregistry.AssetFor(source.Currency)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
+		sourceAddress := walletAvailableAddress(source.WalletID, source.Currency)
+		destinationAddress := walletAvailableAddress(destination.WalletID, destination.Currency)
+		script := fmt.Sprintf(`
+		send [%s %d] (
+			source = @%s
+			destination = @%s
+		)
+	`, asset, amount, sourceAddress, destinationAddress)
+
+		md := buildAccountMetadata(req.Metadata, source, "transfer")
+		md["destination_account_id"] = destination.ID.String()
+		md["destination_wallet_id"] = destination.WalletID
+		_, tx, replayed, err := l.CreateTransaction(r.Context(), ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
+			IdempotencyKey: idempotencyKey,
+			Input: ledgercontroller.CreateTransaction{
+				RunScript: vm.RunScript{
+					Script:    vm.Script{Plain: script},
+					Reference: req.Reference,
+					Metadata:  md,
+				},
+				Runtime: ledgerinternal.RuntimeMachine,
+			},
+		})
+		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "insufficient fund") {
+				api.WriteErrorResponse(w, http.StatusPaymentRequired, common.ErrInsufficientFund, err)
+				return
+			}
+			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
+				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
+				return
+			}
+			common.HandleCommonWriteErrors(w, r, err)
+			return
+		}
+
+		if !replayed {
+			at := tx.Transaction.Timestamp.Time
+			if _, err := accountService.TouchActivity(r.Context(), sourceID, at); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
+			if _, err := accountService.TouchActivity(r.Context(), destinationID, at); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
+			if err := accountService.RecordDebitUsage(r.Context(), sourceID, amount, req.Reference, usageAt); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
+			if err := accountService.RecordCreditUsage(r.Context(), destinationID, amount, req.Reference, usageAt); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
+		}
+
+		response := accountTransactionResponse(tx.Transaction, sourceAddress, asset)
+		response["destination_account_id"] = destination.ID.String()
 		api.Created(w, response)
 	}
 }
@@ -601,7 +759,7 @@ func lienAccount(accountService services.AccountService) http.HandlerFunc {
 			},
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, replayed, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
 				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
@@ -611,13 +769,16 @@ func lienAccount(accountService services.AccountService) http.HandlerFunc {
 			return
 		}
 
-		if _, err := accountService.TouchActivity(r.Context(), accountID, tx.Transaction.Timestamp.Time); err != nil {
-			handleAccountError(w, r, err)
-			return
-		}
-		if err := accountService.RecordDebitUsage(r.Context(), accountID, amount, req.Reference, usageAt); err != nil {
-			handleAccountError(w, r, err)
-			return
+		// A replayed request already counted: do not touch activity or usage twice.
+		if !replayed {
+			if _, err := accountService.TouchActivity(r.Context(), accountID, tx.Transaction.Timestamp.Time); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
+			if err := accountService.RecordDebitUsage(r.Context(), accountID, amount, req.Reference, usageAt); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
 		}
 		api.Created(w, accountTransactionResponse(tx.Transaction, accountAvailable, asset))
 	}
@@ -715,7 +876,7 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 			},
 		}
 
-		_, tx, _, err := l.CreateTransaction(r.Context(), params)
+		_, tx, replayed, err := l.CreateTransaction(r.Context(), params)
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "conflict") || strings.Contains(strings.ToLower(err.Error()), "duplicate reference") {
 				api.WriteErrorResponse(w, http.StatusConflict, common.ErrConflict, err)
@@ -796,9 +957,12 @@ func releaseAccountLien(accountService services.AccountService, sys systemcontro
 			}
 		}
 
-		if _, err := accountService.TouchActivity(r.Context(), accountID, tx.Transaction.Timestamp.Time); err != nil {
-			handleAccountError(w, r, err)
-			return
+		// A replayed request already counted: do not touch activity or usage twice.
+		if !replayed {
+			if _, err := accountService.TouchActivity(r.Context(), accountID, tx.Transaction.Timestamp.Time); err != nil {
+				handleAccountError(w, r, err)
+				return
+			}
 		}
 
 		response := accountTransactionResponse(tx.Transaction, accountAvailable, asset)
@@ -1021,11 +1185,11 @@ func readAvailableBalance(ctx context.Context, l ledgercontroller.Controller, wa
 }
 
 func walletAvailableAddress(walletID, currency string) string {
-	return fmt.Sprintf("users:%s:wallets:%s:available", walletID, currency)
+	return walletaddr.Available(walletID, currency)
 }
 
 func walletLienAddress(walletID, currency string) string {
-	return fmt.Sprintf("users:%s:wallets:%s:lien", walletID, currency)
+	return walletaddr.Lien(walletID, currency)
 }
 
 // systemControlAddress is shared with the atomic transfer executor through hotrows, so the handler

@@ -127,6 +127,7 @@ func NewRouter(
 							router.Get("/statement", ledgertrackOnly(getAccountStatement(routerOptions.accountService)))
 							router.Post("/credit", ledgertrackOnly(creditAccount(routerOptions.accountService)))
 							router.Post("/debit", ledgertrackOnly(debitAccount(routerOptions.accountService, systemController)))
+							router.Post("/transfer", ledgertrackOnly(transferAccount(routerOptions.accountService)))
 							router.Post("/lien", ledgertrackOnly(lienAccount(routerOptions.accountService)))
 							router.Post("/lien/release", ledgertrackOnly(releaseAccountLien(routerOptions.accountService, systemController)))
 							router.Post("/activate", ledgertrackOnly(activateAccount(routerOptions.accountService)))

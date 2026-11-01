@@ -677,7 +677,7 @@ func TestDebitAccountIdempotentRetryAfterBalanceSpent(t *testing.T) {
 		{name: "new request with the same overdrawing amount is rejected", loggedBefore: false, expectedCode: http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			accountService, accountRepo, _, productRepo, _ := newAccountServiceForHTTPTests()
+			accountService, accountRepo, _, productRepo, dailyUsageRepo := newAccountServiceForHTTPTests()
 			systemController, ledgerController := newTestingSystemController(t, false)
 			ledgerController.EXPECT().IsDatabaseUpToDate(gomock.Any()).Return(true, nil).AnyTimes()
 			router := NewRouter(systemController, auth.NewNoAuth(), "develop", WithAccountService(accountService))
@@ -735,6 +735,12 @@ func TestDebitAccountIdempotentRetryAfterBalanceSpent(t *testing.T) {
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 			require.Equal(t, tc.expectedCode, rec.Code, rec.Body.String())
+			if tc.loggedBefore {
+				// The first attempt already counted this debit; the replay must not count it again.
+				if usage, err := dailyUsageRepo.GetForDate(context.Background(), account.ID, time.Now().UTC()); err == nil {
+					require.Zero(t, usage.DebitCount)
+				}
+			}
 		})
 	}
 }
@@ -755,4 +761,84 @@ func TestNormalizeReleaseMode(t *testing.T) {
 	} {
 		require.Equal(t, want, normalizeReleaseMode(in), in)
 	}
+}
+
+func TestTransferAccount(t *testing.T) {
+	accountService, accountRepo, _, productRepo, dailyUsageRepo := newAccountServiceForHTTPTests()
+	systemController, ledgerController := newTestingSystemController(t, false)
+	ledgerController.EXPECT().IsDatabaseUpToDate(gomock.Any()).Return(true, nil).AnyTimes()
+	router := NewRouter(systemController, auth.NewNoAuth(), "develop", WithAccountService(accountService))
+
+	newProduct := func(code, currency string) uuid.UUID {
+		id := uuid.New()
+		require.NoError(t, productRepo.Create(context.Background(), &models.Product{
+			ID: id, Code: code, Name: code, Category: "current", Currency: currency, Status: models.ProductStatusActive,
+			Rules: models.ProductRules{AllowCredits: true, AllowDebits: true, MinBalance: "0"},
+		}))
+		return id
+	}
+	newAccount := func(number, wallet, currency string, product uuid.UUID) *models.Account {
+		a := &models.Account{
+			ID: uuid.New(), AccountNumber: number, ClientID: uuid.New(), ProductID: product,
+			Currency: currency, Status: models.AccountStatusActive, WalletID: wallet,
+		}
+		require.NoError(t, accountRepo.Create(context.Background(), a))
+		return a
+	}
+	usd := newProduct("USD", "USD")
+	ngn := newProduct("NGN", "NGN")
+	from := newAccount("0000000031", "client-CL-2026-000031-USD", "USD", usd)
+	to := newAccount("0000000032", "client-CL-2026-000032-USD", "USD", usd)
+	other := newAccount("0000000033", "client-CL-2026-000033-NGN", "NGN", ngn)
+
+	post := func(src *models.Account, body AccountTransferRequest) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/ledgertrack/accounts/"+src.ID.String()+"/transfer", api.Buffer(t, body))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("same account", func(t *testing.T) {
+		rec := post(from, AccountTransferRequest{DestinationAccountID: from.ID.String(), Amount: "10", Reference: "t-same"})
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+	t.Run("different currency", func(t *testing.T) {
+		rec := post(from, AccountTransferRequest{DestinationAccountID: other.ID.String(), Amount: "10", Reference: "t-ccy"})
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+	t.Run("moves money in one transaction", func(t *testing.T) {
+		balance := func(addr string, v int64) *bunpaginate.Cursor[ledger.VolumesWithBalanceByAssetByAccount] {
+			return &bunpaginate.Cursor[ledger.VolumesWithBalanceByAssetByAccount]{Data: []ledger.VolumesWithBalanceByAssetByAccount{{
+				Account: addr, Asset: "USD/2",
+				VolumesWithBalance: ledger.VolumesWithBalance{Input: big.NewInt(v), Output: big.NewInt(0), Balance: big.NewInt(v)},
+			}}}
+		}
+		ledgerController.EXPECT().GetVolumesWithBalances(gomock.Any(), gomock.Any()).Return(balance("users:client-CL-2026-000031:wallets:USD:available", 500), nil)
+		ledgerController.EXPECT().GetVolumesWithBalances(gomock.Any(), gomock.Any()).Return(balance("users:client-CL-2026-000032:wallets:USD:available", 0), nil)
+		ledgerController.EXPECT().
+			CreateTransaction(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, params ledgercontroller.Parameters[ledgercontroller.CreateTransaction]) (*ledger.Log, *ledger.CreatedTransaction, bool, error) {
+				require.Equal(t, "t-ok", params.Input.RunScript.Reference)
+				require.Contains(t, params.Input.RunScript.Script.Plain, "@users:client-CL-2026-000031:wallets:USD:available")
+				require.Contains(t, params.Input.RunScript.Script.Plain, "@users:client-CL-2026-000032:wallets:USD:available")
+				require.Equal(t, to.ID.String(), params.Input.RunScript.Metadata["destination_account_id"])
+				return &ledger.Log{}, &ledger.CreatedTransaction{
+					Transaction: ledger.NewTransaction().
+						WithPostings(ledger.NewPosting("users:client-CL-2026-000031:wallets:USD:available", "users:client-CL-2026-000032:wallets:USD:available", "USD/2", big.NewInt(125))).
+						WithPostCommitVolumes(ledger.PostCommitVolumes{
+							"users:client-CL-2026-000031:wallets:USD:available": {"USD/2": ledger.NewVolumesInt64(500, 125)},
+						}),
+				}, false, nil
+			})
+
+		rec := post(from, AccountTransferRequest{DestinationAccountID: to.ID.String(), Amount: "125", Reference: "t-ok"})
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+		out, err := dailyUsageRepo.GetForDate(context.Background(), from.ID, time.Now().UTC())
+		require.NoError(t, err)
+		require.Equal(t, int64(1), out.DebitCount)
+		in, err := dailyUsageRepo.GetForDate(context.Background(), to.ID, time.Now().UTC())
+		require.NoError(t, err)
+		require.Equal(t, int64(1), in.CreditCount)
+	})
 }
