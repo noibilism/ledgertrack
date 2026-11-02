@@ -60,8 +60,9 @@ type backend struct {
 	post   func(path string, body map[string]any) (int, string)
 	listed string // JSON for GET /transactions
 
-	accounts string // JSON for GET /accounts?client_id=
-	lienBal  string // balance of the lien address, "" = the address was never touched (404)
+	history  func(rawQuery string) string // JSON for GET /accounts/{id}/history
+	accounts string                       // JSON for GET /accounts?client_id=
+	lienBal  string                       // balance of the lien address, "" = the address was never touched (404)
 	avail    int64
 }
 
@@ -100,6 +101,10 @@ func (b *backend) handler() http.Handler {
 	r.Get("/ledgertrack/accounts", func(w http.ResponseWriter, req *http.Request) {
 		record(req)
 		_, _ = w.Write([]byte(b.accounts))
+	})
+	r.Get("/ledgertrack/accounts/{id}/history", func(w http.ResponseWriter, req *http.Request) {
+		record(req)
+		_, _ = w.Write([]byte(b.history(req.URL.RawQuery)))
 	})
 	r.Get("/ledgertrack/accounts/{id}", func(w http.ResponseWriter, req *http.Request) {
 		record(req)
@@ -501,5 +506,184 @@ func TestAccountListEdgeCases(t *testing.T) {
 	rec, _ = do(h, http.MethodGet, "/bankman/api/v1/accounts/nope", "")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("unknown account: %d, want 404", rec.Code)
+	}
+}
+
+const walletBase = "users:w1:wallets:NGN:"
+
+func depositTx() string {
+	return `{"id":11,"reference":"REF-1","timestamp":"2026-11-01T10:00:00Z","reverted":false,` +
+		`"metadata":{"cba_operation":"credit","bankman_transaction_id":"tx-uuid-1","channel":"web","description":"top up"},` +
+		`"postings":[{"source":"system:control:NGN","destination":"` + walletBase + `available","asset":"NGN/2","amount":50000}],` +
+		`"postCommitVolumes":{"` + walletBase + `available":{"NGN/2":{"input":150000,"output":0}}}}`
+}
+
+func lienTx() string {
+	return `{"id":12,"reference":"L-1","timestamp":"2026-11-01T11:00:00Z","reverted":false,` +
+		`"metadata":{"cba_operation":"lien"},` +
+		`"postings":[{"source":"` + walletBase + `available","destination":"` + walletBase + `lien","asset":"NGN/2","amount":20000}],` +
+		`"postCommitVolumes":{"` + walletBase + `available":{"NGN/2":{"input":150000,"output":20000}},"` + walletBase + `lien":{"NGN/2":{"input":20000,"output":0}}}}`
+}
+
+func setupWallet(t *testing.T, b *backend) (http.Handler, fakeLookup) {
+	h, lookup := setup(t, b)
+	lookup.account.WalletID = "w1"
+	lookup.account.AccountNumber = "LT-1"
+	lookup.account.Metadata = map[string]any{"legacy_source_id": "bankman-acct-1"}
+	return h, lookup
+}
+
+func TestHistoryMapsOperationsToBankmanRows(t *testing.T) {
+	b := &backend{history: func(string) string {
+		return `{"cursor":{"hasMore":false,"data":[` + lienTx() + `,` + depositTx() + `]}}`
+	}}
+	h, _ := setupWallet(t, b)
+
+	rec, out := do(h, http.MethodGet, "/bankman/api/v1/transactions/accounts/bankman-acct-1/history?per_page=15", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	data := out["data"].(map[string]any)
+	rows := data["transactions"].([]any)
+	lien, dep := rows[0].(map[string]any), rows[1].(map[string]any)
+
+	if dep["transaction_type"] != "deposit" || dep["direction"] != "credit" || dep["amount"] != "500.0000" {
+		t.Fatalf("deposit row %v", dep)
+	}
+	if dep["id"] != "tx-uuid-1" || dep["internal_reference"] != "REF-1" || dep["processing_channel"] != "web" || dep["description"] != "top up" {
+		t.Fatalf("deposit identity %v", dep)
+	}
+	avail := dep["balances"].(map[string]any)["available"].(map[string]any)
+	if avail["before"] != "1000.0000" || avail["after"] != "1500.0000" {
+		t.Fatalf("deposit balances %v", avail)
+	}
+	if dep["destination_account"].(map[string]any)["id"] != "bankman-acct-1" || dep["source_account"] != nil {
+		t.Fatalf("deposit accounts %v / %v", dep["source_account"], dep["destination_account"])
+	}
+	if dep["can_reverse"] != true || dep["is_reversed"] != false {
+		t.Fatalf("deposit flags %v", dep)
+	}
+
+	if lien["transaction_type"] != "lien" || lien["direction"] != "debit" || lien["amount"] != "200.0000" {
+		t.Fatalf("lien row %v", lien)
+	}
+	if lien["source_account"] == nil || lien["destination_account"] != nil {
+		t.Fatalf("lien accounts %v", lien)
+	}
+	bal := lien["balances"].(map[string]any)
+	// a lien moves funds from available to held: the ledger balance does not change
+	ledger := bal["ledger"].(map[string]any)
+	if bal["available"].(map[string]any)["after"] != "1300.0000" || bal["locked"].(map[string]any)["after"] != "200.0000" ||
+		ledger["before"] != "1500.0000" || ledger["after"] != "1500.0000" {
+		t.Fatalf("lien balances %v", bal)
+	}
+	if lien["can_reverse"] != false {
+		t.Fatalf("a lien is not reversible: %v", lien)
+	}
+
+	p := data["pagination"].(map[string]any)
+	if p["current_page"] != float64(1) || p["per_page"] != float64(15) || p["has_more_pages"] != false || p["from"] != float64(1) || p["to"] != float64(2) {
+		t.Fatalf("pagination %v", p)
+	}
+}
+
+func TestHistoryPageTwoFollowsTheCursor(t *testing.T) {
+	b := &backend{history: func(rq string) string {
+		if strings.Contains(rq, "cursor=tok1") {
+			return `{"cursor":{"hasMore":false,"data":[` + depositTx() + `]}}`
+		}
+		return `{"cursor":{"hasMore":true,"next":"tok1","data":[` + lienTx() + `]}}`
+	}}
+	h, _ := setupWallet(t, b)
+	rec, out := do(h, http.MethodGet, "/bankman/api/v1/transactions/accounts/bankman-acct-1/history?page=2&per_page=1", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	data := out["data"].(map[string]any)
+	if n := len(data["transactions"].([]any)); n != 1 {
+		t.Fatalf("rows %d", n)
+	}
+	p := data["pagination"].(map[string]any)
+	if p["current_page"] != float64(2) || p["from"] != float64(2) || p["to"] != float64(2) || p["has_more_pages"] != false {
+		t.Fatalf("pagination %v", p)
+	}
+}
+
+func TestHistoryRefusesFiltersItCannotHonour(t *testing.T) {
+	b := &backend{history: func(string) string { return `{"cursor":{"data":[]}}` }}
+	h, _ := setupWallet(t, b)
+	for _, f := range []string{"transaction_type=deposit", "search=abc", "external_id=ext-1"} {
+		rec, _ := do(h, http.MethodGet, "/bankman/api/v1/transactions/accounts/bankman-acct-1/history?"+f, "")
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: status %d, want 422", f, rec.Code)
+		}
+	}
+	rec, _ := do(h, http.MethodGet, "/bankman/api/v1/transactions/accounts/bankman-acct-1/history?page=99", "")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("page 99: %d, want 422", rec.Code)
+	}
+	if len(b.calls) != 0 {
+		t.Errorf("no ledger call expected for refused requests, got %d", len(b.calls))
+	}
+	// a status other than completed matches nothing
+	rec, out := do(h, http.MethodGet, "/bankman/api/v1/transactions/accounts/bankman-acct-1/history?status=pending", "")
+	if rec.Code != http.StatusOK || len(out["data"].(map[string]any)["transactions"].([]any)) != 0 {
+		t.Errorf("status=pending: %d %s", rec.Code, rec.Body.String())
+	}
+	rec, _ = do(h, http.MethodGet, "/bankman/api/v1/transactions/accounts/nope/history", "")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown account: %d", rec.Code)
+	}
+}
+
+func TestHistoryDatesBecomeNativeTimeFilters(t *testing.T) {
+	var seen string
+	b := &backend{history: func(rq string) string { seen = rq; return `{"cursor":{"data":[]}}` }}
+	h, _ := setupWallet(t, b)
+	do(h, http.MethodGet, "/bankman/api/v1/transactions/accounts/bankman-acct-1/history?start_date=2026-11-01&end_date=2026-11-02", "")
+	if !strings.Contains(seen, "startTime=2026-11-01T00%3A00%3A00Z") || !strings.Contains(seen, "endTime=2026-11-02T23%3A59%3A59Z") {
+		t.Fatalf("query %q", seen)
+	}
+}
+
+func TestShowAndStatusByBankmanID(t *testing.T) {
+	b := &backend{}
+	h, lookup := setupWallet(t, b)
+	tx := strings.Replace(depositTx(), `"metadata":{`, `"metadata":{"account_id":"`+lookup.account.ID.String()+`",`, 1)
+	b.listed = `{"cursor":{"data":[` + tx + `]}}`
+
+	rec, out := do(h, http.MethodGet, "/bankman/api/v1/transactions/tx-uuid-1", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("show: %d %s", rec.Code, rec.Body.String())
+	}
+	d := out["data"].(map[string]any)
+	if d["id"] != "tx-uuid-1" || d["transaction_type"] != "deposit" || d["amount"] != "500.0000" {
+		t.Fatalf("show %v", d)
+	}
+
+	rec, out = do(h, http.MethodGet, "/bankman/api/v1/transactions/tx-uuid-1/status", "")
+	st := out["data"].(map[string]any)
+	if rec.Code != http.StatusOK || st["transaction_id"] != "tx-uuid-1" || st["status"] != "completed" || st["job_id"] != nil {
+		t.Fatalf("status %d %v", rec.Code, st)
+	}
+
+	b.listed = `{"cursor":{"data":[]}}`
+	for _, p := range []string{"/bankman/api/v1/transactions/ghost", "/bankman/api/v1/transactions/ghost/status"} {
+		if rec, _ := do(h, http.MethodGet, p, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", p, rec.Code)
+		}
+	}
+}
+
+func TestReversalRowIsMarked(t *testing.T) {
+	b := &backend{history: func(string) string {
+		return `{"cursor":{"data":[{"id":20,"reference":"x","timestamp":"2026-11-01T12:00:00Z","metadata":{"bankman_reversal_of":"tx-uuid-1","bankman_transaction_id":"rev-1"},` +
+			`"postings":[{"source":"` + walletBase + `available","destination":"system:control:NGN","asset":"NGN/2","amount":50000}]}]}}`
+	}}
+	h, _ := setupWallet(t, b)
+	_, out := do(h, http.MethodGet, "/bankman/api/v1/transactions/accounts/bankman-acct-1/history", "")
+	row := out["data"].(map[string]any)["transactions"].([]any)[0].(map[string]any)
+	if row["is_reversal"] != true || row["transaction_type"] != "reversal" || row["original_transaction_id"] != "tx-uuid-1" || row["direction"] != "debit" {
+		t.Fatalf("reversal row %v", row)
 	}
 }

@@ -61,6 +61,9 @@ func New(lookup services.LegacyLookupService, serve http.Handler, ledger string)
 	r.Get("/accounts", h.listAccounts)
 	r.Get("/accounts/{id}", h.showAccount)
 	r.Route("/transactions", func(r chi.Router) {
+		r.Get("/accounts/{accountID}/history", h.history)
+		r.Get("/{id}", h.showTransaction)
+		r.Get("/{id}/status", h.transactionStatus)
 		r.Post("/deposits/{accountID}", h.deposit)
 		r.Post("/withdrawals/{accountID}", h.withdraw)
 		r.Post("/liens/{accountID}", h.placeLien)
@@ -236,8 +239,15 @@ func (h *Handler) lookupError(w http.ResponseWriter, notFound string, err error)
 type ledgerTx struct {
 	ID        int64             `json:"id"`
 	Reference string            `json:"reference"`
+	Timestamp string            `json:"timestamp"`
+	Reverted  bool              `json:"reverted"`
 	Metadata  map[string]string `json:"metadata"`
-	Postings  []struct {
+	// PostCommitVolumes holds the volumes of the touched accounts after the transaction (history only).
+	PostCommitVolumes map[string]map[string]struct {
+		Input  decimal.Decimal `json:"input"`
+		Output decimal.Decimal `json:"output"`
+	} `json:"postCommitVolumes"`
+	Postings []struct {
 		Source      string          `json:"source"`
 		Destination string          `json:"destination"`
 		Asset       string          `json:"asset"`
