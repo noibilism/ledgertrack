@@ -215,6 +215,15 @@ type Account struct {
 	LastActivityAt  *time.Time      `json:"last_activity_at,omitempty" bun:"last_activity_at,type:timestamp without time zone,nullzero"`
 	InterestAccrued decimal.Decimal `json:"interest_accrued" bun:"interest_accrued,type:numeric"`
 	Metadata        map[string]any  `json:"metadata,omitempty" bun:"metadata,type:jsonb,notnull,default:'{}'::jsonb"`
+
+	// Characteristics carried over from the system accounts were imported from.
+	AccountName *string `json:"account_name,omitempty" bun:"account_name,type:varchar(255),nullzero"`
+	AccountType *string `json:"account_type,omitempty" bun:"account_type,type:varchar(32),nullzero"`
+	CountryCode *string `json:"country_code,omitempty" bun:"country_code,type:varchar(2),nullzero"`
+	// WalletRole is merchant_main, r2_subaccount or nil (not classified yet). R2RelationshipPublicID is set
+	// exactly when the role is r2_subaccount and is unique per currency.
+	WalletRole             *string `json:"wallet_role,omitempty" bun:"wallet_role,type:varchar(32),nullzero"`
+	R2RelationshipPublicID *string `json:"r2_relationship_public_id,omitempty" bun:"r2_relationship_public_id,type:varchar(180),nullzero"`
 }
 
 type KYCRecord struct {
@@ -276,4 +285,28 @@ type AccountDailyUsage struct {
 	LastReference string          `json:"last_reference,omitempty" bun:"last_reference,type:varchar(255),nullzero"`
 	CreatedAt     time.Time       `json:"created_at" bun:"created_at,type:timestamp without time zone,nullzero"`
 	UpdatedAt     time.Time       `json:"updated_at" bun:"updated_at,type:timestamp without time zone,nullzero"`
+}
+
+const (
+	WalletRoleMerchantMain = "merchant_main"
+	WalletRoleR2Subaccount = "r2_subaccount"
+
+	AccountTypeMain    = "main"
+	AccountTypeReserve = "reserve"
+)
+
+// AccountWalletRoleAudit records every change of a wallet role.
+type AccountWalletRoleAudit struct {
+	bun.BaseModel `bun:"_system.account_wallet_role_audits,alias:account_wallet_role_audits"`
+
+	ID                             uuid.UUID `bun:"id,type:uuid,pk"`
+	AccountID                      uuid.UUID `bun:"account_id,type:uuid,notnull"`
+	ActorService                   string    `bun:"actor_service,type:varchar(64),notnull"`
+	Action                         string    `bun:"action,type:varchar(32),notnull"`
+	PreviousWalletRole             *string   `bun:"previous_wallet_role,type:varchar(32),nullzero"`
+	PreviousR2RelationshipPublicID *string   `bun:"previous_r2_relationship_public_id,type:varchar(180),nullzero"`
+	WalletRole                     *string   `bun:"wallet_role,type:varchar(32),nullzero"`
+	R2RelationshipPublicID         *string   `bun:"r2_relationship_public_id,type:varchar(180),nullzero"`
+	EvidenceReference              string    `bun:"evidence_reference,type:varchar(255),notnull"`
+	CreatedAt                      time.Time `bun:"created_at,type:timestamp without time zone,nullzero,default:(now() at time zone 'utc')"`
 }

@@ -823,6 +823,51 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add wallet roles to accounts",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					// Account characteristics and the wallet role that the Bankman wallet-role contract routes by.
+					// A null wallet_role is an account nobody has classified yet; it is not an error.
+					// An R2 relationship binds at most one wallet per currency.
+					_, err := tx.ExecContext(ctx, `
+						alter table _system.accounts
+							add column if not exists account_name varchar(255),
+							add column if not exists account_type varchar(32),
+							add column if not exists country_code varchar(2),
+							add column if not exists wallet_role varchar(32),
+							add column if not exists r2_relationship_public_id varchar(180);
+
+						alter table _system.accounts
+							add constraint accounts_wallet_role_check
+								check (wallet_role is null or wallet_role in ('merchant_main', 'r2_subaccount'));
+						alter table _system.accounts
+							add constraint accounts_r2_role_binding_check
+								check (coalesce(wallet_role = 'r2_subaccount', false) = (r2_relationship_public_id is not null));
+
+						create unique index if not exists uq_accounts_r2_relationship_currency
+							on _system.accounts (r2_relationship_public_id, currency)
+							where r2_relationship_public_id is not null;
+
+						create table if not exists _system.account_wallet_role_audits (
+							id uuid primary key default gen_random_uuid(),
+							account_id uuid not null references _system.accounts (id),
+							actor_service varchar(64) not null,
+							action varchar(32) not null,
+							previous_wallet_role varchar(32),
+							previous_r2_relationship_public_id varchar(180),
+							wallet_role varchar(32),
+							r2_relationship_public_id varchar(180),
+							evidence_reference varchar(255) not null,
+							created_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create index if not exists idx_account_wallet_role_audits_account
+							on _system.account_wallet_role_audits (account_id);
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator
