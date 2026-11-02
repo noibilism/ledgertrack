@@ -22,8 +22,12 @@ and running the importer (`tools/bankman-migration`, `docs/import`) so the legac
 | `GET /accounts?external_id=` or `?client_id=` | account list for the client, with balances |
 | `GET /accounts/{id}` | one account with balances |
 
-Not in this version (next PRs): transaction read and status, history, products, client, `internal/wallet-operations`,
-R2 settlement and wallet-role endpoints.
+| `GET /transactions/{id}` | one transaction in Bankman's history row shape |
+| `GET /transactions/{id}/status` | always `completed`, no job or webhook |
+| `GET /transactions/accounts/{account_id}/history` | account history, page based |
+
+Not in this version (next PRs): products, client, `internal/wallet-operations`, R2 settlement and wallet-role
+endpoints.
 
 ## Behaviour callers should know
 
@@ -55,5 +59,17 @@ R2 settlement and wallet-role endpoints.
   `country_code` are null: LedgerTrack accounts do not carry them. `client_id` is the Bankman client id.
   Bankman's `allwallets` flag and its R2 sub-account filter are not applied, since wallet roles are not
   imported yet. An unfiltered list answers 422 instead of dumping every account.
+- Transaction rows follow Bankman's `transformTransaction()`. The type comes from the LedgerTrack operation
+  (credit/opening deposit is `deposit`, debit `withdrawal`, lien `lien`, release `lien_release`, a revert made
+  through this layer `reversal`, anything else `transfer`). `id` is the Bankman-style UUID for transactions made
+  through this layer, the Bankman id for imported liens and opening balances, otherwise the ledger id.
+  `balances.locked` and `balances.ledger` are only filled when the transaction touched the lien address;
+  otherwise they are null, because LedgerTrack records post-commit volumes only for touched accounts.
+- History is cursor based natively, so page N is reached by following N-1 cursors (pages above 50 are refused),
+  and `total` and `last_page` are null. `has_more_pages` is accurate. Supported filters: `page`, `per_page`
+  (max 100), `start_date`, `end_date`, `status` (only `completed` matches), `currency`. `transaction_type`,
+  `search`, `external_id`, `source_account_id` and `destination_account_id` answer 422 rather than being
+  ignored, since ignoring them would return rows the caller excluded.
+- `account_name` and the client `email` in the nested account objects are null.
 - Bankman's release webhook to sendman is not replicated.
 - Transaction ids are UUID strings; confirm the column types in snowman.
