@@ -49,17 +49,26 @@ func TransactionID(reference string) string {
 // Handler is the Bankman compatibility API.
 type Handler struct {
 	lookup services.LegacyLookupService
+	roles  services.WalletRoleService
 	serve  http.Handler
 	ledger string
 }
 
 // New builds the handler. `serve` is the router that serves the LedgerTrack v2 API (paths without the /v2
 // prefix); `ledger` is the wallet ledger name.
-func New(lookup services.LegacyLookupService, serve http.Handler, ledger string) http.Handler {
-	h := &Handler{lookup: lookup, serve: serve, ledger: ledger}
+func New(lookup services.LegacyLookupService, roles services.WalletRoleService, serve http.Handler, ledger string) http.Handler {
+	h := &Handler{lookup: lookup, roles: roles, serve: serve, ledger: ledger}
 	r := chi.NewRouter()
 	r.Get("/accounts", h.listAccounts)
 	r.Get("/accounts/{id}", h.showAccount)
+	r.Route("/internal/accounts", func(r chi.Router) {
+		r.Get("/resolved-main-wallet", h.resolveMainWallet)
+		r.Get("/resolved-r2-subaccount-wallet", h.resolveR2Subaccount)
+		r.Get("/wallet-classifications", h.listClassifications)
+		r.Post("/r2-subaccounts", h.createR2Subaccount)
+		r.Get("/{account}/wallet-classification", h.showClassification)
+		r.Put("/{account}/wallet-classification", h.classify)
+	})
 	r.Route("/transactions", func(r chi.Router) {
 		r.Get("/accounts/{accountID}/history", h.history)
 		r.Get("/{id}", h.showTransaction)

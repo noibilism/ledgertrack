@@ -129,6 +129,11 @@ func (b *backend) last() call { return b.calls[len(b.calls)-1] }
 
 func setup(t *testing.T, b *backend) (http.Handler, fakeLookup) {
 	t.Helper()
+	return setupRoles(t, b, &fakeRoles{})
+}
+
+func setupRoles(t *testing.T, b *backend, roles services.WalletRoleService) (http.Handler, fakeLookup) {
+	t.Helper()
 	currencyregistry.SetDefinitions(map[string]currencyregistry.Definition{"NGN": {Precision: 2, Enabled: true}})
 	t.Cleanup(func() { currencyregistry.SetDefinitions(map[string]currencyregistry.Definition{}) })
 
@@ -138,7 +143,7 @@ func setup(t *testing.T, b *backend) (http.Handler, fakeLookup) {
 		client:  &models.Client{ID: clientID},
 	}
 	// Mount like the real router: behind a chi mux with a strip prefix and a route-context reset.
-	compat := New(lookup, b.handler(), "ledgertrack")
+	compat := New(lookup, roles, b.handler(), "ledgertrack")
 	mux := chi.NewRouter()
 	mux.Handle("/bankman/api/v1/*", http.StripPrefix("/bankman/api/v1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chi.RouteContext(r.Context()).Reset()
@@ -484,6 +489,25 @@ func TestAccountListByExternalAndClientID(t *testing.T) {
 				t.Fatalf("list was not scoped to the client: %q", b.calls[0].RawQuery)
 			}
 		})
+	}
+}
+
+func TestAccountListHidesR2SubaccountsUnlessAsked(t *testing.T) {
+	list := `{"data":{"accounts":[` +
+		`{"id":"` + uuid.NewString() + `","currency":"NGN","status":"active","account_name":"Main","account_type":"main","country_code":"ng","wallet_role":"merchant_main"},` +
+		`{"id":"` + uuid.NewString() + `","currency":"NGN","status":"active","wallet_role":"r2_subaccount","r2_relationship_public_id":"rel-1"}]}}`
+	h, _ := setup(t, &backend{accounts: list})
+	rec, out := do(h, http.MethodGet, "/bankman/api/v1/accounts?external_id=ext-1", "")
+	if rec.Code != http.StatusOK || len(out["data"].([]any)) != 1 {
+		t.Fatalf("default list: %d %s, want only the main wallet", rec.Code, rec.Body.String())
+	}
+	first := out["data"].([]any)[0].(map[string]any)
+	if first["account_name"] != "Main" || first["account_type"] != "main" || first["country_code"] != "ng" {
+		t.Errorf("account characteristics missing: %v", first)
+	}
+	_, out = do(h, http.MethodGet, "/bankman/api/v1/accounts?external_id=ext-1&allwallets=true", "")
+	if len(out["data"].([]any)) != 2 {
+		t.Errorf("allwallets=true should list every wallet, got %d", len(out["data"].([]any)))
 	}
 }
 

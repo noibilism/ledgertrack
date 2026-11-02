@@ -32,6 +32,17 @@ func NewFXModule() fx.Option {
 			) services.LegacyLookupService {
 				return services.NewLegacyLookupService(accountRepository, clientRepository, legacyRepository)
 			},
+			func(db *bun.DB) repositories.WalletRoleRepository {
+				return repositories.NewWalletRoleRepository(db)
+			},
+			func(
+				lookup services.LegacyLookupService,
+				roles repositories.WalletRoleRepository,
+				accounts repositories.AccountRepository,
+				products repositories.ProductRepository,
+			) services.WalletRoleService {
+				return services.NewWalletRoleService(lookup, roles, accounts, products)
+			},
 			func(db *bun.DB) repositories.KYCRepository {
 				return repositories.NewKYCRepository(db)
 			},

@@ -56,9 +56,9 @@ endpoints.
 - Account reads: `id` is the Bankman id for imported accounts (so callers keep their stored ids) and the
   LedgerTrack id for new ones. `available_balance`, `actual_balance` (available plus held) and `locked_amount`
   are strings with four decimals, like Bankman's `decimal:4` casts. `account_name`, `account_type`,
-  `country_code` are null: LedgerTrack accounts do not carry them. `client_id` is the Bankman client id.
-  Bankman's `allwallets` flag and its R2 sub-account filter are not applied, since wallet roles are not
-  imported yet. An unfiltered list answers 422 instead of dumping every account.
+  `country_code` come from the account columns (null until set). `client_id` is the Bankman client id.
+  R2 sub-accounts are left out of the list unless `allwallets=true`, as in Bankman. An unfiltered list
+  answers 422 instead of dumping every account.
 - Transaction rows follow Bankman's `transformTransaction()`. The type comes from the LedgerTrack operation
   (credit/opening deposit is `deposit`, debit `withdrawal`, lien `lien`, release `lien_release`, a revert made
   through this layer `reversal`, anything else `transfer`). `id` is the Bankman-style UUID for transactions made
@@ -73,3 +73,34 @@ endpoints.
 - `account_name` and the client `email` in the nested account objects are null.
 - Bankman's release webhook to sendman is not replicated.
 - Transaction ids are UUID strings; confirm the column types in snowman.
+
+## Wallet roles (`/internal/accounts`)
+
+These are the endpoints Ramp Core uses to pick the wallet a movement goes to. They return Bankman's shapes
+and status codes. Authentication is the same bearer token as the rest of the layer; the audit actor is always
+`private_ingress`, never caller supplied.
+
+| Method and path | Answers |
+| --- | --- |
+| `GET /internal/accounts/resolved-main-wallet?external_id&currency` | `{status, data:{id, currency, wallet_role}}` (no message). 409 `wallet_selection_ambiguous_or_missing` |
+| `GET /internal/accounts/resolved-r2-subaccount-wallet?external_id&currency&r2_relationship_public_id` | same shape, exact owner-scoped match |
+| `GET /internal/accounts/wallet-classifications?external_id` | every wallet of the client with `account_type`, `status`, `wallet_role` (`unknown` when unclassified), `r2_relationship_public_id` |
+| `GET /internal/accounts/{account}/wallet-classification?external_id` | one wallet; another client's account is 404 |
+| `PUT /internal/accounts/{account}/wallet-classification` | classify; a replay answers the stored classification |
+| `POST /internal/accounts/r2-subaccounts` | 201 when created, 200 when the same request is replayed; keeps the caller's `account_id` |
+
+Rules, all enforced in one transaction with the account rows locked and an audit row written:
+
+- A wallet's role is immutable once set. `merchant_main` to `r2_subaccount` needs `correction: true`; nothing
+  moves a wallet out of `r2_subaccount`.
+- A relationship binds one wallet per currency (unique index). Concurrent creates create it once.
+- The main wallet resolver only considers active, same-currency, `main` wallets that are not bound to an R2
+  relationship. Exactly one `merchant_main` wins; otherwise exactly one unclassified wallet is used; anything
+  else is a 409. It never takes "the first wallet".
+- The new wallet id is `client-{client_number}-{product_code}-r2-{relationship}`, so it never collides with the
+  client's main wallet.
+- Unknown `external_id` or `product_id` is 422 (Bankman validates them with `exists`), a non-owned account 404.
+
+Columns added to `_system.accounts`: `account_name`, `account_type`, `country_code`, `wallet_role`,
+`r2_relationship_public_id`, plus `_system.account_wallet_role_audits`. The importer does not carry roles yet
+(next PR), so imported accounts read as `unknown` until it does.

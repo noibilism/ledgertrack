@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -142,6 +143,9 @@ func (h *Handler) view(r *http.Request, a *models.Account) (*accountView, error)
 	return &accountView{
 		ID:               bankmanID(a),
 		AccountNumber:    number,
+		AccountName:      a.AccountName,
+		CountryCode:      a.CountryCode,
+		AccountType:      a.AccountType,
 		Currency:         a.Currency,
 		Status:           a.Status,
 		AvailableBalance: fourDecimals(available, a.Currency),
@@ -196,8 +200,13 @@ func (h *Handler) listAccounts(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "Failed to fetch accounts")
 		return
 	}
+	// R2 sub-accounts are internal to the settlement flow; Bankman hides them unless asked for every wallet.
+	allWallets, _ := strconv.ParseBool(q.Get("allwallets"))
 	views := make([]accountView, 0, len(list.Data.Accounts))
 	for i := range list.Data.Accounts {
+		if !allWallets && list.Data.Accounts[i].WalletRole != nil && *list.Data.Accounts[i].WalletRole == models.WalletRoleR2Subaccount {
+			continue
+		}
 		v, err := h.view(r, &list.Data.Accounts[i])
 		if err != nil {
 			fail(w, http.StatusInternalServerError, "Failed to fetch accounts")

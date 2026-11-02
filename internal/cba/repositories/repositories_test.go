@@ -181,4 +181,6 @@ func TestRepositories(t *testing.T) {
 	storedUsage, err := dailyUsageRepo.GetForDate(ctx, account.ID, usageDate)
 	require.NoError(t, err)
 	require.True(t, storedUsage.DebitAmount.Equal(dailyUsage.DebitAmount))
+
+	t.Run("wallet roles", func(t *testing.T) { runWalletRoleTests(t, db) })
 }
