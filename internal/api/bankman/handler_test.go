@@ -755,3 +755,29 @@ func TestReversalByBodyIsNotServed(t *testing.T) {
 		t.Fatalf("status %d calls %d: %s", rec.Code, len(b.calls), rec.Body.String())
 	}
 }
+
+func TestShadowTransactionIDIsUsedAndStoredIDWinsOnReplay(t *testing.T) {
+	b := &backend{post: okPost}
+	h, _ := setup(t, b)
+	rec, out := doHeader(h, http.MethodPost, "/bankman/api/v1/transactions/deposits/bankman-acct-1",
+		`{"external_id":"ext-1","amount":10,"transaction_reference":"REF-9"}`, map[string]string{shadowIDHeader: "bm-tx-9"})
+	if rec.Code != http.StatusCreated || out["data"].(map[string]any)["transaction_id"] != "bm-tx-9" {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if md := b.last().Body["metadata"].(map[string]any); md[MetaTransactionID] != "bm-tx-9" {
+		t.Errorf("the id is stored with the transaction: %v", md)
+	}
+
+	b2 := &backend{
+		post: func(string, map[string]any) (int, string) {
+			return http.StatusConflict, `{"errorMessage":"duplicate reference"}`
+		},
+		listed: `{"cursor":{"data":[{"id":5,"reference":"REF-9","metadata":{"bankman_transaction_id":"bm-tx-9"}}]}}`,
+	}
+	h2, _ := setup(t, b2)
+	_, out = do(h2, http.MethodPost, "/bankman/api/v1/transactions/deposits/bankman-acct-1",
+		`{"external_id":"ext-1","amount":10,"transaction_reference":"REF-9"}`)
+	if out["data"].(map[string]any)["transaction_id"] != "bm-tx-9" {
+		t.Errorf("a replay returns the stored id: %v", out)
+	}
+}
