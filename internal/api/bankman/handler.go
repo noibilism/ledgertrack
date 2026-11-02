@@ -50,17 +50,20 @@ func TransactionID(reference string) string {
 type Handler struct {
 	lookup services.LegacyLookupService
 	roles  services.WalletRoleService
+	prov   services.ProvisioningService
 	serve  http.Handler
 	ledger string
 }
 
 // New builds the handler. `serve` is the router that serves the LedgerTrack v2 API (paths without the /v2
 // prefix); `ledger` is the wallet ledger name.
-func New(lookup services.LegacyLookupService, roles services.WalletRoleService, serve http.Handler, ledger string) http.Handler {
-	h := &Handler{lookup: lookup, roles: roles, serve: serve, ledger: ledger}
+func New(lookup services.LegacyLookupService, roles services.WalletRoleService, prov services.ProvisioningService, serve http.Handler, ledger string) http.Handler {
+	h := &Handler{lookup: lookup, roles: roles, prov: prov, serve: serve, ledger: ledger}
 	r := chi.NewRouter()
 	r.Get("/products", h.listProducts)
 	r.Get("/reports/aggregated-merchant-balances", h.aggregatedMerchantBalances)
+	r.Post("/clients", h.createClient)
+	r.Post("/accounts", h.createAccount)
 	r.Get("/accounts", h.listAccounts)
 	r.Get("/accounts/{id}", h.showAccount)
 	r.Route("/internal/accounts", func(r chi.Router) {

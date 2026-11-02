@@ -44,7 +44,24 @@ Notes on the newer endpoints:
   settlement movements are not listed. Same filter support and page limit as the per-account history.
 - `/health` is public. If the callers' base URL ends in `/api/v1`, the gateway must map their `/health` to it.
 
-Not in this version (next PRs): client and account creation, `internal/wallet-operations`, R2 settlement.
+## Client and account creation
+
+| Bankman call | Behaviour |
+|---|---|
+| `POST /clients` | creates an `active` client (Bankman has no client status; compliance is handled elsewhere). `individual` maps to an individual client, `organization` to a corporate client owned by an existing individual (`owner_client_id`, the Bankman client id). `email`, `phone_number`, registration number, tax id and `external_id` must be unique (422). `external_id` is generated when absent. |
+| `POST /accounts` | creates an active wallet. `product_id` is the Bankman product id (or a native id) and the product must be active. A caller-allocated `id` becomes the account id. A matching wallet (same client, product, `account_type` and `country_code`, not closed) is returned with 200 and "Wallet account retrieved" instead of creating a second one, as in Bankman. R2 sub-accounts never count as a match. `status: inactive` creates the wallet `pending`. |
+
+- Wallet ids: `client-{number}-{product}` for a main wallet without a country, otherwise
+  `client-{number}-{product}-{type}[-{cc}]`. If that is taken the first 8 characters of the account id are added.
+- The shadow gateway sends `X-Bankman-Resource-Id` with the id Bankman gave a client or an account. It is stored
+  as `legacy_source_id`, so the id callers see is the same before and after cutover. Nothing else should send it.
+  It is not authenticated separately yet (see the open items in the cutover plan).
+- Uniqueness checks on email, phone, registration number, tax id and external id scan the clients table. They
+  are unindexed, which is fine for creation volumes but should not be used in a hot path.
+- Differences from Bankman: a new wallet answers `0.0000` for both balances (Bankman answers a bare `0.00`), and
+  `inactive` is stored as `pending`.
+
+Not in this version (next PRs): `internal/wallet-operations`, R2 settlement.
 
 ## Behaviour callers should know
 

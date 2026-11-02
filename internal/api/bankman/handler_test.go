@@ -26,6 +26,10 @@ type fakeLookup struct {
 	stats   []repositories.WalletStat
 }
 
+func (f fakeLookup) ClientConflicts(context.Context, repositories.ClientIdentity) ([]string, error) {
+	return nil, nil
+}
+
 func (f fakeLookup) ActiveWalletStats(context.Context) ([]repositories.WalletStat, error) {
 	return f.stats, nil
 }
@@ -153,6 +157,11 @@ func setup(t *testing.T, b *backend) (http.Handler, fakeLookup) {
 
 func setupRoles(t *testing.T, b *backend, roles services.WalletRoleService) (http.Handler, fakeLookup) {
 	t.Helper()
+	return setupAll(t, b, roles, &fakeProvisioning{})
+}
+
+func setupAll(t *testing.T, b *backend, roles services.WalletRoleService, prov services.ProvisioningService) (http.Handler, fakeLookup) {
+	t.Helper()
 	currencyregistry.SetDefinitions(map[string]currencyregistry.Definition{"NGN": {Precision: 2, Enabled: true}})
 	t.Cleanup(func() { currencyregistry.SetDefinitions(map[string]currencyregistry.Definition{}) })
 
@@ -163,7 +172,7 @@ func setupRoles(t *testing.T, b *backend, roles services.WalletRoleService) (htt
 		stats:   testStats,
 	}
 	// Mount like the real router: behind a chi mux with a strip prefix and a route-context reset.
-	compat := New(lookup, roles, b.handler(), "ledgertrack")
+	compat := New(lookup, roles, prov, b.handler(), "ledgertrack")
 	mux := chi.NewRouter()
 	mux.Handle("/bankman/api/v1/*", http.StripPrefix("/bankman/api/v1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chi.RouteContext(r.Context()).Reset()
@@ -173,8 +182,15 @@ func setupRoles(t *testing.T, b *backend, roles services.WalletRoleService) (htt
 }
 
 func do(h http.Handler, method, path, body string) (*httptest.ResponseRecorder, map[string]any) {
+	return doHeader(h, method, path, body, nil)
+}
+
+func doHeader(h http.Handler, method, path, body string, headers map[string]string) (*httptest.ResponseRecorder, map[string]any) {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer test")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	var out map[string]any

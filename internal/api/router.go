@@ -134,7 +134,7 @@ func NewRouter(
 		// Bankman's health check is public, like the native one.
 		mux.Get("/bankman/health", bankman.Health)
 		mux.Get("/bankman/api/v1/health", bankman.Health)
-		compat := auth.Middleware(authenticator)(bankman.New(routerOptions.legacyLookupService, routerOptions.walletRoleService, v2Router, walletLedgerName))
+		compat := auth.Middleware(authenticator)(bankman.New(routerOptions.legacyLookupService, routerOptions.walletRoleService, routerOptions.provisioningService, v2Router, walletLedgerName))
 		mux.Handle("/bankman/api/v1/*", admitWrites(http.StripPrefix("/bankman/api/v1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			chi.RouteContext(r.Context()).Reset()
 			compat.ServeHTTP(w, r)
@@ -172,6 +172,7 @@ type routerOptions struct {
 	chargeService                  services.ChargeService
 	legacyLookupService            services.LegacyLookupService
 	walletRoleService              services.WalletRoleService
+	provisioningService            services.ProvisioningService
 	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
@@ -251,6 +252,13 @@ func WithReportingService(reportingService services.ReportingService) RouterOpti
 func WithFinanceReportingService(financeReportingService services.FinanceReportingService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.financeReportingService = financeReportingService
+	}
+}
+
+// WithProvisioningService serves Bankman's client and account creation in the compatibility API.
+func WithProvisioningService(provisioningService services.ProvisioningService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.provisioningService = provisioningService
 	}
 }
 
