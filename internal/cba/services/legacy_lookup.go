@@ -24,6 +24,8 @@ type LegacyLookupService interface {
 	Client(ctx context.Context, externalID string) (*models.Client, error)
 	// ClientByID finds a client by the Bankman client id it was imported with, or by its LedgerTrack id.
 	ClientByID(ctx context.Context, id string) (*models.Client, error)
+	// ActiveWalletStats counts the active wallets and their owners per currency.
+	ActiveWalletStats(ctx context.Context) ([]repositories.WalletStat, error)
 }
 
 type DefaultLegacyLookupService struct {
@@ -110,4 +112,8 @@ func (s *DefaultLegacyLookupService) ClientByID(ctx context.Context, id string) 
 		}
 	}
 	return nil, ErrLegacyNotFound
+}
+
+func (s *DefaultLegacyLookupService) ActiveWalletStats(ctx context.Context) ([]repositories.WalletStat, error) {
+	return s.legacy.ActiveWalletStats(ctx)
 }

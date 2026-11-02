@@ -315,40 +315,10 @@ func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
 		params.Set("endTime", v+"T23:59:59Z")
 	}
 
-	var (
-		items   []ledgerTx
-		hasMore bool
-	)
-	// The native history is cursor-based, so page N is reached by following N-1 cursors.
-	cursor := ""
-	for i := 1; i <= page; i++ {
-		p := url.Values{}
-		if cursor != "" {
-			p.Set("cursor", cursor)
-		} else {
-			p = params
-		}
-		rp, err := h.call(r, http.MethodGet, h.accountPath(account, "/history")+"?"+p.Encode(), nil)
-		if err != nil || !rp.ok() {
-			fail(w, http.StatusInternalServerError, "Failed to retrieve transaction history")
-			return
-		}
-		var out struct {
-			Cursor struct {
-				Data    []ledgerTx `json:"data"`
-				HasMore bool       `json:"hasMore"`
-				Next    string     `json:"next"`
-			} `json:"cursor"`
-		}
-		if err := json.Unmarshal(rp.Body, &out); err != nil {
-			fail(w, http.StatusInternalServerError, "Failed to retrieve transaction history")
-			return
-		}
-		items, hasMore, cursor = out.Cursor.Data, out.Cursor.HasMore, out.Cursor.Next
-		if i < page && (!hasMore || cursor == "") {
-			items, hasMore = nil, false
-			break
-		}
+	items, hasMore, err := h.walkCursor(r, h.accountPath(account, "/history"), params, page)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "Failed to retrieve transaction history")
+		return
 	}
 
 	views := make([]*transactionView, 0, len(items))
@@ -384,4 +354,93 @@ func historyPage(views []*transactionView, page, perPage int, hasMore bool) map[
 			"has_more_pages": hasMore,
 		},
 	}
+}
+
+// walkCursor returns page N of a native cursor list by following N-1 cursors.
+func (h *Handler) walkCursor(r *http.Request, path string, params url.Values, page int) ([]ledgerTx, bool, error) {
+	var (
+		items   []ledgerTx
+		hasMore bool
+		cursor  string
+	)
+	for i := 1; i <= page; i++ {
+		p := params
+		if cursor != "" {
+			p = url.Values{"cursor": {cursor}}
+		}
+		rp, err := h.call(r, http.MethodGet, path+"?"+p.Encode(), nil)
+		if err != nil {
+			return nil, false, err
+		}
+		if !rp.ok() {
+			return nil, false, errStatus(rp)
+		}
+		var out struct {
+			Cursor struct {
+				Data    []ledgerTx `json:"data"`
+				HasMore bool       `json:"hasMore"`
+				Next    string     `json:"next"`
+			} `json:"cursor"`
+		}
+		if err := json.Unmarshal(rp.Body, &out); err != nil {
+			return nil, false, err
+		}
+		items, hasMore, cursor = out.Cursor.Data, out.Cursor.HasMore, out.Cursor.Next
+		if i < page && (!hasMore || cursor == "") {
+			return nil, false, nil
+		}
+	}
+	return items, hasMore, nil
+}
+
+// allHistory answers GET /transactions/accounts/all-history: every wallet transaction, newest first.
+func (h *Handler) allHistory(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	for _, f := range unsupportedHistoryFilters {
+		if q.Get(f) != "" {
+			fail(w, http.StatusUnprocessableEntity, "Filter not supported yet: "+f)
+			return
+		}
+	}
+	page := atoiDefault(q.Get("page"), 1)
+	perPage := atoiDefault(q.Get("per_page"), 15)
+	if page < 1 || perPage < 1 || perPage > 100 || page > maxHistoryPage {
+		fail(w, http.StatusUnprocessableEntity, "Validation failed: page must be 1-"+strconv.Itoa(maxHistoryPage)+" and per_page 1-100")
+		return
+	}
+	if q.Get("status") != "" && q.Get("status") != "completed" {
+		respond(w, http.StatusOK, "Success", historyPage([]*transactionView{}, page, perPage, false))
+		return
+	}
+	// Every wallet operation touches the wallet's "available" address, so that pattern selects wallet
+	// transactions and leaves out fees, settlement and other internal movements.
+	currency := "" // any currency
+	if c := strings.ToUpper(strings.TrimSpace(q.Get("currency"))); c != "" {
+		currency = c
+	}
+	pattern := "users::wallets::available"
+	if currency != "" {
+		pattern = "users::wallets:" + currency + ":available"
+	}
+	params := url.Values{"pageSize": {strconv.Itoa(perPage)}, "account": {pattern}}
+	if v := q.Get("start_date"); v != "" {
+		params.Set("startTime", v+"T00:00:00Z")
+	}
+	if v := q.Get("end_date"); v != "" {
+		params.Set("endTime", v+"T23:59:59Z")
+	}
+	items, hasMore, err := h.walkCursor(r, "/"+url.PathEscape(h.ledger)+"/transactions", params, page)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "Failed to retrieve transaction history")
+		return
+	}
+	views := make([]*transactionView, 0, len(items))
+	for i := range items {
+		account, err := h.accountOf(r, &items[i])
+		if err != nil {
+			continue
+		}
+		views = append(views, h.transactionFor(r, &items[i], account))
+	}
+	respond(w, http.StatusOK, "Success", historyPage(views, page, perPage, hasMore))
 }

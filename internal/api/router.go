@@ -131,6 +131,9 @@ func NewRouter(
 	if routerOptions.legacyLookupService != nil {
 		// The compat layer dispatches to v2Router in process, so every call passes the same authentication
 		// and business rules as a native one. Authentication also runs here, before its own lookups.
+		// Bankman's health check is public, like the native one.
+		mux.Get("/bankman/health", bankman.Health)
+		mux.Get("/bankman/api/v1/health", bankman.Health)
 		compat := auth.Middleware(authenticator)(bankman.New(routerOptions.legacyLookupService, routerOptions.walletRoleService, v2Router, walletLedgerName))
 		mux.Handle("/bankman/api/v1/*", admitWrites(http.StripPrefix("/bankman/api/v1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			chi.RouteContext(r.Context()).Reset()
