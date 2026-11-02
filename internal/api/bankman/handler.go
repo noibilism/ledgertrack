@@ -59,6 +59,8 @@ type Handler struct {
 func New(lookup services.LegacyLookupService, roles services.WalletRoleService, serve http.Handler, ledger string) http.Handler {
 	h := &Handler{lookup: lookup, roles: roles, serve: serve, ledger: ledger}
 	r := chi.NewRouter()
+	r.Get("/products", h.listProducts)
+	r.Get("/reports/aggregated-merchant-balances", h.aggregatedMerchantBalances)
 	r.Get("/accounts", h.listAccounts)
 	r.Get("/accounts/{id}", h.showAccount)
 	r.Route("/internal/accounts", func(r chi.Router) {
@@ -70,6 +72,7 @@ func New(lookup services.LegacyLookupService, roles services.WalletRoleService, 
 		r.Put("/{account}/wallet-classification", h.classify)
 	})
 	r.Route("/transactions", func(r chi.Router) {
+		r.Get("/accounts/all-history", h.allHistory)
 		r.Get("/accounts/{accountID}/history", h.history)
 		r.Get("/{id}", h.showTransaction)
 		r.Get("/{id}/status", h.transactionStatus)
@@ -78,7 +81,9 @@ func New(lookup services.LegacyLookupService, roles services.WalletRoleService, 
 		r.Post("/liens/{accountID}", h.placeLien)
 		r.Put("/liens/{lienID}", h.releaseLien)
 		r.Post("/liens/{lienID}/release-and-withdraw", h.releaseAndWithdraw)
-		r.Post("/reversal", h.reverseByBody)
+		// Bankman has no such route, so callers that use it get a 404 there today. Serving it here would make
+		// code that has never worked start moving money at cutover. Callers use /{id}/reversals.
+		r.Post("/reversal", func(w http.ResponseWriter, _ *http.Request) { fail(w, http.StatusNotFound, "Route not found") })
 		r.Post("/{id}/reversals", h.reverseByPath)
 	})
 	return r
@@ -564,15 +569,6 @@ func (h *Handler) releaseLien(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) releaseAndWithdraw(w http.ResponseWriter, r *http.Request) {
 	h.release(w, r, "release_and_debit", "Lien release and withdrawal queued")
-}
-
-func (h *Handler) reverseByBody(w http.ResponseWriter, r *http.Request) {
-	p, err := decode(r)
-	if err != nil {
-		fail(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	h.reverse(w, r, p, p.OriginalTransaction)
 }
 
 func (h *Handler) reverseByPath(w http.ResponseWriter, r *http.Request) {

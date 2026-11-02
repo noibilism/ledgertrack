@@ -18,6 +18,15 @@ type LegacyLookupRepository interface {
 	ClientByLegacyExternalID(ctx context.Context, externalID string) (*models.Client, error)
 	// ClientByLegacySourceID finds a client by the id it had in the legacy system (not its external_id).
 	ClientByLegacySourceID(ctx context.Context, legacyID string) (*models.Client, error)
+	// ActiveWalletStats counts the active wallets and their owners per currency.
+	ActiveWalletStats(ctx context.Context) ([]WalletStat, error)
+}
+
+// WalletStat is one row of the active-wallet summary.
+type WalletStat struct {
+	Currency string `bun:"currency"`
+	Wallets  int    `bun:"wallets"`
+	Clients  int    `bun:"clients"`
 }
 
 type BunLegacyLookupRepository struct {
@@ -53,4 +62,16 @@ func (r *BunLegacyLookupRepository) ClientByLegacySourceID(ctx context.Context, 
 		Limit(1).
 		Scan(ctx)
 	return client, postgres.ResolveError(err)
+}
+
+func (r *BunLegacyLookupRepository) ActiveWalletStats(ctx context.Context) ([]WalletStat, error) {
+	var out []WalletStat
+	err := r.db.NewSelect().
+		TableExpr("_system.accounts").
+		ColumnExpr("currency, count(*) as wallets, count(distinct client_id) as clients").
+		Where("status = 'active'").
+		GroupExpr("currency").
+		OrderExpr("currency").
+		Scan(ctx, &out)
+	return out, postgres.ResolveError(err)
 }

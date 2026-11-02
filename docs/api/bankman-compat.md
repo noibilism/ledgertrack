@@ -17,7 +17,8 @@ and running the importer (`tools/bankman-migration`, `docs/import`) so the legac
 | `POST /transactions/liens/{account_id}` | `.../lien` |
 | `PUT /transactions/liens/{lien_id}` | `.../lien/release`, mode `release_only` |
 | `POST /transactions/liens/{lien_id}/release-and-withdraw` | `.../lien/release`, mode `release_and_debit` |
-| `POST /transactions/reversal` and `POST /transactions/{id}/reversals` | `POST /v2/ledgertrack/transactions/{id}/revert` |
+| `POST /transactions/{id}/reversals` | `POST /v2/ledgertrack/transactions/{id}/revert` |
+| `POST /transactions/reversal` | not served: 404, because Bankman has no such route and callers get a 404 there today |
 
 | `GET /accounts?external_id=` or `?client_id=` | account list for the client, with balances |
 | `GET /accounts/{id}` | one account with balances |
@@ -25,9 +26,25 @@ and running the importer (`tools/bankman-migration`, `docs/import`) so the legac
 | `GET /transactions/{id}` | one transaction in Bankman's history row shape |
 | `GET /transactions/{id}/status` | always `completed`, no job or webhook |
 | `GET /transactions/accounts/{account_id}/history` | account history, page based |
+| `GET /transactions/accounts/all-history` | wallet transactions of every account, newest first, page based |
+| `GET /products` | every product; `id` is the Bankman product id for imported products |
+| `GET /reports/aggregated-merchant-balances` | per-currency wallet totals over active accounts |
+| `GET /health` (also `/bankman/health`) | public, `{status:"ok", service, timestamp}` |
 
-Not in this version (next PRs): products, client, `internal/wallet-operations`, R2 settlement and wallet-role
-endpoints.
+Notes on the newer endpoints:
+
+- `GET /products`: an imported product carries its Bankman id in a `[legacy_source_id=...]` tag in the
+  description (written by the importer). The tag is stripped from `description` and used as `id`.
+  `currency_name` is the currency code, `charges` is empty, and the loan-only fields are null, because
+  LedgerTrack products have no equivalent. Check what the callers read before relying on those.
+- `GET /reports/aggregated-merchant-balances`: totals come from the ledger (`users::wallets:{CCY}:available` and
+  `:lien`). Bankman also returns a per-product breakdown; LedgerTrack cannot sum a ledger address pattern by
+  product, so `products` is an empty list for now.
+- `all-history` selects wallet transactions with the `users::wallets::available` address pattern, so fees and
+  settlement movements are not listed. Same filter support and page limit as the per-account history.
+- `/health` is public. If the callers' base URL ends in `/api/v1`, the gateway must map their `/health` to it.
+
+Not in this version (next PRs): client and account creation, `internal/wallet-operations`, R2 settlement.
 
 ## Behaviour callers should know
 

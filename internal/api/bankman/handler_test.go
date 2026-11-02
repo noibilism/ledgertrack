@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/formancehq/ledger/internal/cba/models"
+	"github.com/formancehq/ledger/internal/cba/repositories"
 	"github.com/formancehq/ledger/internal/cba/services"
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
 )
@@ -22,6 +23,11 @@ import (
 type fakeLookup struct {
 	account *models.Account
 	client  *models.Client
+	stats   []repositories.WalletStat
+}
+
+func (f fakeLookup) ActiveWalletStats(context.Context) ([]repositories.WalletStat, error) {
+	return f.stats, nil
 }
 
 func (f fakeLookup) Account(_ context.Context, id string) (*models.Account, error) {
@@ -62,6 +68,8 @@ type backend struct {
 
 	history  func(rawQuery string) string // JSON for GET /accounts/{id}/history
 	accounts string                       // JSON for GET /accounts?client_id=
+	products string                       // JSON for GET /products
+	aggs     map[string]string            // address pattern -> aggregate balance JSON
 	lienBal  string                       // balance of the lien address, "" = the address was never touched (404)
 	avail    int64
 }
@@ -98,6 +106,14 @@ func (b *backend) handler() http.Handler {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"data":{"id":99}}`))
 	})
+	r.Get("/ledgertrack/aggregate/balances", func(w http.ResponseWriter, req *http.Request) {
+		record(req)
+		_, _ = w.Write([]byte(b.aggs[req.URL.Query().Get("address")]))
+	})
+	r.Get("/products", func(w http.ResponseWriter, req *http.Request) {
+		record(req)
+		_, _ = w.Write([]byte(b.products))
+	})
 	r.Get("/ledgertrack/accounts", func(w http.ResponseWriter, req *http.Request) {
 		record(req)
 		_, _ = w.Write([]byte(b.accounts))
@@ -127,6 +143,9 @@ func (b *backend) handler() http.Handler {
 
 func (b *backend) last() call { return b.calls[len(b.calls)-1] }
 
+// testStats is what the fake lookup reports as active wallets; tests set it before calling setup.
+var testStats []repositories.WalletStat
+
 func setup(t *testing.T, b *backend) (http.Handler, fakeLookup) {
 	t.Helper()
 	return setupRoles(t, b, &fakeRoles{})
@@ -141,6 +160,7 @@ func setupRoles(t *testing.T, b *backend, roles services.WalletRoleService) (htt
 	lookup := fakeLookup{
 		account: &models.Account{ID: uuid.New(), ClientID: clientID, Currency: "NGN"},
 		client:  &models.Client{ID: clientID},
+		stats:   testStats,
 	}
 	// Mount like the real router: behind a chi mux with a strip prefix and a route-context reset.
 	compat := New(lookup, roles, b.handler(), "ledgertrack")
@@ -392,9 +412,8 @@ func TestSecondReleaseIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestReversalBothRoutes(t *testing.T) {
+func TestReversalRoute(t *testing.T) {
 	for name, tc := range map[string]struct{ path, body string }{
-		"body": {"/bankman/api/v1/transactions/reversal", `{"original_transaction_id":"orig-uuid","reason":"duplicate"}`},
 		"path": {"/bankman/api/v1/transactions/orig-uuid/reversals", `{"reason":"duplicate"}`},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -422,7 +441,7 @@ func TestReversalBothRoutes(t *testing.T) {
 func TestReversalOfUnknownTransaction(t *testing.T) {
 	b := &backend{post: okPost, listed: `{"cursor":{"data":[]}}`}
 	h, _ := setup(t, b)
-	rec, _ := do(h, http.MethodPost, "/bankman/api/v1/transactions/reversal", `{"original_transaction_id":"ghost"}`)
+	rec, _ := do(h, http.MethodPost, "/bankman/api/v1/transactions/ghost/reversals", `{}`)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status %d", rec.Code)
 	}
@@ -709,5 +728,14 @@ func TestReversalRowIsMarked(t *testing.T) {
 	row := out["data"].(map[string]any)["transactions"].([]any)[0].(map[string]any)
 	if row["is_reversal"] != true || row["transaction_type"] != "reversal" || row["original_transaction_id"] != "tx-uuid-1" || row["direction"] != "debit" {
 		t.Fatalf("reversal row %v", row)
+	}
+}
+
+func TestReversalByBodyIsNotServed(t *testing.T) {
+	b := &backend{post: okPost}
+	h, _ := setup(t, b)
+	rec, out := do(h, http.MethodPost, "/bankman/api/v1/transactions/reversal", `{"original_transaction_id":"orig-uuid"}`)
+	if rec.Code != http.StatusNotFound || out["status"] != "error" || len(b.calls) != 0 {
+		t.Fatalf("status %d calls %d: %s", rec.Code, len(b.calls), rec.Body.String())
 	}
 }
