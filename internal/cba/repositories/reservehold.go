@@ -136,7 +136,11 @@ func (r *BunReserveHoldRepository) GetByCredit(ctx context.Context, ledger, wall
 	err := r.db.NewSelect().Model(h).
 		Where("ledger = ?", ledger).Where("wallet_id = ?", walletID).Where("credit_reference = ?", reference).
 		Scan(ctx)
-	return h, postgres.ResolveError(err)
+	if err != nil {
+		// Return nil on a miss so callers can tell "no hold yet" from a hold with zero values.
+		return nil, postgres.ResolveError(err)
+	}
+	return h, nil
 }
 
 func (r *BunReserveHoldRepository) List(ctx context.Context, f ReserveHoldFilter) ([]models.ReserveHold, error) {
