@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/metadata"
@@ -26,14 +27,18 @@ func chargeSends(asset, source string, plan *services.ChargePlan, unbounded bool
 	}
 	script := ""
 	for _, line := range plan.Lines {
-		script += fmt.Sprintf(`
-		send [%s %d] (
-			source = @%s%s
-			destination = @%s
-		)
-	`, asset, line.AmountMinor, source, mode, line.Address)
+		script += fmt.Sprintf("\nsend [%s %d] (\n\tsource = @%s%s\n\tdestination = @%s\n)", asset, line.AmountMinor, source, mode, line.Address)
 	}
 	return script
+}
+
+// appendSends adds more send statements to a script. The Numscript grammar rejects a whitespace-only
+// line between statements, so the script is trimmed first and the statements are joined by one newline.
+func appendSends(script, more string) string {
+	if strings.TrimSpace(more) == "" {
+		return script
+	}
+	return strings.TrimSpace(script) + "\n" + strings.TrimSpace(more) + "\n"
 }
 
 // withChargeMetadata records the charge on the transaction so the ledger says what was charged.

@@ -94,9 +94,9 @@ func TestTransferAccountHoldsTheDestinationReserve(t *testing.T) {
 		DoAndReturn(func(_ context.Context, params ledgercontroller.Parameters[ledgercontroller.CreateTransaction]) (*ledger.Log, *ledger.CreatedTransaction, bool, error) {
 			script := params.Input.RunScript.Script.Plain
 			require.Contains(t, script, "[USD/2 20]")
-			require.Contains(t, script, "destination = @users:client-CL-2026-000042:wallets:USD:lien")
-			require.Contains(t, script, "[USD/2 80]")
-			require.Contains(t, script, "destination = @users:client-CL-2026-000042:wallets:USD:available")
+			require.Contains(t, script, "to @users:client-CL-2026-000042:wallets:USD:lien")
+			require.Contains(t, script, "[USD/2 100]")
+			require.Contains(t, script, "to @users:client-CL-2026-000042:wallets:USD:available")
 			require.NotContains(t, script, "overdraft", "the customer source must not be allowed to go negative")
 			require.Equal(t, holdID.String(), params.Input.RunScript.Metadata["reserve_hold_id"])
 			require.Equal(t, f.to.ID.String(), params.Input.RunScript.Metadata["destination_account_id"])
@@ -125,8 +125,8 @@ func TestDebitAccountDrawsFromTheReserve(t *testing.T) {
 		CreateTransaction(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, params ledgercontroller.Parameters[ledgercontroller.CreateTransaction]) (*ledger.Log, *ledger.CreatedTransaction, bool, error) {
 			script := params.Input.RunScript.Script.Plain
-			require.Contains(t, script, "source = @users:client-CL-2026-000041:wallets:USD:lien")
-			require.Contains(t, script, "source = @users:client-CL-2026-000041:wallets:USD:available")
+			require.Contains(t, script, "from @users:client-CL-2026-000041:wallets:USD:lien")
+			require.Contains(t, script, "@users:client-CL-2026-000041:wallets:USD:available")
 			require.Equal(t, "30", params.Input.RunScript.Metadata["reserve_drawn_minor"])
 			return &ledger.Log{}, &ledger.CreatedTransaction{Transaction: ledger.NewTransaction().WithID(32).
 				WithPostings(ledger.NewPosting("users:client-CL-2026-000041:wallets:USD:lien", "system:control:USD", "USD/2", big.NewInt(30))).
@@ -267,9 +267,9 @@ func TestCreditAccountTakesFeeAndTaxOutOfTheCredit(t *testing.T) {
 			require.Contains(t, script, "destination = @gl:USD:401101")
 			require.Contains(t, script, "destination = @gl:USD:202210")
 			require.Contains(t, script, "[USD/2 9]")
-			require.Contains(t, script, "[USD/2 37]")
-			require.Equal(t, 4, strings.Count(script, "send ["), "lien, available, fee and tax")
-			require.Equal(t, 4, strings.Count(script, "allowing unbounded overdraft"), "all four legs are paid by the control account")
+			require.Contains(t, script, "[USD/2 46]")
+			require.Equal(t, 3, strings.Count(script, "send ["), "one split send, fee and tax")
+			require.Equal(t, 3, strings.Count(script, "allowing unbounded overdraft"), "all legs are paid by the control account")
 			return &ledger.Log{}, chargeTx(43), false, nil
 		})
 
@@ -302,7 +302,7 @@ func TestTransferAccountPostsFeeAndTaxFromTheSource(t *testing.T) {
 			require.Contains(t, script, "destination = @users:client-CL-2026-000042:wallets:USD:available")
 			require.Contains(t, script, "destination = @gl:USD:401101")
 			require.Contains(t, script, "destination = @gl:USD:202210")
-			require.Equal(t, 3, strings.Count(script, "source = @users:client-CL-2026-000041:wallets:USD:available"))
+			require.Equal(t, 3, strings.Count(script, "@users:client-CL-2026-000041:wallets:USD:available"))
 			require.NotContains(t, script, "overdraft")
 			require.Equal(t, "50", params.Input.RunScript.Metadata["charge_fee_minor"])
 			return &ledger.Log{}, chargeTx(44), false, nil
