@@ -26,6 +26,10 @@ type fakeLookup struct {
 	stats   []repositories.WalletStat
 }
 
+func (f fakeLookup) ClientConflicts(context.Context, repositories.ClientIdentity) ([]string, error) {
+	return nil, nil
+}
+
 func (f fakeLookup) ActiveWalletStats(context.Context) ([]repositories.WalletStat, error) {
 	return f.stats, nil
 }
@@ -153,6 +157,11 @@ func setup(t *testing.T, b *backend) (http.Handler, fakeLookup) {
 
 func setupRoles(t *testing.T, b *backend, roles services.WalletRoleService) (http.Handler, fakeLookup) {
 	t.Helper()
+	return setupAll(t, b, roles, &fakeProvisioning{})
+}
+
+func setupAll(t *testing.T, b *backend, roles services.WalletRoleService, prov services.ProvisioningService) (http.Handler, fakeLookup) {
+	t.Helper()
 	currencyregistry.SetDefinitions(map[string]currencyregistry.Definition{"NGN": {Precision: 2, Enabled: true}})
 	t.Cleanup(func() { currencyregistry.SetDefinitions(map[string]currencyregistry.Definition{}) })
 
@@ -163,7 +172,7 @@ func setupRoles(t *testing.T, b *backend, roles services.WalletRoleService) (htt
 		stats:   testStats,
 	}
 	// Mount like the real router: behind a chi mux with a strip prefix and a route-context reset.
-	compat := New(lookup, roles, b.handler(), "ledgertrack")
+	compat := New(lookup, roles, prov, b.handler(), "ledgertrack")
 	mux := chi.NewRouter()
 	mux.Handle("/bankman/api/v1/*", http.StripPrefix("/bankman/api/v1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chi.RouteContext(r.Context()).Reset()
@@ -173,8 +182,15 @@ func setupRoles(t *testing.T, b *backend, roles services.WalletRoleService) (htt
 }
 
 func do(h http.Handler, method, path, body string) (*httptest.ResponseRecorder, map[string]any) {
+	return doHeader(h, method, path, body, nil)
+}
+
+func doHeader(h http.Handler, method, path, body string, headers map[string]string) (*httptest.ResponseRecorder, map[string]any) {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer test")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	var out map[string]any
@@ -737,5 +753,31 @@ func TestReversalByBodyIsNotServed(t *testing.T) {
 	rec, out := do(h, http.MethodPost, "/bankman/api/v1/transactions/reversal", `{"original_transaction_id":"orig-uuid"}`)
 	if rec.Code != http.StatusNotFound || out["status"] != "error" || len(b.calls) != 0 {
 		t.Fatalf("status %d calls %d: %s", rec.Code, len(b.calls), rec.Body.String())
+	}
+}
+
+func TestShadowTransactionIDIsUsedAndStoredIDWinsOnReplay(t *testing.T) {
+	b := &backend{post: okPost}
+	h, _ := setup(t, b)
+	rec, out := doHeader(h, http.MethodPost, "/bankman/api/v1/transactions/deposits/bankman-acct-1",
+		`{"external_id":"ext-1","amount":10,"transaction_reference":"REF-9"}`, map[string]string{shadowIDHeader: "bm-tx-9"})
+	if rec.Code != http.StatusCreated || out["data"].(map[string]any)["transaction_id"] != "bm-tx-9" {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if md := b.last().Body["metadata"].(map[string]any); md[MetaTransactionID] != "bm-tx-9" {
+		t.Errorf("the id is stored with the transaction: %v", md)
+	}
+
+	b2 := &backend{
+		post: func(string, map[string]any) (int, string) {
+			return http.StatusConflict, `{"errorMessage":"duplicate reference"}`
+		},
+		listed: `{"cursor":{"data":[{"id":5,"reference":"REF-9","metadata":{"bankman_transaction_id":"bm-tx-9"}}]}}`,
+	}
+	h2, _ := setup(t, b2)
+	_, out = do(h2, http.MethodPost, "/bankman/api/v1/transactions/deposits/bankman-acct-1",
+		`{"external_id":"ext-1","amount":10,"transaction_reference":"REF-9"}`)
+	if out["data"].(map[string]any)["transaction_id"] != "bm-tx-9" {
+		t.Errorf("a replay returns the stored id: %v", out)
 	}
 }

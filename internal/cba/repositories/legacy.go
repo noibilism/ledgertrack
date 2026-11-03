@@ -18,6 +18,9 @@ type LegacyLookupRepository interface {
 	ClientByLegacyExternalID(ctx context.Context, externalID string) (*models.Client, error)
 	// ClientByLegacySourceID finds a client by the id it had in the legacy system (not its external_id).
 	ClientByLegacySourceID(ctx context.Context, legacyID string) (*models.Client, error)
+	// ClientConflicts names the fields (email, phone, registration_number, tax_id, external_id) that another
+	// client already uses. Empty inputs are ignored.
+	ClientConflicts(ctx context.Context, c ClientIdentity) ([]string, error)
 	// ActiveWalletStats counts the active wallets and their owners per currency.
 	ActiveWalletStats(ctx context.Context) ([]WalletStat, error)
 }
@@ -74,4 +77,33 @@ func (r *BunLegacyLookupRepository) ActiveWalletStats(ctx context.Context) ([]Wa
 		OrderExpr("currency").
 		Scan(ctx, &out)
 	return out, postgres.ResolveError(err)
+}
+
+// ClientIdentity is the set of values that must be unique across clients.
+type ClientIdentity struct {
+	Email, Phone, RegistrationNumber, TaxID, ExternalID string
+}
+
+func (r *BunLegacyLookupRepository) ClientConflicts(ctx context.Context, c ClientIdentity) ([]string, error) {
+	checks := []struct{ name, value, expr string }{
+		{"email", c.Email, "lower(contact ->> 'email') = lower(?)"},
+		{"phone_number", c.Phone, "(contact ->> 'phone') = ?"},
+		{"business_registration_number", c.RegistrationNumber, "(corporate_data ->> 'registration_number') = ?"},
+		{"tax_identification_number", c.TaxID, "(corporate_data ->> 'tax_id') = ?"},
+		{"external_id", c.ExternalID, "(kyc_data ->> 'legacy_external_id') = ?"},
+	}
+	var found []string
+	for _, ch := range checks {
+		if ch.value == "" {
+			continue
+		}
+		exists, err := r.db.NewSelect().TableExpr("_system.clients").Where(ch.expr, ch.value).Exists(ctx)
+		if err != nil {
+			return nil, postgres.ResolveError(err)
+		}
+		if exists {
+			found = append(found, ch.name)
+		}
+	}
+	return found, nil
 }

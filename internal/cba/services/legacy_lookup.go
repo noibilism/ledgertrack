@@ -26,6 +26,8 @@ type LegacyLookupService interface {
 	ClientByID(ctx context.Context, id string) (*models.Client, error)
 	// ActiveWalletStats counts the active wallets and their owners per currency.
 	ActiveWalletStats(ctx context.Context) ([]repositories.WalletStat, error)
+	// ClientConflicts names the unique fields another client already uses.
+	ClientConflicts(ctx context.Context, c repositories.ClientIdentity) ([]string, error)
 }
 
 type DefaultLegacyLookupService struct {
@@ -116,4 +118,8 @@ func (s *DefaultLegacyLookupService) ClientByID(ctx context.Context, id string) 
 
 func (s *DefaultLegacyLookupService) ActiveWalletStats(ctx context.Context) ([]repositories.WalletStat, error) {
 	return s.legacy.ActiveWalletStats(ctx)
+}
+
+func (s *DefaultLegacyLookupService) ClientConflicts(ctx context.Context, c repositories.ClientIdentity) ([]string, error) {
+	return s.legacy.ClientConflicts(ctx, c)
 }

@@ -41,6 +41,15 @@ const (
 // same request answers with the same transaction_id.
 var transactionIDNamespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("ledgertrack/bankman-compat"))
 
+// txID is the id returned to the caller for a new transaction. The shadow gateway passes the id Bankman gave
+// the same call so both systems agree; without it the id is derived from the reference.
+func (h *Handler) txID(r *http.Request, reference string) string {
+	if v := strings.TrimSpace(r.Header.Get(shadowIDHeader)); v != "" && len(v) <= 64 {
+		return v
+	}
+	return TransactionID(reference)
+}
+
 // TransactionID is the UUID returned to callers for a reference.
 func TransactionID(reference string) string {
 	return uuid.NewSHA1(transactionIDNamespace, []byte(reference)).String()
@@ -50,17 +59,20 @@ func TransactionID(reference string) string {
 type Handler struct {
 	lookup services.LegacyLookupService
 	roles  services.WalletRoleService
+	prov   services.ProvisioningService
 	serve  http.Handler
 	ledger string
 }
 
 // New builds the handler. `serve` is the router that serves the LedgerTrack v2 API (paths without the /v2
 // prefix); `ledger` is the wallet ledger name.
-func New(lookup services.LegacyLookupService, roles services.WalletRoleService, serve http.Handler, ledger string) http.Handler {
-	h := &Handler{lookup: lookup, roles: roles, serve: serve, ledger: ledger}
+func New(lookup services.LegacyLookupService, roles services.WalletRoleService, prov services.ProvisioningService, serve http.Handler, ledger string) http.Handler {
+	h := &Handler{lookup: lookup, roles: roles, prov: prov, serve: serve, ledger: ledger}
 	r := chi.NewRouter()
 	r.Get("/products", h.listProducts)
 	r.Get("/reports/aggregated-merchant-balances", h.aggregatedMerchantBalances)
+	r.Post("/clients", h.createClient)
+	r.Post("/accounts", h.createAccount)
 	r.Get("/accounts", h.listAccounts)
 	r.Get("/accounts/{id}", h.showAccount)
 	r.Route("/internal/accounts", func(r chi.Router) {
@@ -352,14 +364,18 @@ func (h *Handler) post(w http.ResponseWriter, r *http.Request, path string, body
 			Data map[string]any `json:"data"`
 		}
 		_ = json.Unmarshal(rp.Body, &out)
-		return &posted{Code: rp.Code, TxID: TransactionID(reference), Raw: out.Data}, true
+		return &posted{Code: rp.Code, TxID: h.txID(r, reference), Raw: out.Data}, true
 	case rp.Code == http.StatusConflict:
 		existing, err := h.findTx(r, url.Values{"reference": []string{reference}})
 		if err != nil || existing == nil {
 			fail(w, http.StatusConflict, rp.message())
 			return nil, false
 		}
-		return &posted{Code: http.StatusOK, TxID: TransactionID(reference), Idempotent: true}, true
+		id := existing.Metadata[MetaTransactionID]
+		if id == "" {
+			id = TransactionID(reference)
+		}
+		return &posted{Code: http.StatusOK, TxID: id, Idempotent: true}, true
 	case rp.Code == http.StatusNotFound:
 		fail(w, http.StatusNotFound, rp.message())
 	case rp.Code >= 500:
@@ -415,7 +431,7 @@ func (h *Handler) deposit(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	txID := TransactionID(p.TransactionRef)
+	txID := h.txID(r, p.TransactionRef)
 	res, ok := h.post(w, r, h.accountPath(account, "/credit"), map[string]any{
 		"amount": amount, "reference": p.TransactionRef, "metadata": baseMetadata(txID, p, account),
 	}, p.TransactionRef)
@@ -446,7 +462,7 @@ func (h *Handler) withdraw(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	txID := TransactionID(p.TransactionRef)
+	txID := h.txID(r, p.TransactionRef)
 	res, ok := h.post(w, r, h.accountPath(account, "/debit"), map[string]any{
 		"amount": amount, "reference": p.TransactionRef, "metadata": baseMetadata(txID, p, account),
 	}, p.TransactionRef)
@@ -491,7 +507,7 @@ func (h *Handler) placeLien(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	txID := TransactionID(p.TransactionRef)
+	txID := h.txID(r, p.TransactionRef)
 	md := baseMetadata(txID, p, account)
 	if p.ExpiryDate != "" {
 		md["expiry_date"] = p.ExpiryDate
