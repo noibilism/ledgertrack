@@ -35,19 +35,31 @@ func main() {
 }
 
 func (s *shadow) handler() (http.Handler, error) {
-	target, err := url.Parse(s.cfg.Bankman)
+	bankman, err := url.Parse(s.cfg.Bankman)
 	if err != nil {
 		return nil, fmt.Errorf("BANKMAN_URL: %w", err)
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	director := proxy.Director
-	proxy.Director = func(r *http.Request) {
+	lt, err := url.Parse(s.cfg.LedgerTrack)
+	if err != nil {
+		return nil, fmt.Errorf("LEDGERTRACK_URL: %w", err)
+	}
+	toBankman := httputil.NewSingleHostReverseProxy(bankman)
+	director := toBankman.Director
+	toBankman.Director = func(r *http.Request) {
 		director(r)
 		if s.cfg.BankmanHost != "" {
 			r.Host = s.cfg.BankmanHost
 		}
 	}
-	proxy.ModifyResponse = func(resp *http.Response) error {
+	// With LedgerTrack primary the caller's path is mapped onto LedgerTrack's compatibility prefix.
+	toLT := httputil.NewSingleHostReverseProxy(lt)
+	ltDirector := toLT.Director
+	toLT.Director = func(r *http.Request) {
+		ltDirector(r)
+		r.URL.Path = s.cfg.LTPrefix + rest(r.URL.Path)
+		r.URL.RawPath = ""
+	}
+	capture := func(resp *http.Response) error {
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, s.cfg.MaxBody+1))
 		if err != nil {
 			return err
@@ -68,10 +80,18 @@ func (s *shadow) handler() (http.Handler, error) {
 		}
 		return nil
 	}
+	toBankman.ModifyResponse, toLT.ModifyResponse = capture, capture
 	mux := http.NewServeMux()
 	mux.HandleFunc("/shadow/", s.admin)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+		write := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
+		var primaryLT bool
+		if write {
+			var ok bool
+			if primaryLT, ok = s.admit(w, r); !ok {
+				return
+			}
+			defer s.inflight.Add(-1)
 			// Capture the request body for replay and give the proxy its own copy.
 			body, err := io.ReadAll(io.LimitReader(r.Body, s.cfg.MaxBody+1))
 			if err != nil || int64(len(body)) > s.cfg.MaxBody {
@@ -79,11 +99,18 @@ func (s *shadow) handler() (http.Handler, error) {
 				return
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
-			r = withJob(r, &job{Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Header: r.Header.Clone(), Body: body})
-		} else if r.Method == http.MethodGet && !strings.HasSuffix(r.URL.Path, "/health") {
-			r = withJob(r, &job{Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Header: r.Header.Clone()})
+			r = withJob(r, &job{Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Header: r.Header.Clone(), Body: body, Reverse: primaryLT})
+		} else {
+			primaryLT = s.primaryIsLT()
+			if r.Method == http.MethodGet && !strings.HasSuffix(r.URL.Path, "/health") {
+				r = withJob(r, &job{Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Header: r.Header.Clone(), Reverse: primaryLT})
+			}
 		}
-		proxy.ServeHTTP(w, r)
+		if primaryLT {
+			toLT.ServeHTTP(w, r)
+			return
+		}
+		toBankman.ServeHTTP(w, r)
 	})
 	return mux, nil
 }
@@ -94,6 +121,9 @@ func (s *shadow) admin(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if s.cutoverAdmin(w, r) {
+		return
+	}
 	switch {
 	case r.URL.Path == "/shadow/metrics":
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
@@ -101,6 +131,7 @@ func (s *shadow) admin(w http.ResponseWriter, r *http.Request) {
 			"shadow_dropped_total %d\nshadow_retried_total %d\nshadow_skipped_total %d\nshadow_queue_depth %d\nshadow_max_lag_ms %d\nshadow_enabled %d\n",
 			s.st.Mirrored.Load(), s.st.Matched.Load(), s.st.Mismatched.Load(), s.st.Errors.Load(), s.st.Dropped.Load(),
 			s.st.Retried.Load(), s.st.Skipped.Load(), s.depth(), s.st.MaxLagMillis.Load(), b2i(s.enabled.Load()))
+		_, _ = fmt.Fprint(w, cutoverMetrics(s))
 	case r.URL.Path == "/shadow/diffs":
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.recent())

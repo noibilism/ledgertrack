@@ -49,6 +49,8 @@ is retried with backoff, which covers a prerequisite still waiting on another pa
 | `SHADOW_MAX_BODY` | `1048576` | bytes captured per request or reply; a bigger reply is passed through and not compared |
 | `SHADOW_ADMIN_TOKEN` | none | bearer token for `/shadow/*`; without it those routes answer 404 |
 | `SHADOW_DISABLED` | `false` | `true` starts it as a plain proxy |
+| `CUTOVER_HOLD_SECONDS` | `30` | longest a write waits during a hold; after that it gets a 503 with `Retry-After: 1`, which opsman and middleman retry |
+| `SHADOW_REVERSE_IGNORE_FIELDS` | `id,transaction_id` | extra keys left out of comparisons once Bankman is the copy, because it mints its own ids |
 
 ## Admin (bearer `SHADOW_ADMIN_TOKEN`)
 
@@ -60,14 +62,35 @@ is retried with backoff, which covers a prerequisite still waiting on another pa
 Numbers are compared as decimals (`"1500.0000"`, `1500` and `"1500"` are equal). Bodies that are not JSON are
 compared as text.
 
+## Cutover
+
+Bankman is primary until you switch. The sequence, each step a call with the admin token:
+
+1. `POST /shadow/cutover/hold`: new writes wait (up to `CUTOVER_HOLD_SECONDS`, then a retryable 503). Reads
+   keep going to the primary.
+2. `GET /shadow/cutover/status` until `drained` is true: no write in flight and every write replay finished.
+3. Run `bankman-reconcile` with `GATEWAY_URL` and `SHADOW_ADMIN_TOKEN` set. It compares every account and
+   posts its result to `POST /shadow/reconcile`. A run only counts if it started after the drain.
+4. `POST /shadow/cutover/switch?to=ledgertrack`. It answers 409 with the reason unless the hold is drained and
+   the reconciliation is fresh, covers accounts and has zero differences.
+5. `POST /shadow/cutover/release`: held writes go to LedgerTrack, and Bankman now receives the copy of every
+   write (reverse shadow), compared with the id keys above ignored.
+6. Smoke tests. To go back, repeat the same sequence with `to=bankman`; the reconciliation is required again.
+
+`GET /shadow/cutover/status?to=ledgertrack` also says whether a switch would be accepted and why not.
+
 ## Not here yet
 
-Reading the cutover (hold writes, drain the queue, switch primary) and the daily reconciler that compares
-balances account by account. Both are the next pieces.
+Calls that bring a caller's own auth to LedgerTrack are assumed to be accepted by it, as in the shadow phase.
 
 ## Run and test
 
 ```
 go run ./tools/bankman-shadow
-go test -race ./tools/bankman-shadow/
+go test -race ./tools/bankman-shadow/ ./tools/bankman-reconcile/
 ```
+
+`tools/bankman-reconcile` reads Bankman's database (`BANKMAN_DSN`, use a read replica) and
+`GET /accounts/{id}` on LedgerTrack (`LEDGERTRACK_URL`, `LEDGERTRACK_TOKEN`) and compares available, actual and
+locked amounts and currency per account. It prints each difference as a JSON line, then a summary, and exits 1
+if anything differs.
