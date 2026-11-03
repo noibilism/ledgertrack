@@ -9,6 +9,10 @@ import (
 // account is what Bankman's database holds for one account.
 type account struct {
 	ID, Currency, Available, Actual, Locked string
+	// Anomaly marks a Bankman row the import cannot copy as is: "negative_available" (imported at zero, locked
+	// amount left out) or "balance_invariant" (actual != available + locked, imported as available + locked).
+	// The export lists the same accounts in export_issues.csv and finance_followup.csv.
+	Anomaly string
 }
 
 // remote is what LedgerTrack's Bankman-compatible API reports for the same account.
@@ -20,7 +24,7 @@ type remote struct {
 
 type mismatch struct {
 	ID     string               `json:"id"`
-	Kind   string               `json:"kind"` // missing | balance | error
+	Kind   string               `json:"kind"` // missing | balance | error | expected
 	Fields map[string][2]string `json:"fields,omitempty"`
 	Error  string               `json:"error,omitempty"`
 }
@@ -30,13 +34,25 @@ type summary struct {
 	Mismatches int `json:"mismatches"`
 	Missing    int `json:"missing"`
 	Errors     int `json:"errors"`
+	// Expected counts accounts that differ only in the way the import is known to change them. They do not
+	// fail the run; each is still printed with kind "expected".
+	Expected int `json:"expected"`
 }
 
-// same compares two decimal strings by value, so 10.5 and 10.5000 agree.
+// tolerance is the largest absolute difference still counted as equal. It is zero unless RECONCILE_TOLERANCE
+// sets it. Bankman keeps 4 decimals and LedgerTrack 2, so the import rounds to cents (half-even) and a balance
+// can differ by up to half a cent from the import alone; 0.005 covers exactly that.
+var tolerance = new(big.Rat)
+
+// same compares two decimal strings by value, so 10.5 and 10.5000 agree, within the tolerance.
 func same(a, b string) bool {
 	x, ok1 := new(big.Rat).SetString(a)
 	y, ok2 := new(big.Rat).SetString(b)
-	return ok1 && ok2 && x.Cmp(y) == 0
+	if !ok1 || !ok2 {
+		return false
+	}
+	d := new(big.Rat).Sub(x, y)
+	return d.Abs(d).Cmp(tolerance) <= 0
 }
 
 func check(a account, r remote, err error) *mismatch {
@@ -61,10 +77,31 @@ func check(a account, r remote, err error) *mismatch {
 	if a.Currency != r.Currency {
 		diff["currency"] = [2]string{a.Currency, r.Currency}
 	}
+	if len(diff) == 0 {
+		return nil
+	}
+	excused := map[string][2]string{}
+	for field := range diff {
+		if excusedBy(a.Anomaly, field) {
+			excused[field] = diff[field]
+			delete(diff, field)
+		}
+	}
 	if len(diff) > 0 {
 		return &mismatch{ID: a.ID, Kind: "balance", Fields: diff}
 	}
-	return nil
+	return &mismatch{ID: a.ID, Kind: "expected", Fields: excused, Error: a.Anomaly}
+}
+
+// excusedBy says whether the import is known to change a field for this kind of anomalous account.
+func excusedBy(anomaly, field string) bool {
+	switch anomaly {
+	case "negative_available":
+		return field == "available_balance" || field == "actual_balance" || field == "locked_amount"
+	case "balance_invariant":
+		return field == "actual_balance"
+	}
+	return false
 }
 
 func itoa(n int) string { return big.NewInt(int64(n)).String() }
@@ -87,12 +124,17 @@ func run(ctx context.Context, accounts <-chan account, fetch func(context.Contex
 				mu.Lock()
 				sum.Checked++
 				if m != nil {
-					sum.Mismatches++
 					switch m.Kind {
+					case "expected":
+						sum.Expected++
 					case "missing":
+						sum.Mismatches++
 						sum.Missing++
 					case "error":
+						sum.Mismatches++
 						sum.Errors++
+					default:
+						sum.Mismatches++
 					}
 					report(*m)
 				}

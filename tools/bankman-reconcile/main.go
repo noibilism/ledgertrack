@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -42,6 +43,13 @@ func main() {
 		workers = 32
 	}
 	maxReport, _ := strconv.Atoi(env("RECONCILE_MAX_REPORT", "1000"))
+	if t := env("RECONCILE_TOLERANCE", ""); t != "" {
+		r, ok := new(big.Rat).SetString(t)
+		if !ok || r.Sign() < 0 {
+			log.Fatalf("RECONCILE_TOLERANCE must be a non-negative decimal, got %q", t)
+		}
+		tolerance = r
+	}
 	client := &http.Client{Timeout: 15 * time.Second}
 
 	fetch := func(ctx context.Context, id string) (remote, error) {
@@ -104,7 +112,7 @@ func main() {
 		defer rows.Close()
 		for rows.Next() {
 			var a account
-			if err := rows.Scan(&a.ID, &a.Currency, &a.Available, &a.Actual, &a.Locked); err != nil {
+			if err := rows.Scan(&a.ID, &a.Currency, &a.Available, &a.Actual, &a.Locked, &a.Anomaly); err != nil {
 				log.Fatalf("scan: %v", err)
 			}
 			feed <- a
@@ -126,7 +134,7 @@ func main() {
 
 	// Tell the gateway, so a cutover can be gated on this run.
 	if gw := strings.TrimRight(env("GATEWAY_URL", ""), "/"); gw != "" {
-		body, _ := json.Marshal(map[string]any{"started_at": started, "checked": sum.Checked, "mismatches": sum.Mismatches})
+		body, _ := json.Marshal(map[string]any{"started_at": started, "checked": sum.Checked, "mismatches": sum.Mismatches, "expected": sum.Expected})
 		req, _ := http.NewRequest(http.MethodPost, gw+"/shadow/reconcile", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+env("SHADOW_ADMIN_TOKEN", ""))
 		resp, err := client.Do(req)
@@ -149,7 +157,8 @@ func main() {
 func openBankman(dsn string) (*sql.DB, string, error) {
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		db, err := sql.Open("pgx", dsn)
-		return db, `select id::text, currency, available_balance::text, actual_balance::text, locked_amount::text
+		return db, `select id::text, currency, available_balance::text, actual_balance::text, locked_amount::text,
+			case when available_balance < 0 then 'negative_available' when actual_balance <> available_balance + locked_amount then 'balance_invariant' else '' end
 			from accounts where deleted_at is null order by id`, err
 	}
 	if strings.HasPrefix(dsn, "mysql://") {
@@ -168,6 +177,7 @@ func openBankman(dsn string) (*sql.DB, string, error) {
 		}
 	}
 	db, err := sql.Open("mysql", dsn)
-	return db, `select cast(id as char), currency, cast(available_balance as char), cast(actual_balance as char), cast(locked_amount as char)
+	return db, `select cast(id as char), currency, cast(available_balance as char), cast(actual_balance as char), cast(locked_amount as char),
+		case when available_balance < 0 then 'negative_available' when actual_balance <> available_balance + locked_amount then 'balance_invariant' else '' end
 		from accounts where deleted_at is null order by id`, err
 }
