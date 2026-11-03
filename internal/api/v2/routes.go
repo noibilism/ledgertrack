@@ -17,6 +17,7 @@ import (
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
 	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/transfers"
 )
 
 // NewRouter creates a chi.Router configured with the v2 HTTP API routes for the ledger service.
@@ -124,8 +125,9 @@ func NewRouter(
 							router.Get("/balance", ledgertrackOnly(getAccountBalance(routerOptions.accountService)))
 							router.Get("/history", ledgertrackOnly(getAccountHistory(routerOptions.accountService)))
 							router.Get("/statement", ledgertrackOnly(getAccountStatement(routerOptions.accountService)))
-							router.Post("/credit", ledgertrackOnly(creditAccount(routerOptions.accountService)))
-							router.Post("/debit", ledgertrackOnly(debitAccount(routerOptions.accountService, systemController)))
+							router.Post("/credit", ledgertrackOnly(creditAccount(routerOptions.accountService, routerOptions.reserveHoldService, routerOptions.chargeService)))
+							router.Post("/debit", ledgertrackOnly(debitAccount(routerOptions.accountService, systemController, routerOptions.reserveHoldService, routerOptions.chargeService)))
+							router.Post("/transfer", ledgertrackOnly(transferAccount(routerOptions.accountService, routerOptions.reserveHoldService, routerOptions.chargeService)))
 							router.Post("/lien", ledgertrackOnly(lienAccount(routerOptions.accountService)))
 							router.Post("/lien/release", ledgertrackOnly(releaseAccountLien(routerOptions.accountService, systemController)))
 							router.Post("/activate", ledgertrackOnly(activateAccount(routerOptions.accountService)))
@@ -161,10 +163,10 @@ func NewRouter(
 					router.Post("/", createWallet(systemController))
 					router.Get("/balances", getWalletBalances(systemController))
 					router.Route("/{walletID}", func(router chi.Router) {
-						router.Post("/credit", creditWallet(systemController))
-						router.Post("/debit", debitWallet(systemController, routerOptions.channelFeeConfigService))
+						router.Post("/credit", creditWallet(systemController, routerOptions.reserveHoldService))
+						router.Post("/debit", debitWallet(systemController, routerOptions.channelFeeConfigService, routerOptions.transferService, routerOptions.reserveHoldService))
 						router.Post("/lien", lienWallet(systemController))
-						router.Post("/lien/release", releaseLien(systemController, routerOptions.channelFeeConfigService))
+						router.Post("/lien/release", releaseLien(systemController, routerOptions.channelFeeConfigService, routerOptions.transferService))
 						router.Get("/statement", getWalletStatement(systemController))
 						router.Get("/history", getWalletHistory(systemController))
 					})
@@ -202,6 +204,74 @@ func NewRouter(
 					})
 				}
 
+				if routerOptions.feeConfigService != nil {
+					router.Route("/fee-overrides", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createFeeOverride(routerOptions.feeConfigService)))
+						router.Get("/", ledgertrackOnly(listFeeOverrides(routerOptions.feeConfigService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readFeeOverride(routerOptions.feeConfigService)))
+							router.Post("/revoke", ledgertrackOnly(revokeFeeOverride(routerOptions.feeConfigService)))
+						})
+					})
+					router.Route("/tax-rules", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createTaxRule(routerOptions.feeConfigService)))
+						router.Get("/", ledgertrackOnly(listTaxRules(routerOptions.feeConfigService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readTaxRule(routerOptions.feeConfigService)))
+							router.Post("/revoke", ledgertrackOnly(revokeTaxRule(routerOptions.feeConfigService)))
+						})
+					})
+					router.Post("/fees/quote", ledgertrackOnly(quoteFees(routerOptions.feeConfigService)))
+				}
+
+				if routerOptions.calendarService != nil {
+					router.Route("/business-calendars", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createBusinessCalendar(routerOptions.calendarService)))
+						router.Get("/", ledgertrackOnly(listBusinessCalendars(routerOptions.calendarService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readBusinessCalendar(routerOptions.calendarService)))
+							router.Put("/", ledgertrackOnly(updateBusinessCalendar(routerOptions.calendarService)))
+						})
+					})
+				}
+
+				if routerOptions.reserveHoldService != nil {
+					router.Route("/reserve-holds", func(router chi.Router) {
+						router.Get("/", ledgertrackOnly(listReserveHolds(routerOptions.reserveHoldService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readReserveHold(routerOptions.reserveHoldService)))
+							router.Post("/release", ledgertrackOnly(releaseReserveHold(routerOptions.reserveHoldService)))
+						})
+					})
+				}
+
+				if routerOptions.reserveRuleService != nil {
+					router.Route("/reserve-rules", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createReserveRule(routerOptions.reserveRuleService)))
+						router.Get("/", ledgertrackOnly(listReserveRules(routerOptions.reserveRuleService)))
+						router.Post("/preview", ledgertrackOnly(previewReserve(routerOptions.reserveRuleService)))
+						router.Route("/{id}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readReserveRule(routerOptions.reserveRuleService)))
+							router.Post("/revoke", ledgertrackOnly(revokeReserveRule(routerOptions.reserveRuleService)))
+						})
+					})
+				}
+
+				if routerOptions.glAccountService != nil {
+					router.Route("/gl/accounts", func(router chi.Router) {
+						router.Post("/", ledgertrackOnly(createGLAccount(routerOptions.glAccountService)))
+						router.Get("/", ledgertrackOnly(listGLAccounts(routerOptions.glAccountService)))
+						router.Post("/import", ledgertrackOnly(importGLAccounts(routerOptions.glAccountService)))
+						router.Route("/{code}", func(router chi.Router) {
+							router.Get("/", ledgertrackOnly(readGLAccount(routerOptions.glAccountService)))
+							router.Patch("/", ledgertrackOnly(patchGLAccount(routerOptions.glAccountService)))
+							if routerOptions.glReportingService != nil {
+								router.Get("/balance", ledgertrackOnly(getGLAccountBalance(systemController, routerOptions.glReportingService)))
+							}
+						})
+					})
+				}
+
 				if routerOptions.clientService != nil && routerOptions.kycService != nil {
 					router.Route("/clients", func(router chi.Router) {
 						router.Post("/", createClient(routerOptions.clientService))
@@ -228,7 +298,7 @@ func NewRouter(
 					})
 				}
 
-				if routerOptions.reportingService != nil || routerOptions.financeReportingService != nil || routerOptions.channelRevenueReportingService != nil {
+				if routerOptions.reportingService != nil || routerOptions.financeReportingService != nil || routerOptions.glReportingService != nil || routerOptions.channelRevenueReportingService != nil {
 					router.Route("/reports", func(router chi.Router) {
 						if routerOptions.reportingService != nil {
 							router.Get("/clients/{clientID}/portfolio", ledgertrackOnly(getClientPortfolioReport(routerOptions.reportingService)))
@@ -243,6 +313,10 @@ func NewRouter(
 								router.Get("/pnl", ledgertrackOnly(getFinanceProfitAndLossReport(systemController, routerOptions.financeReportingService)))
 								router.Get("/cash-flow", ledgertrackOnly(getFinanceCashFlowReport(systemController, routerOptions.financeReportingService)))
 							})
+						}
+						if routerOptions.glReportingService != nil {
+							// registry-driven trial balance, independent of the fixed-line /finance/trial-balance above
+							router.Get("/finance/gl-trial-balance", ledgertrackOnly(getGLTrialBalanceReport(systemController, routerOptions.glReportingService)))
 						}
 						if routerOptions.channelRevenueReportingService != nil {
 							router.Route("/channels", func(router chi.Router) {
@@ -274,8 +348,16 @@ type routerOptions struct {
 	accountService                 services.AccountService
 	reportingService               services.ReportingService
 	financeReportingService        services.FinanceReportingService
+	glAccountService               services.GLAccountService
+	feeConfigService               services.FeeConfigService
+	reserveRuleService             services.ReserveRuleService
+	calendarService                services.BusinessCalendarService
+	reserveHoldService             services.ReserveHoldService
+	chargeService                  services.ChargeService
+	glReportingService             services.GLReportingService
 	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
+	transferService                *transfers.Service
 }
 
 type RouterOption func(ro *routerOptions)
@@ -346,9 +428,60 @@ func WithFinanceReportingService(financeReportingService services.FinanceReporti
 	}
 }
 
+func WithChargeService(chargeService services.ChargeService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.chargeService = chargeService
+	}
+}
+
+func WithReserveHoldService(reserveHoldService services.ReserveHoldService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.reserveHoldService = reserveHoldService
+	}
+}
+
+func WithBusinessCalendarService(calendarService services.BusinessCalendarService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.calendarService = calendarService
+	}
+}
+
+func WithReserveRuleService(reserveRuleService services.ReserveRuleService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.reserveRuleService = reserveRuleService
+	}
+}
+
+func WithFeeConfigService(feeConfigService services.FeeConfigService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.feeConfigService = feeConfigService
+	}
+}
+
+func WithGLAccountService(glAccountService services.GLAccountService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glAccountService = glAccountService
+	}
+}
+
+func WithGLReportingService(glReportingService services.GLReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glReportingService = glReportingService
+	}
+}
+
 func WithChannelFeeConfigService(channelFeeConfigService channelservices.ChannelFeeConfigService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.channelFeeConfigService = channelFeeConfigService
+	}
+}
+
+// WithTransferService enables the recoverable multi-ledger flow for wallet
+// debits and lien releases with a channel. Without it the legacy inline flow
+// (non recoverable) is used; production wiring always provides it.
+func WithTransferService(transferService *transfers.Service) RouterOption {
+	return func(ro *routerOptions) {
+		ro.transferService = transferService
 	}
 }
 

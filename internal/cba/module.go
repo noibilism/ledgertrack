@@ -5,7 +5,9 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/formancehq/ledger/internal/cba/repositories"
+	"github.com/formancehq/ledger/internal/cba/reserveledger"
 	"github.com/formancehq/ledger/internal/cba/services"
+	systemcontroller "github.com/formancehq/ledger/internal/controller/system"
 )
 
 func NewFXModule() fx.Option {
@@ -19,6 +21,35 @@ func NewFXModule() fx.Option {
 			},
 			func(db *bun.DB) repositories.AccountRepository {
 				return repositories.NewAccountRepository(db)
+			},
+			func(db *bun.DB) repositories.LegacyLookupRepository {
+				return repositories.NewLegacyLookupRepository(db)
+			},
+			func(
+				accountRepository repositories.AccountRepository,
+				clientRepository repositories.ClientRepository,
+				legacyRepository repositories.LegacyLookupRepository,
+			) services.LegacyLookupService {
+				return services.NewLegacyLookupService(accountRepository, clientRepository, legacyRepository)
+			},
+			func(db *bun.DB) repositories.WalletRoleRepository {
+				return repositories.NewWalletRoleRepository(db)
+			},
+			func(
+				lookup services.LegacyLookupService,
+				roles repositories.WalletRoleRepository,
+				accounts repositories.AccountRepository,
+				products repositories.ProductRepository,
+			) services.WalletRoleService {
+				return services.NewWalletRoleService(lookup, roles, accounts, products)
+			},
+			func(
+				lookup services.LegacyLookupService,
+				clients repositories.ClientRepository,
+				accounts repositories.AccountRepository,
+				products repositories.ProductRepository,
+			) services.ProvisioningService {
+				return services.NewProvisioningService(lookup, clients, accounts, products)
 			},
 			func(db *bun.DB) repositories.KYCRepository {
 				return repositories.NewKYCRepository(db)
@@ -79,6 +110,62 @@ func NewFXModule() fx.Option {
 			},
 			func() services.FinanceReportingService {
 				return services.NewFinanceReportingService()
+			},
+			func(db *bun.DB) repositories.GLAccountRepository {
+				return repositories.NewGLAccountRepository(db)
+			},
+			func(glAccountRepository repositories.GLAccountRepository) services.GLAccountService {
+				return services.NewGLAccountService(glAccountRepository)
+			},
+			func(db *bun.DB) repositories.FeeConfigRepository {
+				return repositories.NewFeeConfigRepository(db)
+			},
+			func(
+				feeConfigRepository repositories.FeeConfigRepository,
+				accountRepository repositories.AccountRepository,
+				productRepository repositories.ProductRepository,
+				clientRepository repositories.ClientRepository,
+				glAccountRepository repositories.GLAccountRepository,
+			) services.FeeConfigService {
+				return services.NewFeeConfigService(feeConfigRepository, accountRepository, productRepository, clientRepository, glAccountRepository)
+			},
+			func(db *bun.DB) repositories.CalendarRepository {
+				return repositories.NewCalendarRepository(db)
+			},
+			func(calendarRepository repositories.CalendarRepository) services.BusinessCalendarService {
+				return services.NewBusinessCalendarService(calendarRepository)
+			},
+			func(db *bun.DB) repositories.ReserveRepository {
+				return repositories.NewReserveRepository(db)
+			},
+			func(
+				reserveRepository repositories.ReserveRepository,
+				accountRepository repositories.AccountRepository,
+				productRepository repositories.ProductRepository,
+				clientRepository repositories.ClientRepository,
+				calendarRepository repositories.CalendarRepository,
+			) services.ReserveRuleService {
+				return services.NewReserveRuleService(reserveRepository, accountRepository, productRepository, clientRepository, calendarRepository)
+			},
+			func(db *bun.DB) repositories.ReserveHoldRepository {
+				return repositories.NewReserveHoldRepository(db)
+			},
+			func(system systemcontroller.Controller) services.ReserveLedger {
+				return reserveledger.New(system)
+			},
+			func(
+				holdRepository repositories.ReserveHoldRepository,
+				accountRepository repositories.AccountRepository,
+				ruleService services.ReserveRuleService,
+				ledger services.ReserveLedger,
+			) services.ReserveHoldService {
+				return services.NewReserveHoldService(holdRepository, accountRepository, ruleService, ledger)
+			},
+			func(glAccountRepository repositories.GLAccountRepository) services.GLReportingService {
+				return services.NewGLReportingService(glAccountRepository)
+			},
+			func(feeConfigService services.FeeConfigService, glAccountRepository repositories.GLAccountRepository) services.ChargeService {
+				return services.NewChargeService(feeConfigService, glAccountRepository)
 			},
 		),
 	)

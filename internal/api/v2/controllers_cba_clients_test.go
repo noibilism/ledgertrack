@@ -14,6 +14,7 @@ import (
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/auth"
 	"github.com/formancehq/go-libs/v3/platform/postgres"
+
 	"github.com/formancehq/ledger/internal/api/common"
 	"github.com/formancehq/ledger/internal/cba/models"
 	"github.com/formancehq/ledger/internal/cba/repositories"

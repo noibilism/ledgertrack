@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestNormalizeReleaseMode(t *testing.T) {
+func TestNormalizeWalletReleaseMode(t *testing.T) {
 	cases := map[string]string{
 		"":                  "RELEASE_ONLY",
 		"  ":                "RELEASE_ONLY",
@@ -17,8 +17,8 @@ func TestNormalizeReleaseMode(t *testing.T) {
 		"bogus":             "BOGUS",
 	}
 	for in, want := range cases {
-		if got := normalizeReleaseMode(in); got != want {
-			t.Errorf("normalizeReleaseMode(%q) = %q, want %q", in, got, want)
+		if got := normalizeWalletReleaseMode(in); got != want {
+			t.Errorf("normalizeWalletReleaseMode(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

@@ -14,7 +14,9 @@ import (
 	"github.com/formancehq/ledger/internal/api/common"
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
+	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	"github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/transfers"
 )
 
 type BulkConfig struct {
@@ -28,6 +30,8 @@ type Config struct {
 	Bulk       BulkConfig
 	Pagination common.PaginationConfig
 	Exporters  bool
+	// WriteLimiter bounds the write requests in flight, shared with the ledger controllers (nil: no bound).
+	WriteLimiter *ledgercontroller.WriteLimiter
 }
 
 func Module(cfg Config) fx.Option {
@@ -42,8 +46,19 @@ func Module(cfg Config) fx.Option {
 			accountService services.AccountService,
 			reportingService services.ReportingService,
 			financeReportingService services.FinanceReportingService,
+			glAccountService services.GLAccountService,
+			feeConfigService services.FeeConfigService,
+			reserveRuleService services.ReserveRuleService,
+			calendarService services.BusinessCalendarService,
+			reserveHoldService services.ReserveHoldService,
+			chargeService services.ChargeService,
+			legacyLookupService services.LegacyLookupService,
+			walletRoleService services.WalletRoleService,
+			provisioningService services.ProvisioningService,
+			glReportingService services.GLReportingService,
 			channelFeeConfigService channelservices.ChannelFeeConfigService,
 			channelRevenueReportingService channelservices.ChannelRevenueReportingService,
+			transferService *transfers.Service,
 		) chi.Router {
 			return NewRouter(
 				backend,
@@ -58,14 +73,26 @@ func Module(cfg Config) fx.Option {
 				)),
 				WithPaginationConfiguration(cfg.Pagination),
 				WithExporters(cfg.Exporters),
+				WithWriteLimiter(cfg.WriteLimiter),
 				WithProductService(productService),
 				WithClientService(clientService),
 				WithKYCService(kycService),
 				WithAccountService(accountService),
 				WithReportingService(reportingService),
 				WithFinanceReportingService(financeReportingService),
+				WithGLAccountService(glAccountService),
+				WithFeeConfigService(feeConfigService),
+				WithReserveRuleService(reserveRuleService),
+				WithBusinessCalendarService(calendarService),
+				WithReserveHoldService(reserveHoldService),
+				WithChargeService(chargeService),
+				WithLegacyLookupService(legacyLookupService),
+				WithWalletRoleService(walletRoleService),
+				WithProvisioningService(provisioningService),
+				WithGLReportingService(glReportingService),
 				WithChannelFeeConfigService(channelFeeConfigService),
 				WithChannelRevenueReportingService(channelRevenueReportingService),
+				WithTransferService(transferService),
 			)
 		}),
 		health.Module(),

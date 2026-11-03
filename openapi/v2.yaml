@@ -1505,6 +1505,827 @@ paths:
       security:
         - Authorization:
             - ledger:read
+  /v2/{ledger}/fee-overrides:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a fee override
+      description: |
+        Replaces the product's transaction fees for one event, for one client (optionally one product) or one account. `rules` are all the fee rules for the event, so a combined fee (flat plus percentage) is one override. Resolution order is account override, then client and product override, then client-wide override in the same currency, then the product default. Overlapping overrides for the same target are rejected with 409. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateFeeOverride
+      x-speakeasy-name-override: CreateFeeOverride
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreateFeeOverrideRequest"
+      responses:
+        "201":
+          description: Fee override created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeOverrideResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List fee overrides
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListFeeOverrides
+      x-speakeasy-name-override: ListFeeOverrides
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: client_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: account_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: event
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, revoked]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeOverrideListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/fee-overrides/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a fee override
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetFeeOverride
+      x-speakeasy-name-override: GetFeeOverride
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeOverrideResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/fee-overrides/{id}/revoke:
+    post:
+      tags:
+        - ledger.v2
+      summary: Revoke a fee override
+      description: Ends the override now. The product default (or the next override in the resolution order) applies from then on. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2RevokeFeeOverride
+      x-speakeasy-name-override: RevokeFeeOverride
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeOverrideResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/tax-rules:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a tax rule
+      description: |
+        A tax rule applies to a client country (ISO 3166-1 alpha-2) and an event. `base` is `fee` (tax on the rounded fee) or `amount` (tax on the transaction amount). `payable_accounts` maps each currency to the liability GL account code that receives the tax. The country comes from the client's incorporation country, then the contact address country. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateTaxRule
+      x-speakeasy-name-override: CreateTaxRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreateTaxRuleRequest"
+      responses:
+        "201":
+          description: Tax rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TaxRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List tax rules
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListTaxRules
+      x-speakeasy-name-override: ListTaxRules
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: country
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: event
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, revoked]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TaxRuleListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/tax-rules/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a tax rule
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetTaxRule
+      x-speakeasy-name-override: GetTaxRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TaxRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/tax-rules/{id}/revoke:
+    post:
+      tags:
+        - ledger.v2
+      summary: Revoke a tax rule
+      description: Ends the rule now. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2RevokeTaxRule
+      x-speakeasy-name-override: RevokeTaxRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2TaxRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/business-calendars:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a business calendar
+      description: |
+        Defines business hours for reserve holds: an IANA `timezone`, ISO `working_days` (1 Monday to 7 Sunday), the opening window `open_time` to `close_time` (HH:MM, at least one hour) and `holidays` (YYYY-MM-DD) on which nothing counts. The code is unique. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateBusinessCalendar
+      x-speakeasy-name-override: CreateBusinessCalendar
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2BusinessCalendarRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2BusinessCalendarResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List business calendars
+      description: |
+        This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListBusinessCalendars
+      x-speakeasy-name-override: ListBusinessCalendars
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2BusinessCalendarListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/business-calendars/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a business calendar
+      description: |
+        This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetBusinessCalendar
+      x-speakeasy-name-override: GetBusinessCalendar
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2BusinessCalendarResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+    put:
+      tags:
+        - ledger.v2
+      summary: Replace a business calendar
+      description: |
+        Replaces the name, timezone, working days, hours and holidays. The code cannot change. Holds already scheduled keep their release time. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2UpdateBusinessCalendar
+      x-speakeasy-name-override: UpdateBusinessCalendar
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2BusinessCalendarRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2BusinessCalendarResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/reserve-rules:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a reserve rule
+      description: |
+        Holds back a share of every credit into the customer's wallet. The held share stays in the ledger balance (the wallet lien) for `hold_hours`, the agreed SLA, and is then released to the available balance. A `client` rule covers the client's accounts in `currency`, optionally only those of `product_id`. An `account` rule covers one account and takes its currency from the account. Resolution order is account rule, then client and product rule, then client-wide rule. `percentage` is above 0 and at most 100 with up to 4 decimals. `hold_hours` is 1 to 8760. `hold_mode` is `calendar` (clock hours, default) or `business`, which counts only the hours inside the business calendar named by `calendar_id`. `credit_types` limits the rule to those credit types; a rule that names the credit type beats a general rule at the same level. Overlapping rules are rejected with 409: two general rules, or two rules sharing a credit type, for the same target and period. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateReserveRule
+      x-speakeasy-name-override: CreateReserveRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreateReserveRuleRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List reserve rules
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListReserveRules
+      x-speakeasy-name-override: ListReserveRules
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: client_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: account_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, revoked]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveRuleListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reserve-rules/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a reserve rule
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetReserveRule
+      x-speakeasy-name-override: GetReserveRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reserve-rules/{id}/revoke:
+    post:
+      tags:
+        - ledger.v2
+      summary: Revoke a reserve rule
+      description: Ends the rule now. Holds already made keep their release time. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2RevokeReserveRule
+      x-speakeasy-name-override: RevokeReserveRule
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveRuleResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/reserve-rules/preview:
+    post:
+      tags:
+        - ledger.v2
+      summary: Preview the reserve on a credit
+      description: |
+        Shows how a credit of `amount_minor` into an account would be split at `at` (default now): `reserve_minor` is held in the ledger balance until `release_at`, `available_minor` is available at once. The held share is the percentage of the amount rounded half-even to a whole minor unit. `credit_type` selects rules that list credit types. For business-hours rules, `release_at` counts only open hours on working days outside holidays. `rule_source` is `account`, `client` or `none`. Nothing is posted. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2PreviewReserve
+      x-speakeasy-name-override: PreviewReserve
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2ReservePreviewRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReservePreviewResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/fees/quote:
+    post:
+      tags:
+        - ledger.v2
+      summary: Quote the fee and tax for a transaction
+      description: |
+        Previews the fee and tax for an amount on an account, using the configuration in force at `at` (default now). Nothing is posted. The same quote is what an account debit, credit or transfer charges when its request sets `charge_fees`: the fee goes to the `income_account` of each fee rule and each tax to its `payable_accounts` entry, in the same ledger transaction as the customer's movement. On a debit or transfer the customer pays amount plus fee plus tax; on a credit the fee and tax come out of the credit and the reserve applies to what the wallet receives. The response of the charged call carries `charges`. Fee and tax lines are rounded half-even to the currency precision, tax on the fee uses the rounded fee, and `total` is amount plus fee plus tax. Returns 400 when tax rules exist for the event and the client's country is unknown. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2QuoteFees
+      x-speakeasy-name-override: QuoteFees
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2FeeQuoteRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2FeeQuoteResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/gl/accounts:
+    post:
+      tags:
+        - ledger.v2
+      summary: Create a GL account
+      description: Adds an account to the GL registry (chart of accounts). The ledger address must be under the `gl:` prefix. Codes are unique, the parent must exist with the same currency and type. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2CreateGLAccount
+      x-speakeasy-name-override: CreateGLAccount
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2CreateGLAccountRequest"
+      responses:
+        "201":
+          description: GL account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLAccountResponse"
+        "409":
+          description: The code or the ledger address is already used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+    get:
+      tags:
+        - ledger.v2
+      summary: List GL accounts
+      description: Lists the GL registry ordered by code. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListGLAccounts
+      x-speakeasy-name-override: ListGLAccounts
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/V2GLAccountType"
+        - name: currency
+          in: query
+          required: false
+          schema:
+            type: string
+            example: NGN
+        - name: parent
+          in: query
+          description: Only return the direct children of this account code.
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/V2GLAccountStatus"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLAccountListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/gl/accounts/import:
+    post:
+      tags:
+        - ledger.v2
+      summary: Import a chart of accounts
+      description: |
+        Bulk import of a chart, as a JSON array (`application/json`) or CSV (`text/csv`, header `code,name,type,normal_side,currency,parent_code,ledger,address`; `normal_side` and `parent_code` may be blank).
+        The import is all-or-nothing and idempotent: rows identical to an existing account are `unchanged`, rows that differ from an existing code are reported as `conflict` and are not applied. If any row is `invalid` or a `conflict`, nothing is written (400 or 409 with the report).
+        With `dry_run=true` the same validation runs and the per-row report is returned with status 200 without writing anything. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ImportGLAccounts
+      x-speakeasy-name-override: ImportGLAccounts
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: dry_run
+          in: query
+          description: Validate and report without writing.
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 5000
+              items:
+                $ref: "#/components/schemas/V2CreateGLAccountRequest"
+          text/csv:
+            schema:
+              type: string
+              example: |
+                code,name,type,normal_side,currency,parent_code,ledger,address
+                1000,Assets,asset,,NGN,,ledgertrack,gl:assets
+                1010,Cash,asset,debit,NGN,1000,ledgertrack,gl:assets:cash
+      responses:
+        "200":
+          description: Dry-run report, or the import was applied (`committed` is true)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLImportReportResponse"
+        "400":
+          description: Some rows are invalid, nothing was applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLImportRejectedResponse"
+        "409":
+          description: Some rows conflict with existing accounts, nothing was applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLImportRejectedResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/gl/accounts/{code}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a GL account by code
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetGLAccount
+      x-speakeasy-name-override: GetGLAccount
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2GLCode"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLAccountResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+    patch:
+      tags:
+        - ledger.v2
+      summary: Update a GL account
+      description: Only `name`, `metadata` (replaces the whole object) and `status` can change; any other field is rejected. An account with active children cannot be closed, and a child cannot be reopened under a closed parent. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2PatchGLAccount
+      x-speakeasy-name-override: PatchGLAccount
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2GLCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/V2PatchGLAccountRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLAccountResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
+  /v2/{ledger}/gl/accounts/{code}/balance:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get the ledger balance of a GL account
+      description: Reads the balance (input - output) at the account's ledger address, optionally at a point in time. A positive balance is a credit, a negative balance a debit. For Customer Wallets (201100) the balance is read at the account's own address only; the trial balance adds the wallets under it. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetGLAccountBalance
+      x-speakeasy-name-override: GetGLAccountBalance
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2GLCode"
+        - name: pit
+          in: query
+          description: Point in time.
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLAccountBalanceResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
   /v2/{ledger}/clients/{clientID}/accounts:
     get:
       tags:
@@ -1801,6 +2622,47 @@ paths:
       security:
         - Authorization:
             - ledger:read
+  /v2/{ledger}/reports/finance/gl-trial-balance:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get the GL registry trial balance
+      description: |
+        Lists every active GL account of a currency with its debit or credit balance, per-type subtotals and a `balanced` flag (total debits equal total credits). Unlike `/reports/finance/trial-balance` it is driven by the GL registry, not by a fixed set of lines.
+        Sign convention: ledger balance is input - output; a positive balance is a credit and a negative balance a debit. This is the orientation Cray's postings follow: a wallet holds a positive balance (liability), `system:control` is the source of every wallet credit and goes negative, and a fee or tax paid from a wallet lands positive on its income or payable account. A ledger that does not exist yet counts as zero.
+        Customer wallets are not registered GL accounts. Their available and lien balances roll up into GL 201100 Customer Wallets (`posted_balance` is what was posted to the account itself, `wallet_balance` what the wallets hold), and `system:control` appears as a synthetic asset line (`synthetic: true`) for the unallocated funding side. `wallets` shows the same figures and `balanced` covers all of it, so a posting that touches an address outside the registry, the wallets and the control account shows as a difference. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetGLTrialBalanceReport
+      x-speakeasy-name-override: GetGLTrialBalanceReport
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: currency
+          in: query
+          required: true
+          schema:
+            type: string
+            example: NGN
+        - name: asOf
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2GLTrialBalanceReportResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
   /v2/{ledger}/reports/finance/balance-sheet:
     get:
       tags:
@@ -1981,11 +2843,127 @@ paths:
       security:
         - Authorization:
             - ledger:read
+  /v2/{ledger}/reserve-holds:
+    get:
+      tags:
+        - ledger.v2
+      summary: List reserve holds
+      description: |
+        Lists the shares of credits held in wallet liens under a reserve rule, oldest release first. A hold is `pending` while its credit is being posted, `held` until `release_at`, then `released`. `voided` means the credit never reached the ledger; `needs_review` means the release failed repeatedly (for example the lien was spent) and needs an operator. `due_before` keeps holds whose release time is at or before it. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ListReserveHolds
+      x-speakeasy-name-override: ListReserveHolds
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - name: account_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: client_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: wallet_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, held, released, voided, needs_review]
+        - name: due_before
+          in: query
+          description: RFC 3339 time.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: 1 to 500.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveHoldListResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reserve-holds/{id}:
+    get:
+      tags:
+        - ledger.v2
+      summary: Get a reserve hold
+      description: This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2GetReserveHold
+      x-speakeasy-name-override: GetReserveHold
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveHoldResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:read
+  /v2/{ledger}/reserve-holds/{id}/release:
+    post:
+      tags:
+        - ledger.v2
+      summary: Release a reserve hold now
+      description: |
+        Moves the held share from the wallet lien to the available balance ahead of its SLA. Releasing a hold that is already released returns it unchanged and moves nothing. A hold that is `pending`, `voided`, or leased by the release job answers 409. This endpoint is supported on the `ledgertrack` ledger.
+      operationId: v2ReleaseReserveHold
+      x-speakeasy-name-override: ReleaseReserveHold
+      parameters:
+        - $ref: "#/components/parameters/V2GLLedger"
+        - $ref: "#/components/parameters/V2FeeConfigID"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ReserveHoldResponse"
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/V2ErrorResponse"
+      security:
+        - Authorization:
+            - ledger:write
   /v2/{ledger}/wallets/{walletID}/credit:
     post:
       tags:
         - ledger.v2
       summary: Credit a wallet
+      description: |
+        On the `ledgertrack` ledger, when a reserve rule applies to the wallet's account, the credit is posted as one transaction that puts the reserve share in the wallet lien and the rest in the available balance. The response then carries `reserve` with `hold_id`, `reserve_minor`, `available_minor` and `release_at`. `credit_type` selects rules that list credit types. A retry of the same `reference` keeps the original split. Without a matching rule the credit is posted as before.
       operationId: v2CreditWallet
       x-speakeasy-name-override: CreditWallet
       parameters:
@@ -2034,6 +3012,8 @@ paths:
       tags:
         - ledger.v2
       summary: Debit a wallet
+      description: |
+        With `draw_from_reserve` set, on the `ledgertrack` ledger, the debit spends the wallet's held reserve shares before the available balance, oldest release first. This is for chargebacks. The held shares are the wallet lien, so the debit takes the drawn part from the lien and the rest from available in one transaction, and the holds shrink by the same amount (a hold used up entirely shows `released` with reason `drawn`). The response carries `reserve` with `drawn_minor` and `available_minor`. A retry of the same `reference` draws once. If the debit is refused for lack of funds the holds are restored. It cannot be combined with `channelID`.
       operationId: v2DebitWallet
       x-speakeasy-name-override: DebitWallet
       parameters:
@@ -3248,6 +4228,30 @@ components:
       schema:
         type: string
         example: id:desc
+    V2GLLedger:
+      name: ledger
+      in: path
+      description: Name of the ledger. The GL registry is served on `ledgertrack`.
+      required: true
+      schema:
+        type: string
+        example: ledgertrack
+    V2FeeConfigID:
+      name: id
+      in: path
+      description: Identifier of the fee override or tax rule.
+      required: true
+      schema:
+        type: string
+        format: uuid
+    V2GLCode:
+      name: code
+      in: path
+      description: GL account code.
+      required: true
+      schema:
+        type: string
+        example: "1001"
   responses:
     V2CreatePipelineResponse:
       description: Created ipeline
@@ -4221,6 +5225,1121 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/V2FinanceTrialBalanceReport"
+    V2GLAccountType:
+      type: string
+      enum:
+        - asset
+        - liability
+        - equity
+        - income
+        - expense
+    V2GLAccountStatus:
+      type: string
+      enum:
+        - active
+        - closed
+    V2GLSide:
+      type: string
+      enum:
+        - debit
+        - credit
+    V2CreateGLAccountRequest:
+      type: object
+      required:
+        - code
+        - name
+        - type
+        - currency
+        - ledger
+        - address
+      properties:
+        code:
+          type: string
+          example: "1001"
+          description: Unique across the registry.
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/V2GLAccountType"
+        normal_side:
+          allOf:
+            - $ref: "#/components/schemas/V2GLSide"
+          description: Defaults from the type (asset and expense are debit, the others credit).
+        currency:
+          type: string
+          example: NGN
+          description: Must be enabled in the currency registry.
+        parent_code:
+          type: string
+          description: Must exist, with the same currency and type, and be active.
+        ledger:
+          type: string
+          example: ledgertrack
+        address:
+          type: string
+          example: gl:assets:cash
+          description: Ledger address, must start with `gl:`; unique per ledger.
+        metadata:
+          type: object
+          additionalProperties: true
+    V2PatchGLAccountRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        status:
+          $ref: "#/components/schemas/V2GLAccountStatus"
+        metadata:
+          type: object
+          additionalProperties: true
+    V2GLAccount:
+      type: object
+      required:
+        - id
+        - code
+        - name
+        - type
+        - normal_side
+        - currency
+        - ledger
+        - address
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/V2GLAccountType"
+        normal_side:
+          $ref: "#/components/schemas/V2GLSide"
+        currency:
+          type: string
+        parent_code:
+          type: string
+          nullable: true
+        ledger:
+          type: string
+        address:
+          type: string
+        status:
+          $ref: "#/components/schemas/V2GLAccountStatus"
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2FeeTier:
+      type: object
+      required: [from, type, value]
+      properties:
+        from:
+          type: string
+          example: "0"
+        to:
+          type: string
+          description: Exclusive upper bound. Omitted on the last tier.
+        type:
+          type: string
+          enum: [flat, percentage]
+        value:
+          type: string
+    V2TransactionFee:
+      type: object
+      required: [event, type]
+      properties:
+        event:
+          type: string
+          enum: [debit, credit, transfer]
+        type:
+          type: string
+          enum: [flat, percentage, tiered]
+        value:
+          type: string
+          description: Amount for `flat`, percent for `percentage`. Not used for `tiered`.
+        tiers:
+          type: array
+          description: Bands for `tiered`. They start at 0, touch each other and the last one is open ended.
+          items:
+            $ref: "#/components/schemas/V2FeeTier"
+        min:
+          type: string
+        max:
+          type: string
+        currency:
+          type: string
+        income_account:
+          type: string
+          description: Code of the GL income account that receives this fee when it is charged. It must be an active income account in the rule's currency that takes postings. A fee with no income account is refused when charged (422 CHARGE_CONFIGURATION).
+    V2CreateFeeOverrideRequest:
+      type: object
+      required: [scope, currency, event, rules]
+      properties:
+        scope:
+          type: string
+          enum: [client, account]
+        client_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+          description: Client scope only. Limits the override to accounts of this product.
+        currency:
+          type: string
+          example: NGN
+        event:
+          type: string
+          enum: [debit, credit, transfer]
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2TransactionFee"
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    V2FeeOverride:
+      type: object
+      required: [id, scope, currency, event, rules, effective_from, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+        client_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        event:
+          type: string
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2TransactionFee"
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, revoked]
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2FeeOverrideResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2FeeOverride"
+    V2FeeOverrideListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [overrides]
+          properties:
+            overrides:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2FeeOverride"
+    V2CreateTaxRuleRequest:
+      type: object
+      required: [country, code, name, event, base, rate, payable_accounts]
+      properties:
+        country:
+          type: string
+          description: ISO 3166-1 alpha-2.
+          example: NG
+        code:
+          type: string
+          example: VAT
+        name:
+          type: string
+          example: Value added tax
+        event:
+          type: string
+          enum: [debit, credit, transfer]
+        base:
+          type: string
+          enum: [fee, amount]
+        rate:
+          type: string
+          description: Percent, so "7.5" is 7.5%.
+          example: "7.5"
+        min:
+          type: string
+        max:
+          type: string
+        payable_accounts:
+          type: object
+          description: Liability GL account code per currency.
+          additionalProperties:
+            type: string
+          example:
+            NGN: "202100.NGN"
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    V2TaxRule:
+      type: object
+      required: [id, country, code, name, event, base, rate, payable_accounts, effective_from, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        country:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        event:
+          type: string
+        base:
+          type: string
+        rate:
+          type: string
+        min:
+          type: string
+        max:
+          type: string
+        payable_accounts:
+          type: object
+          additionalProperties:
+            type: string
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, revoked]
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2TaxRuleResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2TaxRule"
+    V2TaxRuleListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [rules]
+          properties:
+            rules:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2TaxRule"
+    V2FeeQuoteRequest:
+      type: object
+      required: [account_id, event, amount_minor]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+          enum: [debit, credit, transfer]
+        amount_minor:
+          type: integer
+          format: int64
+          description: Transaction amount in minor units.
+        at:
+          type: string
+          format: date-time
+    V2FeeQuoteFeeLine:
+      type: object
+      required: [type, amount]
+      properties:
+        type:
+          type: string
+        amount:
+          type: string
+        income_account_code:
+          type: string
+          description: GL income account the fee is posted to, as set on the rule. Empty when the rule has none.
+    V2FeeQuoteTaxLine:
+      type: object
+      required: [rule_id, code, base, rate, amount, payable_account_code]
+      properties:
+        rule_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        base:
+          type: string
+        rate:
+          type: string
+        amount:
+          type: string
+        payable_account_code:
+          type: string
+    V2FeeQuote:
+      type: object
+      required: [account_id, event, currency, amount, fee, tax, gross, total, amount_minor, fee_minor, tax_minor, total_minor, fee_source, fee_lines, tax_lines]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+        currency:
+          type: string
+        amount:
+          type: string
+        fee:
+          type: string
+        tax:
+          type: string
+        gross:
+          type: string
+          description: Fee plus tax.
+        total:
+          type: string
+          description: Amount plus fee plus tax, what leaves the customer's wallet.
+        amount_minor:
+          type: integer
+          format: int64
+        fee_minor:
+          type: integer
+          format: int64
+        tax_minor:
+          type: integer
+          format: int64
+        total_minor:
+          type: integer
+          format: int64
+        fee_source:
+          type: string
+          enum: [account, client, product, none]
+        fee_override_id:
+          type: string
+          format: uuid
+        fee_lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FeeQuoteFeeLine"
+        tax_lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2FeeQuoteTaxLine"
+    V2BusinessCalendarRequest:
+      type: object
+      required: [name, timezone, working_days, open_time, close_time]
+      properties:
+        code:
+          type: string
+          description: Required on create. Cannot change on update.
+        name:
+          type: string
+        timezone:
+          type: string
+          example: Africa/Lagos
+        working_days:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 7
+        open_time:
+          type: string
+          example: "08:00"
+        close_time:
+          type: string
+          example: "17:00"
+        holidays:
+          type: array
+          items:
+            type: string
+            format: date
+    V2BusinessCalendar:
+      type: object
+      required: [id, code, name, timezone, working_days, open_time, close_time, holidays, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        timezone:
+          type: string
+        working_days:
+          type: array
+          items:
+            type: integer
+        open_time:
+          type: string
+        close_time:
+          type: string
+        holidays:
+          type: array
+          items:
+            type: string
+            format: date
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2BusinessCalendarResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2BusinessCalendar"
+    V2BusinessCalendarListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [calendars]
+          properties:
+            calendars:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2BusinessCalendar"
+    V2CreateReserveRuleRequest:
+      type: object
+      required: [scope, percentage, hold_hours]
+      properties:
+        scope:
+          type: string
+          enum: [client, account]
+        client_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+          description: Required for a client rule. An account rule takes the account currency.
+        percentage:
+          type: string
+          description: Share of each credit that is held, as a decimal string. "10" is 10%.
+        hold_hours:
+          type: integer
+          minimum: 1
+          maximum: 8760
+        hold_mode:
+          type: string
+          enum: [calendar, business]
+          description: "calendar counts hold_hours as clock hours. business counts only the hours inside the business calendar."
+        calendar_id:
+          type: string
+          format: uuid
+          description: Required for hold_mode business.
+        credit_types:
+          type: array
+          items:
+            type: string
+          description: Limits the rule to these credit types (lowercase, digits and underscores). Empty covers every credit.
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+    V2ReserveRule:
+      type: object
+      required: [id, scope, currency, percentage, hold_hours, effective_from, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          enum: [client, account]
+        client_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        percentage:
+          type: string
+        hold_hours:
+          type: integer
+        hold_mode:
+          type: string
+          enum: [calendar, business]
+        calendar_id:
+          type: string
+          format: uuid
+        credit_types:
+          type: array
+          items:
+            type: string
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, revoked]
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2ReserveRuleResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2ReserveRule"
+    V2ReserveRuleListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [rules]
+          properties:
+            rules:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2ReserveRule"
+    V2DebitWalletRequest:
+      type: object
+      required: [amount, reference]
+      properties:
+        amount:
+          type: number
+          description: Amount in minor units.
+        reference:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        channelID:
+          type: string
+        channelAmount:
+          type: number
+        draw_from_reserve:
+          type: boolean
+          description: Spend the wallet's held reserve shares first (chargebacks). Not allowed with a channel.
+    V2CreditWalletRequest:
+      type: object
+      required: [amount, reference]
+      properties:
+        amount:
+          type: number
+          description: Amount in minor units.
+        reference:
+          type: string
+        credit_type:
+          type: string
+          description: Kind of credit (for example `card`), matched against the `credit_types` of reserve rules.
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    V2ReserveHold:
+      type: object
+      required: [id, account_id, client_id, ledger, wallet_id, currency, credit_reference, credit_amount_minor, amount_minor, release_at, status, attempts, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        rule_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        ledger:
+          type: string
+        wallet_id:
+          type: string
+        currency:
+          type: string
+        credit_reference:
+          type: string
+        credit_tx_id:
+          type: integer
+          format: int64
+        credit_type:
+          type: string
+        credit_amount_minor:
+          type: integer
+          format: int64
+        amount_minor:
+          type: integer
+          format: int64
+          description: The held share, in minor units.
+        release_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, held, released, voided, needs_review]
+        released_at:
+          type: string
+          format: date-time
+        release_reason:
+          type: string
+          enum: [sla, manual, drawn]
+        release_reference:
+          type: string
+        attempts:
+          type: integer
+        last_error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    V2ReserveHoldResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2ReserveHold"
+    V2ReserveHoldListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [holds]
+          properties:
+            holds:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2ReserveHold"
+    V2ReservePreviewRequest:
+      type: object
+      required: [account_id, amount_minor]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        amount_minor:
+          type: integer
+          format: int64
+        credit_type:
+          type: string
+          description: Matched against rules that list credit types. Omit to match only rules that cover every credit.
+        at:
+          type: string
+          format: date-time
+    V2ReservePreview:
+      type: object
+      required: [account_id, currency, amount_minor, reserve_minor, available_minor, rule_source]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        currency:
+          type: string
+        amount_minor:
+          type: integer
+          format: int64
+        reserve_minor:
+          type: integer
+          format: int64
+        available_minor:
+          type: integer
+          format: int64
+        percentage:
+          type: string
+        hold_hours:
+          type: integer
+        hold_mode:
+          type: string
+          enum: [calendar, business]
+        calendar_id:
+          type: string
+          format: uuid
+        credit_type:
+          type: string
+        release_at:
+          type: string
+          format: date-time
+        rule_source:
+          type: string
+          enum: [account, client, none]
+        rule_id:
+          type: string
+          format: uuid
+    V2ReservePreviewResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2ReservePreview"
+    V2FeeQuoteResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/V2FeeQuote"
+    V2GLAccountResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2GLAccount"
+    V2GLAccountListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - accounts
+          properties:
+            accounts:
+              type: array
+              items:
+                $ref: "#/components/schemas/V2GLAccount"
+    V2GLImportRowReport:
+      type: object
+      required:
+        - row
+        - code
+        - status
+      properties:
+        row:
+          type: integer
+          description: 1-based position in the request.
+        code:
+          type: string
+        status:
+          type: string
+          enum:
+            - create
+            - unchanged
+            - conflict
+            - invalid
+        errors:
+          type: array
+          items:
+            type: string
+        conflicts:
+          type: array
+          description: Fields that differ from the existing account with the same code (or the clash on its address).
+          items:
+            type: string
+    V2GLImportReport:
+      type: object
+      required:
+        - dry_run
+        - committed
+        - can_commit
+        - total
+        - to_create
+        - unchanged
+        - conflicts
+        - invalid
+        - rows
+      properties:
+        dry_run:
+          type: boolean
+        committed:
+          type: boolean
+          description: True only when the import was applied (never for a dry run).
+        can_commit:
+          type: boolean
+          description: No invalid row and no conflict.
+        total:
+          type: integer
+        to_create:
+          type: integer
+        unchanged:
+          type: integer
+        conflicts:
+          type: integer
+        invalid:
+          type: integer
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2GLImportRowReport"
+    V2GLImportReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2GLImportReport"
+    V2GLImportRejectedResponse:
+      type: object
+      required:
+        - errorCode
+        - errorMessage
+        - report
+      properties:
+        errorCode:
+          type: string
+          enum:
+            - VALIDATION
+            - CONFLICT
+        errorMessage:
+          type: string
+        details:
+          type: string
+        report:
+          $ref: "#/components/schemas/V2GLImportReport"
+    V2GLAccountBalance:
+      type: object
+      required:
+        - code
+        - currency
+        - asset
+        - balance
+        - debit
+        - credit
+        - natural_balance
+        - abnormal
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: "#/components/schemas/V2GLAccountType"
+        normal_side:
+          $ref: "#/components/schemas/V2GLSide"
+        currency:
+          type: string
+        parent_code:
+          type: string
+          nullable: true
+        ledger:
+          type: string
+        address:
+          type: string
+        status:
+          $ref: "#/components/schemas/V2GLAccountStatus"
+        asset:
+          type: string
+          example: NGN/2
+        pit:
+          type: string
+          format: date-time
+        balance:
+          type: integer
+          format: int64
+          description: Raw ledger balance (input - output) in minor units.
+        debit:
+          type: integer
+          format: int64
+        credit:
+          type: integer
+          format: int64
+        natural_balance:
+          type: integer
+          format: int64
+          description: Positive when the balance sits on the account's normal side.
+        abnormal:
+          type: boolean
+        posted_balance:
+          type: integer
+          format: int64
+          description: Customer Wallets line only. The balance posted to the GL account itself.
+        wallet_balance:
+          type: integer
+          format: int64
+          description: Customer Wallets line only. Available plus lien of every wallet in the currency.
+        synthetic:
+          type: boolean
+          description: True for a line that is not a registered GL account (system:control, or Customer Wallets when 201100 is not registered).
+    V2GLWalletRollup:
+      type: object
+      required:
+        - ledger
+        - account_code
+        - available
+        - lien
+        - total
+        - control
+      properties:
+        ledger:
+          type: string
+        account_code:
+          type: string
+          description: GL account the wallets roll up into.
+          example: "201100"
+        available:
+          type: integer
+          format: int64
+        lien:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+          description: available + lien, a credit balance.
+        control:
+          type: integer
+          format: int64
+          description: Raw ledger balance of system:control and its shards. Negative by the amount credited to wallets from the control account.
+    V2GLAccountBalanceResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2GLAccountBalance"
+    V2GLTrialBalanceSubtotal:
+      type: object
+      required:
+        - type
+        - accounts
+        - debit
+        - credit
+        - net
+      properties:
+        type:
+          $ref: "#/components/schemas/V2GLAccountType"
+        accounts:
+          type: integer
+        debit:
+          type: integer
+          format: int64
+        credit:
+          type: integer
+          format: int64
+        net:
+          type: integer
+          format: int64
+          description: debit - credit.
+    V2GLTrialBalanceReport:
+      type: object
+      required:
+        - currency
+        - asset
+        - accounts
+        - subtotals
+        - wallets
+        - total_debits
+        - total_credits
+        - difference
+        - balanced
+      properties:
+        currency:
+          type: string
+        asset:
+          type: string
+        wallets:
+          $ref: "#/components/schemas/V2GLWalletRollup"
+        as_of:
+          type: string
+          format: date-time
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/V2GLAccountBalance"
+        subtotals:
+          type: array
+          description: One entry per account type, in the order asset, liability, equity, income, expense.
+          items:
+            $ref: "#/components/schemas/V2GLTrialBalanceSubtotal"
+        total_debits:
+          type: integer
+          format: int64
+        total_credits:
+          type: integer
+          format: int64
+        difference:
+          type: integer
+          format: int64
+          description: total_debits - total_credits.
+        balanced:
+          type: boolean
+    V2GLTrialBalanceReportResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/V2GLTrialBalanceReport"
     V2FinanceBalanceSheetLine:
       type: object
       required:

@@ -226,7 +226,7 @@ func createWallet(userID, currency string) string {
 	}
 
 	var res map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&res)
+	_ = json.NewDecoder(resp.Body).Decode(&res)
 
 	if data, ok := res["data"].(map[string]interface{}); ok {
 		if id, ok := data["walletID"].(string); ok {
@@ -281,7 +281,7 @@ func debitWallet(walletID string, amount int64, ref string, ik string) (string, 
 	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
 		respBytes, _ := io.ReadAll(resp.Body)
 		var res map[string]interface{}
-		json.Unmarshal(respBytes, &res)
+		_ = json.Unmarshal(respBytes, &res)
 
 		// Debug print
 		// fmt.Printf("Success Response: %s\n", string(respBytes))

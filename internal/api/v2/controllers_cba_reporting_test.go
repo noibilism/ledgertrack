@@ -16,6 +16,7 @@ import (
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/auth"
 	"github.com/formancehq/go-libs/v3/bun/bunpaginate"
+
 	ledger "github.com/formancehq/ledger/internal"
 	"github.com/formancehq/ledger/internal/cba/models"
 	"github.com/formancehq/ledger/internal/cba/services"

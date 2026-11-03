@@ -19,14 +19,20 @@ import (
 	"github.com/formancehq/go-libs/v3/otlp"
 	"github.com/formancehq/go-libs/v3/service"
 
+	"github.com/formancehq/ledger/internal/api/bankman"
 	"github.com/formancehq/ledger/internal/api/bulking"
 	"github.com/formancehq/ledger/internal/api/common"
 	v1 "github.com/formancehq/ledger/internal/api/v1"
 	v2 "github.com/formancehq/ledger/internal/api/v2"
 	"github.com/formancehq/ledger/internal/cba/services"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
+	ledgercontroller "github.com/formancehq/ledger/internal/controller/ledger"
 	"github.com/formancehq/ledger/internal/controller/system"
+	"github.com/formancehq/ledger/internal/transfers"
 )
+
+// walletLedgerName is the ledger that holds customer wallets.
+const walletLedgerName = "ledgertrack"
 
 // todo: refine textual errors
 func NewRouter(
@@ -105,42 +111,83 @@ func NewRouter(
 		v2.WithAccountService(routerOptions.accountService),
 		v2.WithReportingService(routerOptions.reportingService),
 		v2.WithFinanceReportingService(routerOptions.financeReportingService),
+		v2.WithGLAccountService(routerOptions.glAccountService),
+		v2.WithFeeConfigService(routerOptions.feeConfigService),
+		v2.WithReserveRuleService(routerOptions.reserveRuleService),
+		v2.WithBusinessCalendarService(routerOptions.calendarService),
+		v2.WithReserveHoldService(routerOptions.reserveHoldService),
+		v2.WithChargeService(routerOptions.chargeService),
+		v2.WithGLReportingService(routerOptions.glReportingService),
 		v2.WithChannelFeeConfigService(routerOptions.channelFeeConfigService),
 		v2.WithChannelRevenueReportingService(routerOptions.channelRevenueReportingService),
+		v2.WithTransferService(routerOptions.transferService),
 	)
-	mux.Handle("/v2*", http.StripPrefix("/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Write requests are admitted (or rejected with 503 + Retry-After) before they touch the database.
+	admitWrites := common.WriteAdmission(routerOptions.writeLimiter)
+	mux.Handle("/v2*", admitWrites(http.StripPrefix("/v2", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		chi.RouteContext(r.Context()).Reset()
 		v2Router.ServeHTTP(w, r)
-	})))
-	mux.Handle("/*", v1.NewRouter(
+	}))))
+	if routerOptions.legacyLookupService != nil {
+		// The compat layer dispatches to v2Router in process, so every call passes the same authentication
+		// and business rules as a native one. Authentication also runs here, before its own lookups.
+		// Bankman's health check is public, like the native one.
+		mux.Get("/bankman/health", bankman.Health)
+		mux.Get("/bankman/api/v1/health", bankman.Health)
+		compat := auth.Middleware(authenticator)(bankman.New(routerOptions.legacyLookupService, routerOptions.walletRoleService, routerOptions.provisioningService, v2Router, walletLedgerName))
+		mux.Handle("/bankman/api/v1/*", admitWrites(http.StripPrefix("/bankman/api/v1", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			chi.RouteContext(r.Context()).Reset()
+			compat.ServeHTTP(w, r)
+		}))))
+	}
+	mux.Handle("/*", admitWrites(v1.NewRouter(
 		systemController,
 		authenticator,
 		version,
 		debug,
 		v1.WithTracer(routerOptions.tracer),
-	))
+	)))
 
 	return mux
 }
 
 type routerOptions struct {
-	tracer                  trace.Tracer
-	meterProvider           metric.MeterProvider
-	bulkMaxSize             int
-	bulkerFactory           bulking.BulkerFactory
-	paginationConfig        common.PaginationConfig
-	exporters               bool
-	productService          services.ProductService
-	clientService           services.ClientService
-	kycService              services.KYCService
-	accountService          services.AccountService
-	reportingService        services.ReportingService
-	financeReportingService services.FinanceReportingService
-	channelFeeConfigService channelservices.ChannelFeeConfigService
+	tracer                         trace.Tracer
+	meterProvider                  metric.MeterProvider
+	bulkMaxSize                    int
+	bulkerFactory                  bulking.BulkerFactory
+	paginationConfig               common.PaginationConfig
+	exporters                      bool
+	productService                 services.ProductService
+	clientService                  services.ClientService
+	kycService                     services.KYCService
+	accountService                 services.AccountService
+	reportingService               services.ReportingService
+	financeReportingService        services.FinanceReportingService
+	glAccountService               services.GLAccountService
+	feeConfigService               services.FeeConfigService
+	reserveRuleService             services.ReserveRuleService
+	calendarService                services.BusinessCalendarService
+	reserveHoldService             services.ReserveHoldService
+	chargeService                  services.ChargeService
+	legacyLookupService            services.LegacyLookupService
+	walletRoleService              services.WalletRoleService
+	provisioningService            services.ProvisioningService
+	glReportingService             services.GLReportingService
+	channelFeeConfigService        channelservices.ChannelFeeConfigService
 	channelRevenueReportingService channelservices.ChannelRevenueReportingService
+	transferService                *transfers.Service
+	writeLimiter                   *ledgercontroller.WriteLimiter
 }
 
 type RouterOption func(ro *routerOptions)
+
+// WithWriteLimiter bounds the write requests in flight (nil: no bound).
+func WithWriteLimiter(limiter *ledgercontroller.WriteLimiter) RouterOption {
+	return func(ro *routerOptions) {
+		ro.writeLimiter = limiter
+	}
+}
 
 func WithTracer(tracer trace.Tracer) RouterOption {
 	return func(ro *routerOptions) {
@@ -208,9 +255,78 @@ func WithFinanceReportingService(financeReportingService services.FinanceReporti
 	}
 }
 
+// WithProvisioningService serves Bankman's client and account creation in the compatibility API.
+func WithProvisioningService(provisioningService services.ProvisioningService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.provisioningService = provisioningService
+	}
+}
+
+// WithWalletRoleService serves the Bankman wallet-role endpoints of the compatibility API.
+func WithWalletRoleService(walletRoleService services.WalletRoleService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.walletRoleService = walletRoleService
+	}
+}
+
+// WithLegacyLookupService enables the Bankman compatibility API at /bankman/api/v1.
+func WithLegacyLookupService(legacyLookupService services.LegacyLookupService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.legacyLookupService = legacyLookupService
+	}
+}
+
+func WithChargeService(chargeService services.ChargeService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.chargeService = chargeService
+	}
+}
+
+func WithReserveHoldService(reserveHoldService services.ReserveHoldService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.reserveHoldService = reserveHoldService
+	}
+}
+
+func WithBusinessCalendarService(calendarService services.BusinessCalendarService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.calendarService = calendarService
+	}
+}
+
+func WithReserveRuleService(reserveRuleService services.ReserveRuleService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.reserveRuleService = reserveRuleService
+	}
+}
+
+func WithFeeConfigService(feeConfigService services.FeeConfigService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.feeConfigService = feeConfigService
+	}
+}
+
+func WithGLAccountService(glAccountService services.GLAccountService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glAccountService = glAccountService
+	}
+}
+
+func WithGLReportingService(glReportingService services.GLReportingService) RouterOption {
+	return func(ro *routerOptions) {
+		ro.glReportingService = glReportingService
+	}
+}
+
 func WithChannelFeeConfigService(channelFeeConfigService channelservices.ChannelFeeConfigService) RouterOption {
 	return func(ro *routerOptions) {
 		ro.channelFeeConfigService = channelFeeConfigService
+	}
+}
+
+func WithTransferService(transferService *transfers.Service) RouterOption {
+	return func(ro *routerOptions) {
+		ro.transferService = transferService
 	}
 }
 

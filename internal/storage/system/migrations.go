@@ -500,6 +500,374 @@ func GetMigrator(db bun.IDB, options ...migrations.Option) *migrations.Migrator 
 				})
 			},
 		},
+		migrations.Migration{
+			Name: "Add GL accounts registry table",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.gl_accounts (
+							id uuid primary key default gen_random_uuid(),
+							code varchar(64) not null,
+							name varchar(255) not null,
+							type varchar(16) not null check (type in ('asset', 'liability', 'equity', 'income', 'expense')),
+							normal_side varchar(8) not null check (normal_side in ('debit', 'credit')),
+							currency varchar(16) not null,
+							parent_code varchar(64),
+							ledger varchar(255) not null,
+							address varchar(512) not null check (address like 'gl:%'),
+							status varchar(16) not null default 'active' check (status in ('active', 'closed')),
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint gl_accounts_code_unique unique (code),
+							constraint gl_accounts_ledger_address_unique unique (ledger, address),
+							constraint gl_accounts_parent_fk foreign key (parent_code) references _system.gl_accounts(code),
+							constraint gl_accounts_not_own_parent check (parent_code is null or parent_code <> code)
+						);
+						create index if not exists idx_gl_accounts_currency_status on _system.gl_accounts(currency, status);
+						create index if not exists idx_gl_accounts_type on _system.gl_accounts(type);
+						create index if not exists idx_gl_accounts_parent on _system.gl_accounts(parent_code);
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add transfers table for multi-ledger wallet transfers",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.transfers (
+							id uuid primary key default gen_random_uuid(),
+							reference varchar(255) not null,
+							idempotency_key varchar(255) not null default '',
+							request_hash varchar(64) not null,
+							user_ledger varchar(63) not null,
+							wallet_id varchar(255) not null,
+							currency varchar(16) not null,
+							kind varchar(32) not null check (kind in ('debit', 'release_pay')),
+							state varchar(32) not null check (state in (
+								'created', 'user_posted', 'channel_posted', 'revenue_posted',
+								'completed', 'failed', 'failed_needs_review'
+							)),
+							amount bigint not null check (amount > 0),
+							channel_id varchar(255) not null default '',
+							channel_amount bigint not null default 0,
+							user_fee bigint not null default 0,
+							processing_fee bigint not null default 0,
+							net_revenue bigint not null default 0,
+							user_metadata jsonb not null default '{}'::jsonb,
+							user_tx_id bigint,
+							channel_tx_id bigint,
+							revenue_tx_id bigint,
+							result jsonb not null default '{}'::jsonb,
+							attempts integer not null default 0,
+							last_error text not null default '',
+							lease_owner varchar(255),
+							lease_until timestamp without time zone,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							completed_at timestamp without time zone,
+							constraint transfers_reference_unique unique (reference)
+						);
+						create index if not exists idx_transfers_recovery
+							on _system.transfers(updated_at)
+							where state in ('created', 'user_posted', 'channel_posted', 'revenue_posted');
+						create index if not exists idx_transfers_needs_review
+							on _system.transfers(updated_at)
+							where state = 'failed_needs_review';
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add currencies used by Bankman products",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					// Precision 2 for every code, including XOF and XAF, to match the
+					// decimal(19,4) values Bankman holds. do nothing on conflict so a
+					// precision an operator already set is never overwritten.
+					_, err := tx.ExecContext(ctx, `
+						insert into _system.currencies (code, precision, enabled)
+						values
+							('XOF', 2, true),
+							('XAF', 2, true),
+							('TZS', 2, true),
+							('MZN', 2, true),
+							('ZAR', 2, true)
+						on conflict (code) do nothing;
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add fee overrides and tax rules tables",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.fee_overrides (
+							id uuid primary key default gen_random_uuid(),
+							scope varchar(16) not null check (scope in ('client', 'account')),
+							client_id uuid,
+							account_id uuid,
+							product_id uuid,
+							currency varchar(16) not null,
+							event varchar(16) not null check (event in ('debit', 'credit', 'transfer')),
+							rules jsonb not null,
+							effective_from timestamp without time zone not null,
+							effective_to timestamp without time zone,
+							status varchar(16) not null default 'active' check (status in ('active', 'revoked')),
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint fee_overrides_target check (
+								(scope = 'client' and client_id is not null and account_id is null) or
+								(scope = 'account' and account_id is not null and client_id is null and product_id is null)
+							),
+							constraint fee_overrides_period check (effective_to is null or effective_to > effective_from)
+						);
+						create index if not exists idx_fee_overrides_client on _system.fee_overrides(client_id, event) where client_id is not null;
+						create index if not exists idx_fee_overrides_account on _system.fee_overrides(account_id, event) where account_id is not null;
+
+						create table if not exists _system.tax_rules (
+							id uuid primary key default gen_random_uuid(),
+							country varchar(2) not null,
+							code varchar(32) not null,
+							name varchar(255) not null,
+							event varchar(16) not null check (event in ('debit', 'credit', 'transfer')),
+							base varchar(16) not null check (base in ('fee', 'amount')),
+							rate varchar(32) not null,
+							min_amount varchar(32),
+							max_amount varchar(32),
+							payable_accounts jsonb not null,
+							effective_from timestamp without time zone not null,
+							effective_to timestamp without time zone,
+							status varchar(16) not null default 'active' check (status in ('active', 'revoked')),
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint tax_rules_period check (effective_to is null or effective_to > effective_from)
+						);
+						create index if not exists idx_tax_rules_lookup on _system.tax_rules(country, event, status);
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add reserve rules table",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.reserve_rules (
+							id uuid primary key default gen_random_uuid(),
+							scope varchar(16) not null check (scope in ('client', 'account')),
+							client_id uuid,
+							account_id uuid,
+							product_id uuid,
+							currency varchar(16) not null,
+							percentage varchar(32) not null,
+							hold_hours integer not null check (hold_hours between 1 and 8760),
+							effective_from timestamp without time zone not null,
+							effective_to timestamp without time zone,
+							status varchar(16) not null default 'active' check (status in ('active', 'revoked')),
+							metadata jsonb not null default '{}'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint reserve_rules_target check (
+								(scope = 'client' and client_id is not null and account_id is null) or
+								(scope = 'account' and account_id is not null and client_id is null and product_id is null)
+							),
+							constraint reserve_rules_period check (effective_to is null or effective_to > effective_from)
+						);
+						create index if not exists idx_reserve_rules_client on _system.reserve_rules(client_id) where client_id is not null;
+						create index if not exists idx_reserve_rules_account on _system.reserve_rules(account_id) where account_id is not null;
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add business calendars and reserve rule credit types",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.business_calendars (
+							id uuid primary key default gen_random_uuid(),
+							code varchar(64) not null unique,
+							name varchar(255) not null,
+							timezone varchar(64) not null,
+							working_days jsonb not null,
+							open_time varchar(5) not null,
+							close_time varchar(5) not null,
+							holidays jsonb not null default '[]'::jsonb,
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						alter table _system.reserve_rules
+							add column if not exists credit_types jsonb not null default '[]'::jsonb,
+							add column if not exists hold_mode varchar(16) not null default 'calendar',
+							add column if not exists calendar_id uuid references _system.business_calendars(id);
+						alter table _system.reserve_rules
+							add constraint reserve_rules_hold_mode check (
+								(hold_mode = 'calendar' and calendar_id is null) or
+								(hold_mode = 'business' and calendar_id is not null)
+							);
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add reserve holds table",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						create table if not exists _system.reserve_holds (
+							id uuid primary key default gen_random_uuid(),
+							rule_id uuid references _system.reserve_rules(id),
+							account_id uuid not null,
+							client_id uuid not null,
+							ledger varchar(255) not null,
+							wallet_id varchar(255) not null,
+							currency varchar(16) not null,
+							credit_reference varchar(255) not null,
+							credit_tx_id bigint,
+							credit_type varchar(32) not null default '',
+							credit_amount_minor bigint not null check (credit_amount_minor > 0),
+							amount_minor bigint not null check (amount_minor > 0),
+							release_at timestamp without time zone not null,
+							status varchar(16) not null default 'pending'
+								check (status in ('pending', 'held', 'released', 'voided', 'needs_review')),
+							released_at timestamp without time zone,
+							release_reason varchar(16) not null default '',
+							release_reference varchar(255) not null default '',
+							lease_owner varchar(128) not null default '',
+							lease_until timestamp without time zone,
+							attempts integer not null default 0,
+							last_error text not null default '',
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+							constraint reserve_holds_amount check (amount_minor <= credit_amount_minor),
+							constraint reserve_holds_credit unique (ledger, wallet_id, credit_reference)
+						);
+						create index if not exists idx_reserve_holds_due on _system.reserve_holds(release_at) where status = 'held';
+						create index if not exists idx_reserve_holds_pending on _system.reserve_holds(created_at) where status = 'pending';
+						create index if not exists idx_reserve_holds_account on _system.reserve_holds(account_id);
+						create index if not exists idx_reserve_holds_client on _system.reserve_holds(client_id);
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add reserve draws",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						alter table _system.reserve_holds drop constraint if exists reserve_holds_amount_minor_check;
+						alter table _system.reserve_holds drop constraint if exists reserve_holds_amount_nonneg;
+						alter table _system.reserve_holds add constraint reserve_holds_amount_nonneg check (amount_minor >= 0);
+						create table if not exists _system.reserve_draws (
+							id uuid primary key default gen_random_uuid(),
+							hold_id uuid not null references _system.reserve_holds(id),
+							ledger varchar(255) not null,
+							wallet_id varchar(255) not null,
+							reference varchar(255) not null,
+							amount_minor bigint not null check (amount_minor > 0),
+							status varchar(16) not null default 'pending'
+								check (status in ('pending', 'applied', 'reverted')),
+							created_at timestamp without time zone not null default (now() at time zone 'utc'),
+							updated_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create unique index if not exists idx_reserve_draws_live on _system.reserve_draws(hold_id, reference) where status <> 'reverted';
+						create index if not exists idx_reserve_draws_ref on _system.reserve_draws(ledger, wallet_id, reference);
+						create index if not exists idx_reserve_draws_pending on _system.reserve_draws(created_at) where status = 'pending';
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add legacy id lookup indexes",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					// The Bankman compatibility API finds accounts by the Bankman account id kept in the account
+					// metadata, and clients by the Bankman external_id kept in the KYC data.
+					_, err := tx.ExecContext(ctx, `
+						create index if not exists idx_accounts_legacy_source_id
+							on _system.accounts ((metadata ->> 'legacy_source_id'))
+							where (metadata ->> 'legacy_source_id') is not null;
+						create index if not exists idx_clients_legacy_external_id
+							on _system.clients ((kyc_data ->> 'legacy_external_id'))
+							where (kyc_data ->> 'legacy_external_id') is not null;
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add legacy client source id lookup index",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					// Callers of the Bankman account list hold the Bankman client id (client_id), which the importer
+					// keeps in the KYC data as legacy_source_id.
+					_, err := tx.ExecContext(ctx, `
+						create index if not exists idx_clients_legacy_source_id
+							on _system.clients ((kyc_data ->> 'legacy_source_id'))
+							where (kyc_data ->> 'legacy_source_id') is not null;
+					`)
+					return err
+				})
+			},
+		},
+		migrations.Migration{
+			Name: "Add wallet roles to accounts",
+			Up: func(ctx context.Context, db bun.IDB) error {
+				return db.RunInTx(ctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+					// Account characteristics and the wallet role that the Bankman wallet-role contract routes by.
+					// A null wallet_role is an account nobody has classified yet; it is not an error.
+					// An R2 relationship binds at most one wallet per currency.
+					_, err := tx.ExecContext(ctx, `
+						alter table _system.accounts
+							add column if not exists account_name varchar(255),
+							add column if not exists account_type varchar(32),
+							add column if not exists country_code varchar(2),
+							add column if not exists wallet_role varchar(32),
+							add column if not exists r2_relationship_public_id varchar(180);
+
+						alter table _system.accounts
+							add constraint accounts_wallet_role_check
+								check (wallet_role is null or wallet_role in ('merchant_main', 'r2_subaccount'));
+						alter table _system.accounts
+							add constraint accounts_r2_role_binding_check
+								check (coalesce(wallet_role = 'r2_subaccount', false) = (r2_relationship_public_id is not null));
+
+						create unique index if not exists uq_accounts_r2_relationship_currency
+							on _system.accounts (r2_relationship_public_id, currency)
+							where r2_relationship_public_id is not null;
+
+						create table if not exists _system.account_wallet_role_audits (
+							id uuid primary key default gen_random_uuid(),
+							account_id uuid not null references _system.accounts (id),
+							actor_service varchar(64) not null,
+							action varchar(32) not null,
+							previous_wallet_role varchar(32),
+							previous_r2_relationship_public_id varchar(180),
+							wallet_role varchar(32),
+							r2_relationship_public_id varchar(180),
+							evidence_reference varchar(255) not null,
+							created_at timestamp without time zone not null default (now() at time zone 'utc')
+						);
+						create index if not exists idx_account_wallet_role_audits_account
+							on _system.account_wallet_role_audits (account_id);
+					`)
+					return err
+				})
+			},
+		},
 	)
 
 	return migrator

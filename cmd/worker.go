@@ -13,6 +13,7 @@ import (
 	"github.com/formancehq/go-libs/v3/bun/bunconnect"
 	"github.com/formancehq/go-libs/v3/otlp/otlpmetrics"
 	"github.com/formancehq/go-libs/v3/otlp/otlptraces"
+	"github.com/formancehq/go-libs/v3/publish"
 	"github.com/formancehq/go-libs/v3/service"
 
 	"github.com/formancehq/ledger/internal/bus"
@@ -25,6 +26,9 @@ import (
 	"github.com/formancehq/ledger/internal/replication/drivers"
 	"github.com/formancehq/ledger/internal/replication/drivers/alldrivers"
 	"github.com/formancehq/ledger/internal/storage"
+	"github.com/formancehq/ledger/internal/storage/loghash"
+	systemstore "github.com/formancehq/ledger/internal/storage/system"
+	"github.com/formancehq/ledger/internal/transfers"
 	"github.com/formancehq/ledger/internal/worker"
 )
 
@@ -40,13 +44,24 @@ const (
 	WorkerBucketCleanupRetentionPeriodFlag = "worker-bucket-cleanup-retention-period"
 	WorkerBucketCleanupScheduleFlag        = "worker-bucket-cleanup-schedule"
 
-	WorkerCBAInterestAccrualScheduleFlag = "worker-cba-interest-accrual-schedule"
-	WorkerCBAInterestPostingScheduleFlag = "worker-cba-interest-posting-schedule"
-	WorkerCBAMaintenanceFeeScheduleFlag  = "worker-cba-maintenance-fee-schedule"
-	WorkerCBADormancyScheduleFlag        = "worker-cba-dormancy-schedule"
-	WorkerCBALedgerNameFlag              = "worker-cba-ledger-name"
-	WorkerCBAFeeIncomeAccountFlag        = "worker-cba-fee-income-account"
-	WorkerCBAInterestExpenseAccountFlag  = "worker-cba-interest-expense-account"
+	WorkerCBAInterestAccrualScheduleFlag     = "worker-cba-interest-accrual-schedule"
+	WorkerCBAInterestPostingScheduleFlag     = "worker-cba-interest-posting-schedule"
+	WorkerCBAMaintenanceFeeScheduleFlag      = "worker-cba-maintenance-fee-schedule"
+	WorkerCBADormancyScheduleFlag            = "worker-cba-dormancy-schedule"
+	WorkerCBATransferRecoveryScheduleFlag    = "worker-cba-transfer-recovery-schedule"
+	WorkerCBATransferRecoveryBatchSizeFlag   = "worker-cba-transfer-recovery-batch-size"
+	WorkerCBATransferRecoveryMaxAttemptsFlag = "worker-cba-transfer-recovery-max-attempts"
+	WorkerCBATransferRecoveryGraceFlag       = "worker-cba-transfer-recovery-grace"
+	WorkerCBATransferRecoveryLeaseFlag       = "worker-cba-transfer-recovery-lease"
+	WorkerCBATransferRecoveryMaxBackoffFlag  = "worker-cba-transfer-recovery-max-backoff"
+	WorkerCBAReserveReleaseScheduleFlag      = "worker-cba-reserve-release-schedule"
+	WorkerCBAReserveReleaseBatchSizeFlag     = "worker-cba-reserve-release-batch-size"
+	WorkerCBAReserveReleaseLeaseFlag         = "worker-cba-reserve-release-lease"
+	WorkerCBAReserveReleasePendingGraceFlag  = "worker-cba-reserve-release-pending-grace"
+	WorkerCBAReserveReleaseMaxAttemptsFlag   = "worker-cba-reserve-release-max-attempts"
+	WorkerCBALedgerNameFlag                  = "worker-cba-ledger-name"
+	WorkerCBAFeeIncomeAccountFlag            = "worker-cba-fee-income-account"
+	WorkerCBAInterestExpenseAccountFlag      = "worker-cba-interest-expense-account"
 
 	WorkerGRPCAddressFlag = "worker-grpc-address"
 )
@@ -58,6 +73,13 @@ type WorkerGRPCConfig struct {
 type WorkerConfiguration struct {
 	HashLogsBlockMaxSize  int           `mapstructure:"worker-async-block-hasher-max-block-size"`
 	HashLogsBlockCRONSpec cron.Schedule `mapstructure:"worker-async-block-hasher-schedule"`
+	// HashLogsBlockDisabled turns the legacy block hasher off, see docs/design/async-log-hashing.md.
+	HashLogsBlockDisabled bool `mapstructure:"worker-async-block-hasher-disabled"`
+
+	LogHasherInterval  time.Duration `mapstructure:"worker-log-hasher-interval"`
+	LogHasherBatchSize int           `mapstructure:"worker-log-hasher-batch-size"`
+	LogHasherGapGrace  time.Duration `mapstructure:"worker-log-hasher-gap-grace"`
+	LogHasherAlertLag  time.Duration `mapstructure:"worker-log-hasher-alert-lag"`
 
 	PushRetryPeriod time.Duration `mapstructure:"worker-pipelines-push-retry-period"`
 	PullInterval    time.Duration `mapstructure:"worker-pipelines-pull-interval"`
@@ -67,13 +89,24 @@ type WorkerConfiguration struct {
 	BucketCleanupRetentionPeriod time.Duration `mapstructure:"worker-bucket-cleanup-retention-period"`
 	BucketCleanupCRONSpec        cron.Schedule `mapstructure:"worker-bucket-cleanup-schedule"`
 
-	CBAInterestAccrualCRONSpec cron.Schedule `mapstructure:"worker-cba-interest-accrual-schedule"`
-	CBAInterestPostingCRONSpec cron.Schedule `mapstructure:"worker-cba-interest-posting-schedule"`
-	CBAMaintenanceFeeCRONSpec  cron.Schedule `mapstructure:"worker-cba-maintenance-fee-schedule"`
-	CBADormancyCRONSpec        cron.Schedule `mapstructure:"worker-cba-dormancy-schedule"`
-	CBALedgerName              string        `mapstructure:"worker-cba-ledger-name"`
-	CBAFeeIncomeAccount        string        `mapstructure:"worker-cba-fee-income-account"`
-	CBAInterestExpenseAccount  string        `mapstructure:"worker-cba-interest-expense-account"`
+	CBAInterestAccrualCRONSpec     cron.Schedule `mapstructure:"worker-cba-interest-accrual-schedule"`
+	CBAInterestPostingCRONSpec     cron.Schedule `mapstructure:"worker-cba-interest-posting-schedule"`
+	CBAMaintenanceFeeCRONSpec      cron.Schedule `mapstructure:"worker-cba-maintenance-fee-schedule"`
+	CBADormancyCRONSpec            cron.Schedule `mapstructure:"worker-cba-dormancy-schedule"`
+	CBATransferRecoveryCRONSpec    cron.Schedule `mapstructure:"worker-cba-transfer-recovery-schedule"`
+	CBATransferRecoveryBatchSize   int           `mapstructure:"worker-cba-transfer-recovery-batch-size"`
+	CBATransferRecoveryMaxAttempts int           `mapstructure:"worker-cba-transfer-recovery-max-attempts"`
+	CBATransferRecoveryGrace       time.Duration `mapstructure:"worker-cba-transfer-recovery-grace"`
+	CBATransferRecoveryLease       time.Duration `mapstructure:"worker-cba-transfer-recovery-lease"`
+	CBATransferRecoveryMaxBackoff  time.Duration `mapstructure:"worker-cba-transfer-recovery-max-backoff"`
+	CBAReserveReleaseCRONSpec      cron.Schedule `mapstructure:"worker-cba-reserve-release-schedule"`
+	CBAReserveReleaseBatchSize     int           `mapstructure:"worker-cba-reserve-release-batch-size"`
+	CBAReserveReleaseLease         time.Duration `mapstructure:"worker-cba-reserve-release-lease"`
+	CBAReserveReleasePendingGrace  time.Duration `mapstructure:"worker-cba-reserve-release-pending-grace"`
+	CBAReserveReleaseMaxAttempts   int           `mapstructure:"worker-cba-reserve-release-max-attempts"`
+	CBALedgerName                  string        `mapstructure:"worker-cba-ledger-name"`
+	CBAFeeIncomeAccount            string        `mapstructure:"worker-cba-fee-income-account"`
+	CBAInterestExpenseAccount      string        `mapstructure:"worker-cba-interest-expense-account"`
 }
 
 func (cfg WorkerConfiguration) Validate() error {
@@ -94,6 +127,27 @@ func (cfg WorkerConfiguration) Validate() error {
 	}
 	if cfg.CBADormancyCRONSpec == nil {
 		return fmt.Errorf("cba dormancy schedule must be set")
+	}
+	if cfg.CBATransferRecoveryCRONSpec == nil {
+		return fmt.Errorf("cba transfer recovery schedule must be set")
+	}
+	if cfg.CBATransferRecoveryBatchSize <= 0 {
+		return fmt.Errorf("cba transfer recovery batch size must be greater than zero")
+	}
+	if cfg.CBATransferRecoveryMaxAttempts <= 0 {
+		return fmt.Errorf("cba transfer recovery max attempts must be greater than zero")
+	}
+	if cfg.CBATransferRecoveryGrace <= 0 || cfg.CBATransferRecoveryLease <= 0 || cfg.CBATransferRecoveryMaxBackoff <= 0 {
+		return fmt.Errorf("cba transfer recovery grace, lease and max backoff must be greater than zero")
+	}
+	if cfg.CBAReserveReleaseCRONSpec == nil {
+		return fmt.Errorf("cba reserve release schedule must be set")
+	}
+	if cfg.CBAReserveReleaseBatchSize <= 0 || cfg.CBAReserveReleaseMaxAttempts <= 0 {
+		return fmt.Errorf("cba reserve release batch size and max attempts must be greater than zero")
+	}
+	if cfg.CBAReserveReleaseLease <= 0 || cfg.CBAReserveReleasePendingGrace <= 0 {
+		return fmt.Errorf("cba reserve release lease and pending grace must be greater than zero")
 	}
 	if cfg.CBALedgerName == "" {
 		return fmt.Errorf("cba ledger name must be set")
@@ -119,6 +173,11 @@ type WorkerCommandConfiguration struct {
 func addWorkerFlags(cmd *cobra.Command) {
 	cmd.Flags().Int(WorkerAsyncBlockHasherMaxBlockSizeFlag, 1000, "Max block size")
 	cmd.Flags().String(WorkerAsyncBlockHasherScheduleFlag, "0 * * * * *", "Schedule")
+	cmd.Flags().Bool("worker-async-block-hasher-disabled", false, "Disable the legacy block hasher (it chains nothing per log and is superseded by the log hasher for HASH_LOGS=ASYNC ledgers)")
+	cmd.Flags().Duration("worker-log-hasher-interval", loghash.DefaultInterval, "Interval between two runs of the log hasher (HASH_LOGS=ASYNC ledgers)")
+	cmd.Flags().Int("worker-log-hasher-batch-size", loghash.DefaultBatchSize, "Max logs chained per database transaction by the log hasher")
+	cmd.Flags().Duration("worker-log-hasher-gap-grace", loghash.DefaultGapGrace, "Time a hole in the log ids must have been observed before the log hasher considers it final")
+	cmd.Flags().Duration("worker-log-hasher-alert-lag", loghash.DefaultAlertLag, "Age of the oldest unchained log above which the log hasher logs an ALERT")
 	cmd.Flags().Duration(WorkerPipelinesPullIntervalFlag, 5*time.Second, "Pipelines pull interval")
 	cmd.Flags().Duration(WorkerPipelinesPushRetryPeriodFlag, 10*time.Second, "Pipelines push retry period")
 	cmd.Flags().Duration(WorkerPipelinesSyncPeriod, time.Minute, "Pipelines sync period")
@@ -129,6 +188,17 @@ func addWorkerFlags(cmd *cobra.Command) {
 	cmd.Flags().String(WorkerCBAInterestPostingScheduleFlag, "0 10 0 * * *", "Schedule for CBA interest posting (cron format)")
 	cmd.Flags().String(WorkerCBAMaintenanceFeeScheduleFlag, "0 15 0 * * *", "Schedule for CBA maintenance fee processing (cron format)")
 	cmd.Flags().String(WorkerCBADormancyScheduleFlag, "0 20 0 * * *", "Schedule for CBA dormancy detection (cron format)")
+	cmd.Flags().String(WorkerCBATransferRecoveryScheduleFlag, "0 * * * * *", "Schedule for recovery of interrupted multi-ledger wallet transfers (cron format)")
+	cmd.Flags().Int(WorkerCBATransferRecoveryBatchSizeFlag, 100, "Transfers claimed per recovery pass")
+	cmd.Flags().Int(WorkerCBATransferRecoveryMaxAttemptsFlag, 10, "Drive attempts before a transfer is moved to failed_needs_review")
+	cmd.Flags().Duration(WorkerCBATransferRecoveryGraceFlag, 2*time.Minute, "Minimum age of an unfinished transfer before recovery picks it up (also the base of the retry backoff)")
+	cmd.Flags().Duration(WorkerCBATransferRecoveryLeaseFlag, 2*time.Minute, "How long a driver owns a transfer before another may take it over")
+	cmd.Flags().Duration(WorkerCBATransferRecoveryMaxBackoffFlag, 30*time.Minute, "Upper bound of the exponential retry backoff of one transfer")
+	cmd.Flags().String(WorkerCBAReserveReleaseScheduleFlag, "0 * * * * *", "Schedule for releasing held reserve shares whose SLA has passed (cron format)")
+	cmd.Flags().Int(WorkerCBAReserveReleaseBatchSizeFlag, 200, "Reserve holds claimed per release pass")
+	cmd.Flags().Duration(WorkerCBAReserveReleaseLeaseFlag, 2*time.Minute, "How long a worker owns a reserve hold before another may take it over")
+	cmd.Flags().Duration(WorkerCBAReserveReleasePendingGraceFlag, 10*time.Minute, "Age after which a reserve hold whose credit was interrupted is settled against the ledger")
+	cmd.Flags().Int(WorkerCBAReserveReleaseMaxAttemptsFlag, 10, "Failed releases before a reserve hold is moved to needs_review")
 	cmd.Flags().String(WorkerCBALedgerNameFlag, "ledgertrack", "Ledger name used for CBA account wallet postings")
 	cmd.Flags().String(WorkerCBAFeeIncomeAccountFlag, "revenue:fee_income", "Revenue account used for CBA fee income postings")
 	cmd.Flags().String(WorkerCBAInterestExpenseAccountFlag, "revenue:interest_expense", "Revenue account used for CBA interest expense postings")
@@ -160,6 +230,7 @@ func NewWorkerCommand() *cobra.Command {
 				fx.NopLogger,
 				otlpModule(cmd, cfg.commonConfig),
 				bunconnect.Module(*connectionOptions, service.IsDebug(cmd)),
+				publish.FXModuleFromFlags(cmd, service.IsDebug(cmd)),
 				storage.NewFXModule(storage.ModuleConfig{}),
 				drivers.NewFXModule(),
 				fx.Invoke(alldrivers.Register),
@@ -175,11 +246,16 @@ func NewWorkerCommand() *cobra.Command {
 					},
 					EnableFeatures:        cfg.ExperimentalFeaturesEnabled,
 					SchemaEnforcementMode: cfg.commonConfig.SchemaEnforcementMode,
+					WalletLedgerHashMode:  cfg.WalletLedgerHashMode,
 				}),
 				bus.NewFxModule(),
 				currency.NewFXModule(),
 				cba.NewFXModule(),
+				transfers.NewFXModule(transferConfig(cfg.WorkerConfiguration)),
 				newWorkerModule(cfg.WorkerConfiguration),
+				// The system controller needs a ReplicationBackend. The worker hosts the
+				// replication manager itself, so use it directly (same as `serve --worker`).
+				replication.NewFXEmbeddedClientModule(),
 				worker.NewGRPCServerFXModule(worker.GRPCServerModuleConfig{
 					Address: cfg.Address,
 					ServerOptions: []grpc.ServerOption{
@@ -193,10 +269,14 @@ func NewWorkerCommand() *cobra.Command {
 	cmd.Flags().String(WorkerGRPCAddressFlag, ":8081", "GRPC address")
 
 	addWorkerFlags(cmd)
+	addWalletLedgerHashModeFlag(cmd)
 	service.AddFlags(cmd.Flags())
 	bunconnect.AddFlags(cmd.Flags())
 	otlpmetrics.AddFlags(cmd.Flags())
 	otlptraces.AddFlags(cmd.Flags())
+	publish.AddFlags(ServiceName, cmd.Flags(), func(cd *publish.ConfigDefault) {
+		cd.PublisherCircuitBreakerSchema = systemstore.SchemaSystem
+	})
 
 	return cmd
 }
@@ -208,6 +288,13 @@ func newWorkerModule(configuration WorkerConfiguration) fx.Option {
 		AsyncBlockRunnerConfig: storage.AsyncBlockRunnerConfig{
 			MaxBlockSize: configuration.HashLogsBlockMaxSize,
 			Schedule:     configuration.HashLogsBlockCRONSpec,
+		},
+		AsyncBlockRunnerDisabled: configuration.HashLogsBlockDisabled,
+		LogHasherConfig: loghash.Config{
+			Interval:  configuration.LogHasherInterval,
+			BatchSize: configuration.LogHasherBatchSize,
+			GapGrace:  configuration.LogHasherGapGrace,
+			AlertLag:  configuration.LogHasherAlertLag,
 		},
 		ReplicationConfig: replication.WorkerModuleConfig{
 			PushRetryPeriod: configuration.PushRetryPeriod,
@@ -237,6 +324,29 @@ func newWorkerModule(configuration WorkerConfiguration) fx.Option {
 			DormancyRunnerConfig: scheduler.DormancyRunnerConfig{
 				Schedule: configuration.CBADormancyCRONSpec,
 			},
+			TransferRecoveryRunnerConfig: scheduler.TransferRecoveryRunnerConfig{
+				Schedule:  configuration.CBATransferRecoveryCRONSpec,
+				BatchSize: configuration.CBATransferRecoveryBatchSize,
+			},
+			ReserveReleaseRunnerConfig: scheduler.ReserveReleaseRunnerConfig{
+				Schedule:     configuration.CBAReserveReleaseCRONSpec,
+				BatchSize:    configuration.CBAReserveReleaseBatchSize,
+				Lease:        configuration.CBAReserveReleaseLease,
+				PendingGrace: configuration.CBAReserveReleasePendingGrace,
+				MaxAttempts:  configuration.CBAReserveReleaseMaxAttempts,
+			},
 		},
 	})
+}
+
+// transferConfig maps the worker flags to the transfers service configuration.
+// The same values drive inline transfers in `serve` and recovery in `worker`.
+func transferConfig(cfg WorkerConfiguration) transfers.Config {
+	c := transfers.DefaultConfig()
+	c.BatchSize = cfg.CBATransferRecoveryBatchSize
+	c.MaxAttempts = cfg.CBATransferRecoveryMaxAttempts
+	c.Grace = cfg.CBATransferRecoveryGrace
+	c.Lease = cfg.CBATransferRecoveryLease
+	c.MaxBackoff = cfg.CBATransferRecoveryMaxBackoff
+	return c
 }

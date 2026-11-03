@@ -19,6 +19,7 @@ type commonConfig struct {
 	ExperimentalExporters       bool                         `mapstructure:"experimental-exporters"`
 	SemconvMetricsNames         bool                         `mapstructure:"semconv-metrics-names"`
 	SchemaEnforcementMode       ledger.SchemaEnforcementMode `mapstructure:"schema-enforcement-mode"`
+	WalletLedgerHashMode        string                       `mapstructure:"wallet-ledger-hash-mode"`
 }
 
 func decodeCronSchedule(sourceType, destType reflect.Type, value any) (any, error) {

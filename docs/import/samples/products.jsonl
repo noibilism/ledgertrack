@@ -1,0 +1,2 @@
+{"source_id":"cur-ngn","code":"MERCH-NGN","name":"Merchant Wallet NGN","description":"Merchant settlement balance in Naira","category":"merchant_wallet","currency":"NGN","precision":2}
+{"source_id":"cur-usdt","code":"MERCH-USDT","name":"Merchant Wallet USDT","description":"Merchant settlement balance in USDT","category":"merchant_wallet","currency":"USDT","precision":6}

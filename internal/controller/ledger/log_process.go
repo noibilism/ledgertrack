@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -134,6 +136,22 @@ func (lp *logProcessor[INPUT, OUTPUT]) runLog(
 	return &log, output, err
 }
 
+const (
+	// maxTxRetries is the number of times a transaction is replayed after a deadlock or a serialization failure.
+	maxTxRetries   = 15
+	retryBaseDelay = 5 * time.Millisecond
+	retryMaxDelay  = 250 * time.Millisecond
+)
+
+// retryBackoff returns the delay before replaying a transaction (exponential, full jitter).
+func retryBackoff(attempt int) time.Duration {
+	d := retryBaseDelay << min(attempt, 6)
+	if d > retryMaxDelay {
+		d = retryMaxDelay
+	}
+	return time.Duration(rand.Int64N(int64(d)) + 1)
+}
+
 func (lp *logProcessor[INPUT, OUTPUT]) forgeLog(
 	ctx context.Context,
 	store Store,
@@ -150,7 +168,7 @@ func (lp *logProcessor[INPUT, OUTPUT]) forgeLog(
 		}
 	}
 
-	for {
+	for attempt := 0; ; attempt++ {
 		log, output, err := lp.runTx(ctx, store, parameters, fn)
 		if err != nil {
 			switch {
@@ -160,6 +178,17 @@ func (lp *logProcessor[INPUT, OUTPUT]) forgeLog(
 				lp.deadLockCounter.Add(ctx, 1, metric.WithAttributes(
 					attribute.String("operation", lp.operation),
 				))
+				// Replaying immediately recreates the same lock cycle with the same peers.
+				// Back off with jitter, and give up after a bounded number of attempts instead
+				// of looping (and holding a pooled connection every time) forever.
+				if attempt+1 >= maxTxRetries {
+					return nil, nil, false, fmt.Errorf("giving up after %d attempts: %w", attempt+1, err)
+				}
+				select {
+				case <-ctx.Done():
+					return nil, nil, false, ctx.Err()
+				case <-time.After(retryBackoff(attempt)):
+				}
 				continue
 			// A log with the IK could have been inserted in the meantime, read again the database to retrieve it
 			case errors.Is(err, ledgerstore.ErrIdempotencyKeyConflict{}):

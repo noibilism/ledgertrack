@@ -11,17 +11,18 @@ import (
 
 	"github.com/formancehq/go-libs/v3/platform/postgres"
 
+	"github.com/formancehq/ledger/internal/cba/feequote"
 	"github.com/formancehq/ledger/internal/cba/models"
 	"github.com/formancehq/ledger/internal/cba/repositories"
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
 )
 
 var (
-	ErrProductValidation            = errors.New("product validation failed")
-	ErrProductNotFound              = errors.New("product not found")
-	ErrProductAlreadyExists         = errors.New("product already exists")
+	ErrProductValidation             = errors.New("product validation failed")
+	ErrProductNotFound               = errors.New("product not found")
+	ErrProductAlreadyExists          = errors.New("product already exists")
 	ErrProductInvalidStateTransition = errors.New("product state transition is invalid")
-	ErrProductActivePatchRestricted = errors.New("active products can only update whitelisted fields")
+	ErrProductActivePatchRestricted  = errors.New("active products can only update whitelisted fields")
 )
 
 type ProductService interface {
@@ -34,38 +35,38 @@ type ProductService interface {
 }
 
 type ProductRulesInput struct {
-	MinOpeningBalance    *string                    `json:"min_opening_balance,omitempty"`
-	MinBalance           *string                    `json:"min_balance,omitempty"`
-	MaxBalance           *string                    `json:"max_balance,omitempty"`
-	AllowNegativeBalance *bool                      `json:"allow_negative_balance,omitempty"`
-	AllowDebits          *bool                      `json:"allow_debits,omitempty"`
-	AllowCredits         *bool                      `json:"allow_credits,omitempty"`
-	RequiresKYCLevel     *int                       `json:"requires_kyc_level,omitempty"`
-	EligibleClientTypes  []string                   `json:"eligible_client_types,omitempty"`
-	DormancyDays         *int                       `json:"dormancy_days,omitempty"`
-	TransactionLimits    *models.TransactionLimits  `json:"transaction_limits,omitempty"`
+	MinOpeningBalance    *string                   `json:"min_opening_balance,omitempty"`
+	MinBalance           *string                   `json:"min_balance,omitempty"`
+	MaxBalance           *string                   `json:"max_balance,omitempty"`
+	AllowNegativeBalance *bool                     `json:"allow_negative_balance,omitempty"`
+	AllowDebits          *bool                     `json:"allow_debits,omitempty"`
+	AllowCredits         *bool                     `json:"allow_credits,omitempty"`
+	RequiresKYCLevel     *int                      `json:"requires_kyc_level,omitempty"`
+	EligibleClientTypes  []string                  `json:"eligible_client_types,omitempty"`
+	DormancyDays         *int                      `json:"dormancy_days,omitempty"`
+	TransactionLimits    *models.TransactionLimits `json:"transaction_limits,omitempty"`
 }
 
 type CreateProductInput struct {
-	Code           string                `json:"code"`
-	Name           string                `json:"name"`
-	Description    string                `json:"description"`
-	Category       string                `json:"category"`
-	Currency       string                `json:"currency"`
-	Rules          *ProductRulesInput    `json:"rules,omitempty"`
+	Code           string                 `json:"code"`
+	Name           string                 `json:"name"`
+	Description    string                 `json:"description"`
+	Category       string                 `json:"category"`
+	Currency       string                 `json:"currency"`
+	Rules          *ProductRulesInput     `json:"rules,omitempty"`
 	InterestConfig *models.InterestConfig `json:"interest_config,omitempty"`
-	FeeSchedule    *models.FeeSchedule   `json:"fee_schedule,omitempty"`
+	FeeSchedule    *models.FeeSchedule    `json:"fee_schedule,omitempty"`
 }
 
 type PatchProductInput struct {
-	Code           *string                `json:"code,omitempty"`
-	Name           *string                `json:"name,omitempty"`
-	Description    *string                `json:"description,omitempty"`
-	Category       *string                `json:"category,omitempty"`
-	Currency       *string                `json:"currency,omitempty"`
-	Rules          *ProductRulesInput     `json:"rules,omitempty"`
+	Code           *string                 `json:"code,omitempty"`
+	Name           *string                 `json:"name,omitempty"`
+	Description    *string                 `json:"description,omitempty"`
+	Category       *string                 `json:"category,omitempty"`
+	Currency       *string                 `json:"currency,omitempty"`
+	Rules          *ProductRulesInput      `json:"rules,omitempty"`
 	InterestConfig **models.InterestConfig `json:"interest_config,omitempty"`
-	FeeSchedule    **models.FeeSchedule   `json:"fee_schedule,omitempty"`
+	FeeSchedule    **models.FeeSchedule    `json:"fee_schedule,omitempty"`
 }
 
 type DefaultProductService struct {
@@ -449,21 +450,8 @@ func validateFeeSchedule(schedule *models.FeeSchedule) error {
 		default:
 			return fmt.Errorf("%w: invalid transaction fee event %s", ErrProductValidation, fee.Event)
 		}
-		switch fee.Type {
-		case "flat", "percentage":
-		default:
-			return fmt.Errorf("%w: invalid transaction fee type %s", ErrProductValidation, fee.Type)
-		}
-		if _, err := parseDecimalField("transaction fee value", fee.Value); err != nil {
-			return err
-		}
-		for _, maybeValue := range []*string{fee.Min, fee.Max} {
-			if maybeValue == nil {
-				continue
-			}
-			if _, err := parseDecimalField("transaction fee bounds", *maybeValue); err != nil {
-				return err
-			}
+		if err := feequote.ValidateFeeRule(fee); err != nil {
+			return fmt.Errorf("%w: %v", ErrProductValidation, err)
 		}
 		if fee.Currency != "" {
 			definition, ok := currencyregistry.Lookup(fee.Currency)

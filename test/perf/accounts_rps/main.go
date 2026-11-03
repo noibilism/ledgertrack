@@ -20,19 +20,18 @@ import (
 )
 
 type config struct {
-	baseURL   string
-	ledger    string
-	token     string
-	rps       int
-	duration  time.Duration
-	workers   int
-	accounts  int
-	currency  string
-	runID     string
-	seedOnly  bool
-	runOnly   bool
-	outFile   string
-	liquidity int64
+	baseURL    string
+	ledger     string
+	token      string
+	rps        int
+	duration   time.Duration
+	workers    int
+	accounts   int
+	currency   string
+	runID      string
+	seedOnly   bool
+	runOnly    bool
+	outFile    string
 	reqTimeout time.Duration
 }
 
@@ -95,7 +94,7 @@ func (c *apiClient) req(ctx context.Context, method, path string, body any) (*ht
 		return nil, nil, err
 	}
 	defer func() {
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 	}()
 	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -136,12 +135,12 @@ func (c *apiClient) createProduct(ctx context.Context, currency, code, name stri
 		"category":    "savings",
 		"currency":    currency,
 		"rules": map[string]any{
-			"requires_kyc_level":    1,
-			"min_opening_balance":   "0.00",
-			"min_balance":           "0",
+			"requires_kyc_level":     1,
+			"min_opening_balance":    "0.00",
+			"min_balance":            "0",
 			"allow_negative_balance": false,
-			"allow_debits":          true,
-			"allow_credits":         true,
+			"allow_debits":           true,
+			"allow_credits":          true,
 			"transaction_limits": map[string]any{
 				"single_debit_limit":  "1000000.00",
 				"single_credit_limit": "1000000.00",
@@ -166,11 +165,6 @@ func (c *apiClient) activateProduct(ctx context.Context, productID string) error
 	return err
 }
 
-func (c *apiClient) retireProduct(ctx context.Context, productID string) error {
-	_, _, err := c.req(ctx, http.MethodPost, "/v2/"+c.cfg.ledger+"/products/"+productID+"/retire", nil)
-	return err
-}
-
 func (c *apiClient) createClient(ctx context.Context, email, phone, runID string) (string, error) {
 	body := map[string]any{
 		"type": "individual",
@@ -179,12 +173,12 @@ func (c *apiClient) createClient(ctx context.Context, email, phone, runID string
 			"phone": phone,
 		},
 		"individual_data": map[string]any{
-			"first_name":        "Perf",
-			"last_name":         runID[:8],
-			"national_id_type":  "NIN",
+			"first_name":         "Perf",
+			"last_name":          runID[:8],
+			"national_id_type":   "NIN",
 			"national_id_number": "NIN-" + runID[:10],
-			"nationality":       "NG",
-			"occupation":        "Perf",
+			"nationality":        "NG",
+			"occupation":         "Perf",
 		},
 	}
 	_, b, err := c.req(ctx, http.MethodPost, "/v2/"+c.cfg.ledger+"/clients", body)
@@ -237,11 +231,6 @@ func (c *apiClient) activateClient(ctx context.Context, clientID string) error {
 	return err
 }
 
-func (c *apiClient) closeClient(ctx context.Context, clientID string) error {
-	_, _, err := c.req(ctx, http.MethodPost, "/v2/"+c.cfg.ledger+"/clients/"+clientID+"/close", nil)
-	return err
-}
-
 func (c *apiClient) openAccount(ctx context.Context, clientID, productID, openingDeposit string) (string, error) {
 	body := map[string]any{
 		"client_id":       clientID,
@@ -263,11 +252,6 @@ func (c *apiClient) openAccount(ctx context.Context, clientID, productID, openin
 
 func (c *apiClient) activateAccount(ctx context.Context, accountID string) error {
 	_, _, err := c.req(ctx, http.MethodPost, "/v2/"+c.cfg.ledger+"/accounts/"+accountID+"/activate", nil)
-	return err
-}
-
-func (c *apiClient) closeAccount(ctx context.Context, accountID string) error {
-	_, _, err := c.req(ctx, http.MethodPost, "/v2/"+c.cfg.ledger+"/accounts/"+accountID+"/close", nil)
 	return err
 }
 
@@ -335,17 +319,11 @@ type accountState struct {
 type action string
 
 const (
-	actCredit       action = "credit"
-	actDebit        action = "debit"
-	actLien         action = "lien"
-	actLienRelease  action = "lien_release"
+	actCredit      action = "credit"
+	actDebit       action = "debit"
+	actLien        action = "lien"
+	actLienRelease action = "lien_release"
 )
-
-type sample struct {
-	ok      bool
-	code    int
-	latency time.Duration
-}
 
 type stats struct {
 	mu      sync.Mutex
@@ -422,16 +400,16 @@ func percentile(sorted []time.Duration, p float64) time.Duration {
 }
 
 type resultRow struct {
-	Action    action        `json:"action"`
-	OK        int64         `json:"ok"`
-	Fail      int64         `json:"fail"`
-	Codes     map[int]int64 `json:"codes"`
-	P50       time.Duration `json:"p50"`
-	P95       time.Duration `json:"p95"`
-	P99       time.Duration `json:"p99"`
-	Min       time.Duration `json:"min"`
-	Max       time.Duration `json:"max"`
-	Samples   int           `json:"samples"`
+	Action  action        `json:"action"`
+	OK      int64         `json:"ok"`
+	Fail    int64         `json:"fail"`
+	Codes   map[int]int64 `json:"codes"`
+	P50     time.Duration `json:"p50"`
+	P95     time.Duration `json:"p95"`
+	P99     time.Duration `json:"p99"`
+	Min     time.Duration `json:"min"`
+	Max     time.Duration `json:"max"`
+	Samples int           `json:"samples"`
 }
 
 func (s *stats) summarize() []resultRow {
@@ -476,8 +454,8 @@ func cloneCodes(m map[int]int64) map[int]int64 {
 }
 
 type provisioned struct {
-	ProductID string   `json:"product_id"`
-	ClientIDs []string `json:"client_ids"`
+	ProductID  string   `json:"product_id"`
+	ClientIDs  []string `json:"client_ids"`
 	AccountIDs []string `json:"account_ids"`
 }
 
@@ -541,8 +519,8 @@ func provision(ctx context.Context, c *apiClient, cfg config) (*provisioned, []*
 	}
 
 	return &provisioned{
-		ProductID: productID,
-		ClientIDs: clientIDs,
+		ProductID:  productID,
+		ClientIDs:  clientIDs,
 		AccountIDs: accountIDs,
 	}, accounts, nil
 }
@@ -737,7 +715,7 @@ func main() {
 		}
 		prov, accounts = p, accs
 		b, _ := json.MarshalIndent(prov, "", "  ")
-		_ = os.WriteFile("/tmp/ledgertrack_accounts_perf_seed.json", b, 0o600)
+		_ = os.WriteFile("/tmp/ledgertrack_accounts_perf_seed.json", b, 0o600) //nolint:gosec // path comes from the operator/CLI, not from request input
 	} else {
 		seedBytes, err := os.ReadFile("/tmp/ledgertrack_accounts_perf_seed.json")
 		if err != nil {
@@ -782,18 +760,18 @@ func main() {
 	achievedRPS := float64(total) / cfg.duration.Seconds()
 
 	out := map[string]any{
-		"base_url":  cfg.baseURL,
-		"ledger":    cfg.ledger,
-		"currency":  cfg.currency,
-		"run_id":    cfg.runID,
-		"rps":       cfg.rps,
+		"base_url":     cfg.baseURL,
+		"ledger":       cfg.ledger,
+		"currency":     cfg.currency,
+		"run_id":       cfg.runID,
+		"rps":          cfg.rps,
 		"achieved_rps": achievedRPS,
-		"duration":  cfg.duration.String(),
-		"workers":   cfg.workers,
-		"accounts":  cfg.accounts,
-		"summary":   summary,
-		"seed_file": "/tmp/ledgertrack_accounts_perf_seed.json",
-		"product_id": prov.ProductID,
+		"duration":     cfg.duration.String(),
+		"workers":      cfg.workers,
+		"accounts":     cfg.accounts,
+		"summary":      summary,
+		"seed_file":    "/tmp/ledgertrack_accounts_perf_seed.json",
+		"product_id":   prov.ProductID,
 	}
 
 	b, _ := json.MarshalIndent(out, "", "  ")

@@ -12,6 +12,7 @@ import (
 
 	"github.com/formancehq/ledger/internal/api/common"
 	"github.com/formancehq/ledger/internal/cba/services"
+	currencyregistry "github.com/formancehq/ledger/internal/currency"
 )
 
 func getClientPortfolioReport(reportingService services.ReportingService) http.HandlerFunc {
@@ -53,8 +54,13 @@ func getAccountStatementReport(reportingService services.ReportingService) http.
 
 		transactions := make([]any, 0, len(report.Transactions))
 		availableAddress := walletAvailableAddress(report.Account.WalletID, report.Account.Currency)
+		asset, err := currencyregistry.AssetFor(report.Account.Currency)
+		if err != nil {
+			common.HandleCommonErrors(w, r, err)
+			return
+		}
 		for _, tx := range report.Transactions {
-			transactions = append(transactions, accountTransactionResponse(tx, availableAddress, report.Account.Currency))
+			transactions = append(transactions, accountTransactionResponse(tx, availableAddress, asset))
 		}
 
 		api.Ok(w, map[string]any{

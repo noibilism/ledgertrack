@@ -7,21 +7,22 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/formancehq/go-libs/v3/api"
 
 	"github.com/formancehq/ledger/internal/api/common"
 	channelmodels "github.com/formancehq/ledger/internal/channels/models"
 	channelrepos "github.com/formancehq/ledger/internal/channels/repositories"
 	channelservices "github.com/formancehq/ledger/internal/channels/services"
-	"github.com/go-chi/chi/v5"
 )
 
 type upsertChannelFeeConfigRequest struct {
-	Currency      string                  `json:"currency"`
-	Enabled       *bool                   `json:"enabled,omitempty"`
+	Currency      string                     `json:"currency"`
+	Enabled       *bool                      `json:"enabled,omitempty"`
 	UserFee       channelmodels.FeeStructure `json:"user_fee"`
 	ProcessingFee channelmodels.FeeStructure `json:"processing_fee"`
-	Actor         *string                 `json:"actor,omitempty"`
+	Actor         *string                    `json:"actor,omitempty"`
 }
 
 func getChannelFeeConfig(channelFeeConfigService channelservices.ChannelFeeConfigService) http.HandlerFunc {
@@ -136,4 +137,3 @@ func handleChannelFeeConfigError(w http.ResponseWriter, r *http.Request, err err
 		common.InternalServerError(w, r, err)
 	}
 }
-

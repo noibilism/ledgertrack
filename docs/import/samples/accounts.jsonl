@@ -1,0 +1,4 @@
+{"source_id":"a-1","client_source_id":"m-1001","product_code":"MERCH-NGN","legacy_account_number":"BM-NGN-0001","status":"active","opened_at":"2023-11-05T09:31:00Z"}
+{"source_id":"a-2","client_source_id":"m-1001","product_code":"MERCH-USDT","legacy_account_number":"BM-USDT-0001","status":"active"}
+{"source_id":"a-3","client_source_id":"m-1002","product_code":"MERCH-NGN","legacy_account_number":"BM-NGN-0002","status":"suspended"}
+{"source_id":"a-4","client_source_id":"m-1003","product_code":"MERCH-NGN","legacy_account_number":"BM-NGN-0003","status":"active"}

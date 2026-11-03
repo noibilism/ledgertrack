@@ -7,10 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/formancehq/go-libs/v3/api"
-	"github.com/formancehq/go-libs/v3/auth"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	"github.com/formancehq/go-libs/v3/api"
+	"github.com/formancehq/go-libs/v3/auth"
 
 	channelmodels "github.com/formancehq/ledger/internal/channels/models"
 	channelrepos "github.com/formancehq/ledger/internal/channels/repositories"

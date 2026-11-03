@@ -11,10 +11,9 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	currencyregistry "github.com/formancehq/ledger/internal/currency"
-
 	"github.com/formancehq/ledger/internal/channels/models"
 	"github.com/formancehq/ledger/internal/channels/repositories"
+	currencyregistry "github.com/formancehq/ledger/internal/currency"
 )
 
 var (
@@ -88,12 +87,12 @@ func (s *DefaultChannelFeeConfigService) UpsertConfig(ctx context.Context, req U
 	existing, err := s.configRepo.GetByChannelID(ctx, req.ChannelID)
 	if err == nil && existing != nil {
 		before = map[string]any{
-			"channel_id":      existing.ChannelID,
-			"currency":        existing.Currency,
-			"enabled":         existing.Enabled,
-			"user_fee":        existing.UserFee,
-			"processing_fee":  existing.ProcessingFee,
-			"updated_at":      existing.UpdatedAt,
+			"channel_id":     existing.ChannelID,
+			"currency":       existing.Currency,
+			"enabled":        existing.Enabled,
+			"user_fee":       existing.UserFee,
+			"processing_fee": existing.ProcessingFee,
+			"updated_at":     existing.UpdatedAt,
 		}
 	}
 
@@ -114,11 +113,11 @@ func (s *DefaultChannelFeeConfigService) UpsertConfig(ctx context.Context, req U
 	}
 
 	after := map[string]any{
-		"channel_id":      cfg.ChannelID,
-		"currency":        cfg.Currency,
-		"enabled":         cfg.Enabled,
-		"user_fee":        cfg.UserFee,
-		"processing_fee":  cfg.ProcessingFee,
+		"channel_id":     cfg.ChannelID,
+		"currency":       cfg.Currency,
+		"enabled":        cfg.Enabled,
+		"user_fee":       cfg.UserFee,
+		"processing_fee": cfg.ProcessingFee,
 	}
 	_ = s.auditRepo.Create(ctx, &models.ChannelFeeConfigAudit{
 		ChannelID: cfg.ChannelID,

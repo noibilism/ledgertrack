@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/formancehq/go-libs/v3/api"
-	"github.com/formancehq/go-libs/v3/auth"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	"github.com/formancehq/go-libs/v3/api"
+	"github.com/formancehq/go-libs/v3/auth"
 
 	channelmodels "github.com/formancehq/ledger/internal/channels/models"
 	channelrepos "github.com/formancehq/ledger/internal/channels/repositories"
@@ -25,13 +26,13 @@ func (s *channelRevenueReportingServiceForHTTPTests) RevenueSummary(context.Cont
 		Currency: "USD",
 		Rows: []channelservices.ChannelRevenueSummaryRow{
 			{
-				ChannelID:        "channel-1",
-				TransactionCount: 2,
-				PrincipalAmount:  2000,
-				GrossRevenue:     40,
-				ProcessingCost:   10,
-				NetRevenue:       30,
-				AverageNetPerTx:  15,
+				ChannelID:         "channel-1",
+				TransactionCount:  2,
+				PrincipalAmount:   2000,
+				GrossRevenue:      40,
+				ProcessingCost:    10,
+				NetRevenue:        30,
+				AverageNetPerTx:   15,
 				AverageGrossPerTx: 20,
 			},
 		},

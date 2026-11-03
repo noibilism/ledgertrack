@@ -2,7 +2,10 @@ package common
 
 import (
 	"errors"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/formancehq/go-libs/v3/api"
 	"github.com/formancehq/go-libs/v3/logging"
@@ -27,6 +30,8 @@ const (
 	ErrSchemaAlreadyExists = "SCHEMA_ALREADY_EXISTS"
 	ErrSchemaNotSpecified  = "SCHEMA_NOT_SPECIFIED"
 
+	ErrOverloaded = "OVERLOADED"
+
 	ErrInterpreterParse   = "INTERPRETER_PARSE"
 	ErrInterpreterRuntime = "INTERPRETER_RUNTIME"
 
@@ -37,6 +42,8 @@ const (
 
 func HandleCommonErrors(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, ledgercontroller.ErrWriteOverloaded{}):
+		writeOverloaded(w, err)
 	case errors.Is(err, postgres.ErrTooManyClient{}):
 		api.WriteErrorResponse(w, http.StatusServiceUnavailable, api.ErrorInternal, err)
 	case errors.Is(err, ledgercontroller.ErrSchemaNotSpecified{}):
@@ -48,8 +55,24 @@ func HandleCommonErrors(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
+// writeOverloaded answers 503 with a Retry-After header. Nothing was written, the client can retry.
+func writeOverloaded(w http.ResponseWriter, err error) {
+	retryAfter := time.Second
+	if e, ok := ledgercontroller.IsErrWriteOverloaded(err); ok && e.RetryAfter > 0 {
+		retryAfter = e.RetryAfter
+	}
+	secs := int(math.Ceil(retryAfter.Seconds()))
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	api.WriteErrorResponse(w, http.StatusServiceUnavailable, ErrOverloaded, err)
+}
+
 func HandleCommonWriteErrors(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, ledgercontroller.ErrWriteOverloaded{}):
+		writeOverloaded(w, err)
 	case errors.Is(err, ledgercontroller.ErrIdempotencyKeyConflict{}):
 		api.WriteErrorResponse(w, http.StatusConflict, ErrConflict, err)
 	case errors.Is(err, ledgercontroller.ErrInvalidIdempotencyInput{}):
@@ -70,7 +93,7 @@ func HandleCommonWriteErrors(w http.ResponseWriter, r *http.Request, err error) 
 		api.BadRequest(w, ErrCompilationFailed, err)
 	case errors.Is(err, &ledgercontroller.ErrMetadataOverride{}):
 		api.BadRequest(w, ErrMetadataOverride, err)
-	case errors.Is(err, postgres.ErrSerialization):
+	case errors.Is(err, postgres.ErrSerialization), errors.Is(err, postgres.ErrDeadlockDetected):
 		api.WriteErrorResponse(w, http.StatusServiceUnavailable, ErrConflict, err)
 	default:
 		HandleCommonErrors(w, r, err)

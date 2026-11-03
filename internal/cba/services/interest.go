@@ -9,8 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
-	"github.com/formancehq/go-libs/v3/platform/postgres"
-
 	"github.com/formancehq/ledger/internal/cba/models"
 	"github.com/formancehq/ledger/internal/cba/repositories"
 	currencyregistry "github.com/formancehq/ledger/internal/currency"
@@ -329,13 +327,4 @@ func decimalToMinorHalfUp(amount decimal.Decimal, currency string) (int64, decim
 	}
 	minor := amount.Shift(int32(definition.Precision)).Round(0)
 	return minor.IntPart(), minor.Shift(int32(-definition.Precision)), nil
-}
-
-func resolveInterestRepositoryError(err error) error {
-	switch {
-	case postgres.IsNotFoundError(err), errors.Is(err, postgres.ErrNotFound):
-		return ErrInterestNotApplicable
-	default:
-		return err
-	}
 }

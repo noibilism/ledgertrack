@@ -67,13 +67,18 @@ type DefaultController struct {
 	interpreterParser          ledgercontroller.NumscriptParser
 	registry                   *ledgercontroller.StateRegistry
 	databaseRetryConfiguration DatabaseRetryConfiguration
-	replicationBackend         ReplicationBackend
+	// writeLimiter is shared by every ledger controller built by this system controller (nil: no limit).
+	writeLimiter       *ledgercontroller.WriteLimiter
+	replicationBackend ReplicationBackend
 
 	tracerProvider trace.TracerProvider
 	meterProvider  metric.MeterProvider
 	enableFeatures bool
 
 	schemaEnforcementMode ledgercontroller.SchemaEnforcementMode
+
+	// walletLedgerHashMode is the HASH_LOGS mode given to wallet ledgers at creation ("" keeps the default).
+	walletLedgerHashMode string
 }
 
 func (ctrl *DefaultController) ListExporters(ctx context.Context) (*bunpaginate.Cursor[ledger.Exporter], error) {
@@ -165,6 +170,10 @@ func (ctrl *DefaultController) GetLedgerController(ctx context.Context, name str
 			ledgercontroller.WithMeter(meter),
 		)
 
+		// Bound the number of write transactions in flight (shared by all ledgers, since they share the pool).
+		// It sits below the retry wrapper so that a retry does not hold a slot while it sleeps.
+		ledgerController = ledgercontroller.NewControllerWithWriteLimiter(ledgerController, ctrl.writeLimiter)
+
 		// Add too many client error handling
 		ledgerController = ledgercontroller.NewControllerWithTooManyClientHandling(
 			ledgerController,
@@ -195,6 +204,7 @@ func (ctrl *DefaultController) GetLedgerController(ctx context.Context, name str
 
 func (ctrl *DefaultController) CreateLedger(ctx context.Context, name string, configuration ledger.Configuration) error {
 	return tracing.SkipResult(tracing.Trace(ctx, ctrl.tracerProvider.Tracer("system"), "CreateLedger", tracing.NoResult(func(ctx context.Context) error {
+		_, explicitHashLogs := configuration.Features[features.FeatureHashLogs]
 		configuration.SetDefaults()
 
 		if !ctrl.enableFeatures {
@@ -202,6 +212,9 @@ func (ctrl *DefaultController) CreateLedger(ctx context.Context, name string, co
 				return ErrExperimentalFeaturesDisabled
 			}
 		}
+
+		// After the experimental features gate, see applyWalletLedgerHashMode.
+		applyWalletLedgerHashMode(ctrl.walletLedgerHashMode, name, explicitHashLogs, &configuration)
 
 		l, err := ledger.New(name, configuration)
 		if err != nil {
@@ -292,6 +305,13 @@ func WithParser(
 	}
 }
 
+// WithWriteLimiter bounds the number of ledger write transactions in flight (nil disables the bound).
+func WithWriteLimiter(limiter *ledgercontroller.WriteLimiter) Option {
+	return func(ctrl *DefaultController) {
+		ctrl.writeLimiter = limiter
+	}
+}
+
 func WithDatabaseRetryConfiguration(configuration DatabaseRetryConfiguration) Option {
 	return func(ctrl *DefaultController) {
 		ctrl.databaseRetryConfiguration = configuration
@@ -313,6 +333,13 @@ func WithTracerProvider(t trace.TracerProvider) Option {
 func WithEnableFeatures(v bool) Option {
 	return func(ctrl *DefaultController) {
 		ctrl.enableFeatures = v
+	}
+}
+
+// WithWalletLedgerHashMode sets the HASH_LOGS mode (SYNC or ASYNC) of the wallet ledgers created from now on.
+func WithWalletLedgerHashMode(mode string) Option {
+	return func(ctrl *DefaultController) {
+		ctrl.walletLedgerHashMode = mode
 	}
 }
 

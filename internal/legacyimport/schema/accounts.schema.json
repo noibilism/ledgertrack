@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ledgertrack/import/accounts.schema.json",
+  "title": "LedgerTrack legacy import: accounts.jsonl line (merchant balance per currency)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "client_source_id", "product_code", "legacy_account_number"],
+  "properties": {
+    "source_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "client_source_id": { "type": "string", "minLength": 1, "maxLength": 128, "description": "source_id of a line in clients.jsonl." },
+    "product_code": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "code of a line in products.jsonl." },
+    "legacy_account_number": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Account number in the legacy system. Stored in account metadata (LedgerTrack generates its own account number)." },
+    "status": { "enum": ["pending", "active", "frozen", "dormant", "suspended", "closed"], "description": "Target account status. Default active. 'frozen' means active with debits frozen. 'closed' requires a zero balance." },
+    "opened_at": { "type": "string", "format": "date-time" }
+  }
+}
