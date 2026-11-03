@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,7 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func env(key, def string) string {
@@ -87,13 +89,12 @@ func main() {
 
 	ctx := context.Background()
 	started := time.Now().UTC()
-	conn, err := pgx.Connect(ctx, dsn)
+	db, query, err := openBankman(dsn)
 	if err != nil {
 		log.Fatalf("bankman database: %v", err)
 	}
-	defer func() { _ = conn.Close(ctx) }()
-	rows, err := conn.Query(ctx, `select id::text, currency, available_balance::text, actual_balance::text, locked_amount::text
-		from accounts where deleted_at is null order by id`)
+	defer func() { _ = db.Close() }()
+	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		log.Fatalf("read accounts: %v", err)
 	}
@@ -140,4 +141,33 @@ func main() {
 	if sum.Mismatches > 0 {
 		os.Exit(1)
 	}
+}
+
+// openBankman connects to Bankman's database. Bankman runs on MySQL; a postgres:// DSN is also accepted
+// (the sample environments use it). A MySQL DSN is either mysql://user:pass@host:3306/db or the driver form
+// user:pass@tcp(host:3306)/db. Use a read replica or a read-only user: the tool only runs one SELECT.
+func openBankman(dsn string) (*sql.DB, string, error) {
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		db, err := sql.Open("pgx", dsn)
+		return db, `select id::text, currency, available_balance::text, actual_balance::text, locked_amount::text
+			from accounts where deleted_at is null order by id`, err
+	}
+	if strings.HasPrefix(dsn, "mysql://") {
+		u, err := url.Parse(dsn)
+		if err != nil {
+			return nil, "", err
+		}
+		pass, _ := u.User.Password()
+		host := u.Host
+		if u.Port() == "" {
+			host += ":3306"
+		}
+		dsn = fmt.Sprintf("%s:%s@tcp(%s)%s", u.User.Username(), pass, host, u.Path)
+		if u.RawQuery != "" {
+			dsn += "?" + u.RawQuery
+		}
+	}
+	db, err := sql.Open("mysql", dsn)
+	return db, `select cast(id as char), currency, cast(available_balance as char), cast(actual_balance as char), cast(locked_amount as char)
+		from accounts where deleted_at is null order by id`, err
 }

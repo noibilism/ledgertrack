@@ -90,7 +90,7 @@ go run ./tools/bankman-shadow
 go test -race ./tools/bankman-shadow/ ./tools/bankman-reconcile/
 ```
 
-`tools/bankman-reconcile` reads Bankman's database (`BANKMAN_DSN`, use a read replica) and
+`tools/bankman-reconcile` reads Bankman's database (`BANKMAN_DSN`: MySQL as `mysql://user:pass@host:3306/db` or `user:pass@tcp(host:3306)/db`, Postgres as `postgres://...`; use a read replica or a read-only user) and
 `GET /accounts/{id}` on LedgerTrack (`LEDGERTRACK_URL`, `LEDGERTRACK_TOKEN`) and compares available, actual and
 locked amounts and currency per account. It prints each difference as a JSON line, then a summary, and exits 1
 if anything differs.
