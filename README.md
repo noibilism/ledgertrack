@@ -91,7 +91,7 @@ A single debit call can atomically debit the user, debit the channel, and book t
 
 ### Liens and Holds
 
-Funds can be moved from `available` to a `lien` sub-account when a transaction is in flight, then released as either `pay` (finalize) or `cancel` (return to available). This is the right primitive for cross-border transfers, card authorizations, and any operation where funds need to be held before settlement.
+Funds can be moved from `available` to a `lien` sub-account when a transaction is in flight, then released with `mode` set to `PAY` (alias `release_and_debit`: lien to world in one atomic transaction) or `RELEASE_ONLY` (alias `cancel`, the default: return to available). The lien account is one pool per wallet and currency, not one per reference, so callers should use a fresh, unique `reference` for every lien and release. Sending the same `Idempotency-Key` again replays the original result and the response carries `Idempotency-Hit: true`. Insufficient funds returns HTTP 400 with error code `INSUFFICIENT_FUND`. This is the right primitive for cross-border transfers, card authorizations, and any operation where funds need to be held before settlement.
 
 ### Currency Registry
 
