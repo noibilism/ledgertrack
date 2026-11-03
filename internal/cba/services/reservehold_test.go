@@ -19,11 +19,14 @@ import (
 // reserveHoldRepositoryStub is an in-memory repositories.ReserveHoldRepository with the same state rules
 // as the SQL one: leases, status guards and a unique key per credit.
 type reserveHoldRepositoryStub struct {
-	holds        map[uuid.UUID]*models.ReserveHold
-	draws        []*models.ReserveDraw
-	rulesExist   bool
-	ruleChecks   int
-	failMarkHeld error
+	holds      map[uuid.UUID]*models.ReserveHold
+	draws      []*models.ReserveDraw
+	rulesExist bool
+	ruleChecks int
+	// missReturnsEmpty makes GetByCredit hand back a zero-valued hold next to the not-found error,
+	// as the SQL repository did.
+	missReturnsEmpty bool
+	failMarkHeld     error
 }
 
 func newReserveHoldRepositoryStub() *reserveHoldRepositoryStub {
@@ -77,6 +80,9 @@ func (s *reserveHoldRepositoryStub) GetByCredit(_ context.Context, ledger, walle
 	if h := s.find(ledger, wallet, ref); h != nil {
 		c := *h
 		return &c, nil
+	}
+	if s.missReturnsEmpty {
+		return &models.ReserveHold{}, postgres.ErrNotFound
 	}
 	return nil, postgres.ErrNotFound
 }
@@ -325,6 +331,18 @@ func TestPlanCreditSplitsAndRecordsPendingHold(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, models.HoldStatusHeld, got.Status)
 	require.EqualValues(t, 77, *got.CreditTxID)
+}
+
+func TestPlanCreditFirstCreditWhenRepositoryReturnsZeroValueOnMiss(t *testing.T) {
+	f := newHoldFixture(t)
+	f.repo.missReturnsEmpty = true
+	f.clientRule(t, "10", 72)
+
+	p := f.plan(t, "first-credit", 10_000_000, "")
+	require.NotNil(t, p)
+	require.Equal(t, int64(1_000_000), p.ReserveMinor)
+	require.Equal(t, models.HoldStatusPending, p.Hold.Status)
+	require.Len(t, f.repo.holds, 1)
 }
 
 func TestPlanCreditReturnsNilWhenNothingIsHeld(t *testing.T) {

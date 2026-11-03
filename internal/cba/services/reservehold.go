@@ -175,6 +175,8 @@ func (s *DefaultReserveHoldService) PlanCredit(ctx context.Context, req PlanCred
 		return planOf(existing), nil
 	case err != nil && !(errors.Is(err, postgres.ErrNotFound) || postgres.IsNotFoundError(err)):
 		return nil, err
+	case err != nil:
+		existing = nil // no hold for this credit yet, whatever the repository returned alongside the miss
 	}
 
 	preview, err := s.rules.Preview(ctx, ReservePreviewRequest{
