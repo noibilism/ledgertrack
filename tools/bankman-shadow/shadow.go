@@ -24,6 +24,7 @@ type job struct {
 	BBody                  []byte
 	Key                    string
 	Enqueued               time.Time
+	Reverse                bool // LedgerTrack answered the caller and Bankman is the copy
 }
 
 // record is what the diff ring and the log keep about a replay.
@@ -44,24 +45,39 @@ type stats struct {
 }
 
 type shadow struct {
-	cfg     config
-	client  *http.Client
-	ignore  map[string]bool
-	queues  []chan job
-	enabled atomic.Bool
-	st      stats
-	liens   sync.Map // lien transaction id -> account id, learned from Bankman's lien replies
-	mu      sync.Mutex
-	ring    []record
-	wg      sync.WaitGroup
-	logf    func(record)
+	cfg      config
+	client   *http.Client
+	ignore   map[string]bool
+	revIgn   map[string]bool
+	ctl      *control
+	inflight atomic.Int64 // writes admitted and not yet answered
+	pending  atomic.Int64 // write replays queued or running
+	stop     chan struct{}
+	queues   []chan job
+	enabled  atomic.Bool
+	st       stats
+	liens    sync.Map // lien transaction id -> account id, learned from Bankman's lien replies
+	mu       sync.Mutex
+	ring     []record
+	wg       sync.WaitGroup
+	logf     func(record)
 }
 
 func newShadow(cfg config, logf func(record)) *shadow {
-	s := &shadow{cfg: cfg, client: &http.Client{Timeout: cfg.Timeout}, ignore: map[string]bool{}, logf: logf}
+	if cfg.HoldMax <= 0 {
+		cfg.HoldMax = 30 * time.Second
+	}
+	s := &shadow{cfg: cfg, client: &http.Client{Timeout: cfg.Timeout}, ignore: map[string]bool{}, revIgn: map[string]bool{},
+		ctl: newControl(), stop: make(chan struct{}), logf: logf}
 	for _, f := range cfg.IgnoreFields {
 		s.ignore[strings.TrimSpace(f)] = true
+		s.revIgn[strings.TrimSpace(f)] = true
 	}
+	// Ids differ when Bankman is the copy: it mints its own for anything LedgerTrack created.
+	for _, f := range cfg.ReverseIgnore {
+		s.revIgn[strings.TrimSpace(f)] = true
+	}
+	go s.watchDrain(s.stop)
 	s.enabled.Store(!cfg.StartDisabled)
 	s.queues = make([]chan job, cfg.Workers)
 	for i := range s.queues {
@@ -73,6 +89,7 @@ func newShadow(cfg config, logf func(record)) *shadow {
 }
 
 func (s *shadow) close() {
+	close(s.stop)
 	for _, q := range s.queues {
 		close(q)
 	}
@@ -155,9 +172,15 @@ func (s *shadow) offer(j job) {
 	j.Enqueued = time.Now()
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(j.Key))
+	if j.Method != http.MethodGet {
+		s.pending.Add(1)
+	}
 	select {
 	case s.queues[int(h.Sum32())%len(s.queues)] <- j:
 	default:
+		if j.Method != http.MethodGet {
+			s.pending.Add(-1)
+		}
 		s.st.Dropped.Add(1)
 	}
 }
@@ -166,6 +189,9 @@ func (s *shadow) work(q chan job) {
 	defer s.wg.Done()
 	for j := range q {
 		s.replay(j)
+		if j.Method != http.MethodGet {
+			s.pending.Add(-1)
+		}
 	}
 }
 
@@ -192,6 +218,10 @@ func resourceID(method, p string, body []byte) string {
 func (s *shadow) replay(j job) {
 	p := rest(j.Path)
 	target := s.cfg.LedgerTrack + s.cfg.LTPrefix + p
+	ignore := s.ignore
+	if j.Reverse {
+		target, ignore = s.cfg.Bankman+j.Path, s.revIgn
+	}
 	if j.RawQuery != "" {
 		target += "?" + j.RawQuery
 	}
@@ -231,9 +261,9 @@ func (s *shadow) replay(j job) {
 	case code != j.BStatus:
 		s.st.Mismatched.Add(1)
 		rec.Diffs = []diff{{Path: "status", Bankman: itoa(j.BStatus), LedgerTr: itoa(code)}}
-		rec.Diffs = append(rec.Diffs, compareReplies(j.BBody, body, s.ignore)...)
+		rec.Diffs = append(rec.Diffs, compareReplies(j.BBody, body, ignore)...)
 	default:
-		if d := compareReplies(j.BBody, body, s.ignore); len(d) > 0 {
+		if d := compareReplies(j.BBody, body, ignore); len(d) > 0 {
 			s.st.Mismatched.Add(1)
 			rec.Diffs = d
 		} else {
@@ -277,7 +307,10 @@ func (s *shadow) send(j job, target, p string) (int, []byte, error) {
 			req.Header.Set(k, v)
 		}
 	}
-	if id := resourceID(j.Method, p, j.BBody); id != "" && j.BStatus/100 == 2 {
+	if j.Reverse && s.cfg.BankmanHost != "" {
+		req.Host = s.cfg.BankmanHost
+	}
+	if id := resourceID(j.Method, p, j.BBody); id != "" && j.BStatus/100 == 2 && !j.Reverse {
 		req.Header.Set("X-Bankman-Resource-Id", id)
 	}
 	resp, err := s.client.Do(req)

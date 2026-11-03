@@ -24,6 +24,8 @@ type config struct {
 	IgnoreFields  []string      // SHADOW_IGNORE_FIELDS, JSON keys left out of comparisons
 	AdminToken    string        // SHADOW_ADMIN_TOKEN, protects /shadow/*; empty disables those routes
 	StartDisabled bool          // SHADOW_DISABLED=true starts as a plain proxy
+	HoldMax       time.Duration // CUTOVER_HOLD_SECONDS, longest a write waits during a hold before a 503
+	ReverseIgnore []string      // SHADOW_REVERSE_IGNORE_FIELDS, extra keys left out once Bankman is the copy
 }
 
 func envOr(key, def string) string {
@@ -57,7 +59,13 @@ func loadConfig() (config, error) {
 	if c.Bankman == "" || c.LedgerTrack == "" {
 		return c, fmt.Errorf("BANKMAN_URL and LEDGERTRACK_URL are required")
 	}
+	c.ReverseIgnore = strings.FieldsFunc(envOr("SHADOW_REVERSE_IGNORE_FIELDS", "id,transaction_id"), func(r rune) bool { return r == ',' })
 	var err error
+	hs, err := envInt("CUTOVER_HOLD_SECONDS", 30)
+	if err != nil || hs < 1 {
+		return c, fmt.Errorf("CUTOVER_HOLD_SECONDS must be at least 1")
+	}
+	c.HoldMax = time.Duration(hs) * time.Second
 	if c.Workers, err = envInt("SHADOW_WORKERS", 32); err != nil || c.Workers < 1 {
 		return c, fmt.Errorf("SHADOW_WORKERS must be at least 1")
 	}
