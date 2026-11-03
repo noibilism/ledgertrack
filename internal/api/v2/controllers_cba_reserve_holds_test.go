@@ -159,9 +159,9 @@ func TestCreditWalletSplitsWhenAReserveApplies(t *testing.T) {
 		DoAndReturn(func(_ context.Context, params ledgercontroller.Parameters[ledgercontroller.CreateTransaction]) (*ledger.Log, *ledger.CreatedTransaction, bool, error) {
 			script := params.Input.RunScript.Script.Plain
 			require.Contains(t, script, "[NGN/2 1000]")
-			require.Contains(t, script, "destination = @users:u1:wallets:NGN:lien")
-			require.Contains(t, script, "[NGN/2 9000]")
-			require.Contains(t, script, "destination = @users:u1:wallets:NGN:available")
+			require.Contains(t, script, "to @users:u1:wallets:NGN:lien")
+			require.Contains(t, script, "[NGN/2 10000]")
+			require.Contains(t, script, "to @users:u1:wallets:NGN:available")
 			md := params.Input.RunScript.Metadata
 			require.Equal(t, holdID.String(), md["reserve_hold_id"])
 			require.Equal(t, "1000", md["reserve_minor"])
@@ -265,9 +265,9 @@ func TestDebitWalletDrawsFromTheReserveFirst(t *testing.T) {
 		DoAndReturn(func(_ context.Context, params ledgercontroller.Parameters[ledgercontroller.CreateTransaction]) (*ledger.Log, *ledger.CreatedTransaction, bool, error) {
 			script := params.Input.RunScript.Script.Plain
 			require.Contains(t, script, "[NGN/2 3000]")
-			require.Contains(t, script, "source = @users:u1:wallets:NGN:lien")
-			require.Contains(t, script, "[NGN/2 7000]")
-			require.Contains(t, script, "source = @users:u1:wallets:NGN:available")
+			require.Contains(t, script, "from @users:u1:wallets:NGN:lien")
+			require.Contains(t, script, "[NGN/2 10000]")
+			require.Contains(t, script, "@users:u1:wallets:NGN:available")
 			require.Equal(t, "3000", params.Input.RunScript.Metadata["reserve_drawn_minor"])
 			return &ledger.Log{}, debitResult("u1"), false, nil
 		})

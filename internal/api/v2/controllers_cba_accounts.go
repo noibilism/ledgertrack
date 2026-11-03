@@ -351,7 +351,7 @@ func creditAccount(accountService services.AccountService, holds services.Reserv
 			accountMetadata = withReserveMetadata(accountMetadata, plan)
 		}
 		if charge != nil {
-			script += chargeSends(asset, accountSystem, charge, true)
+			script = appendSends(script, chargeSends(asset, accountSystem, charge, true))
 		}
 
 		params := ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{
@@ -524,7 +524,7 @@ func debitAccount(accountService services.AccountService, sys systemcontroller.C
 			accountMetadata = withDrawMetadata(accountMetadata, drawPlan)
 		}
 		if charge != nil {
-			script += chargeSends(asset, accountUser, charge, false)
+			script = appendSends(script, chargeSends(asset, accountUser, charge, false))
 			accountMetadata = withChargeMetadata(accountMetadata, charge)
 		}
 
@@ -799,7 +799,7 @@ func transferAccount(accountService services.AccountService, holds services.Rese
 			md = withReserveMetadata(md, plan)
 		}
 		if charge != nil {
-			script += chargeSends(asset, sourceAddress, charge, false)
+			script = appendSends(script, chargeSends(asset, sourceAddress, charge, false))
 			md = withChargeMetadata(md, charge)
 		}
 		_, tx, replayed, err := l.CreateTransaction(r.Context(), ledgercontroller.Parameters[ledgercontroller.CreateTransaction]{

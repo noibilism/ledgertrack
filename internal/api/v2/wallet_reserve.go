@@ -25,21 +25,32 @@ func reserveCreditScript(asset, source, available, lien string, unbounded bool, 
 	if unbounded {
 		mode = " allowing unbounded overdraft"
 	}
-	script := fmt.Sprintf(`
-		send [%s %d] (
-			source = @%s%s
-			destination = @%s
-		)
-	`, asset, plan.ReserveMinor, source, mode, lien)
-	if plan.AvailableMinor > 0 {
-		script += fmt.Sprintf(`
-		send [%s %d] (
-			source = @%s%s
-			destination = @%s
-		)
-	`, asset, plan.AvailableMinor, source, mode, available)
+	// One send keeps the split atomic and compiles on every runtime. Two sends in one script do not.
+	switch {
+	case plan.AvailableMinor <= 0:
+		return fmt.Sprintf(`
+			send [%s %d] (
+				source = @%s%s
+				destination = @%s
+			)
+		`, asset, plan.ReserveMinor, source, mode, lien)
+	case plan.ReserveMinor <= 0:
+		return fmt.Sprintf(`
+			send [%s %d] (
+				source = @%s%s
+				destination = @%s
+			)
+		`, asset, plan.AvailableMinor, source, mode, available)
 	}
-	return script
+	return fmt.Sprintf(`
+		send [%s %d] (
+			source = @%s%s
+			destination = {
+				max [%s %d] to @%s
+				remaining to @%s
+			}
+		)
+	`, asset, plan.ReserveMinor+plan.AvailableMinor, source, mode, asset, plan.ReserveMinor, lien, available)
 }
 
 // withReserveMetadata adds the hold to the transaction metadata so the ledger itself says what was held.
@@ -77,21 +88,31 @@ func reserveResponse(plan *services.CreditPlan) map[string]any {
 // reserveDebitScript spends the held shares in the lien first and the rest from available, in one
 // transaction. A debit that the held shares cover entirely posts only the lien leg.
 func reserveDebitScript(asset, available, lien, destination string, plan *services.DrawPlan) string {
-	script := fmt.Sprintf(`
-		send [%s %d] (
-			source = @%s
-			destination = @%s
-		)
-	`, asset, plan.DrawnMinor, lien, destination)
-	if plan.RemainderMinor > 0 {
-		script += fmt.Sprintf(`
-		send [%s %d] (
-			source = @%s
-			destination = @%s
-		)
-	`, asset, plan.RemainderMinor, available, destination)
+	switch {
+	case plan.RemainderMinor <= 0:
+		return fmt.Sprintf(`
+			send [%s %d] (
+				source = @%s
+				destination = @%s
+			)
+		`, asset, plan.DrawnMinor, lien, destination)
+	case plan.DrawnMinor <= 0:
+		return fmt.Sprintf(`
+			send [%s %d] (
+				source = @%s
+				destination = @%s
+			)
+		`, asset, plan.RemainderMinor, available, destination)
 	}
-	return script
+	return fmt.Sprintf(`
+		send [%s %d] (
+			source = {
+				max [%s %d] from @%s
+				@%s
+			}
+			destination = @%s
+		)
+	`, asset, plan.DrawnMinor+plan.RemainderMinor, asset, plan.DrawnMinor, lien, available, destination)
 }
 
 // withDrawMetadata records on the transaction how much of the debit came from the reserve.
